@@ -1,0 +1,61 @@
+{
+  "name": "code-offload",
+  "version": "0.2.0",
+  "description": "The harness offloader: keep bulk I/O out of your coding agent's context by delegating it to cheap models you already pay for.",
+  "license": "MIT",
+  "author": "OWNER",
+  "homepage": "https://github.com/OWNER/code-offload#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/OWNER/code-offload.git",
+    "directory": "packages/cli"
+  },
+  "bugs": "https://github.com/OWNER/code-offload/issues",
+  "keywords": [
+    "ai",
+    "coding-agent",
+    "claude-code",
+    "codex",
+    "cursor",
+    "opencode",
+    "pi",
+    "gemini-cli",
+    "mcp",
+    "token-optimization",
+    "context"
+  ],
+  "type": "module",
+  "bin": {
+    "offload": "dist/cli.js",
+    "code-offload": "dist/cli.js"
+  },
+  "files": [
+    "dist",
+    "assets",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=18.17"
+  },
+  "scripts": {
+    "gen": "node scripts/gen-assets.mjs",
+    "prebuild": "node scripts/gen-assets.mjs",
+    "build": "bun run scripts/build.ts",
+    "pretypecheck": "node scripts/gen-assets.mjs",
+    "typecheck": "tsc --noEmit",
+    "pretest": "node scripts/gen-assets.mjs",
+    "test": "bun test",
+    "compile": "bun run scripts/compile.ts"
+  },
+  "dependencies": {
+    "@clack/prompts": "^1.8.1",
+    "@modelcontextprotocol/sdk": "^1.32.2",
+    "picocolors": "^1.1.1",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.6",
+    "typescript": "^7.0.2"
+  }
+}

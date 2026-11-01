@@ -9,7 +9,7 @@
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
 PLUGIN="$(cd "$HERE/.." && pwd)"
-OFFLOAD="$PLUGIN/bin/offload"
+OFFLOAD="${OFFLOAD_CLI:-$PLUGIN/bin/offload}"
 INTEGRATION=false E2E=false
 for a in "$@"; do
   case "$a" in

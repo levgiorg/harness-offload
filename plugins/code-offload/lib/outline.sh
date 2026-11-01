@@ -16,38 +16,9 @@ co_outline_regex() {
       '#!'*sh*) ext=sh ;;
     esac
   fi
-  case "$ext" in
-    ts|tsx|js|jsx|mjs|cjs|mts|cts|vue|svelte)
-      echo '^[[:space:]]*(export[[:space:]]+)?(default[[:space:]]+)?(declare[[:space:]]+)?(abstract[[:space:]]+)?(async[[:space:]]+)?(function\*?|class|interface|type|enum|namespace|module)[[:space:]]+[A-Za-z_$]|^[[:space:]]*(export[[:space:]]+)?(const|let|var)[[:space:]]+[A-Za-z_$][A-Za-z0-9_$]*[[:space:]]*(:[^=]*)?=[[:space:]]*(async[[:space:]]+)?(\(|function|[A-Za-z_$][A-Za-z0-9_$]*[[:space:]]*=>)|^[[:space:]]{2,4}((public|private|protected|static|async|readonly|override|get|set)[[:space:]]+)*[A-Za-z_$#][A-Za-z0-9_$]*[[:space:]]*(<[^>]*>)?\([^;]*\)[[:space:]]*(:[^=;{]*)?\{|^[[:space:]]*(describe|it|test)(\.[a-z]+)?\(' ;;
-    py|pyi)
-      echo '^[[:space:]]*(async[[:space:]]+)?def[[:space:]]+[A-Za-z_]|^[[:space:]]*class[[:space:]]+[A-Za-z_]' ;;
-    go)
-      echo '^func[[:space:]]|^type[[:space:]]+[A-Za-z_][A-Za-z0-9_]*[[:space:]]|^(var|const)[[:space:]]+\(' ;;
-    rs)
-      echo '^[[:space:]]*(pub(\([^)]*\))?[[:space:]]+)?(async[[:space:]]+)?(unsafe[[:space:]]+)?(fn|struct|enum|trait|impl|mod|macro_rules!|type)[[:space:]<]' ;;
-    java|kt|kts|scala|cs|groovy|swift|dart)
-      echo '^[[:space:]]*(@[A-Za-z]+[[:space:]]+)*((public|private|protected|internal|open|override|abstract|final|static|sealed|data|suspend|async|virtual|partial)[[:space:]]+)*(class|interface|enum|record|struct|object|fun|func|extension|protocol)[[:space:]]+[A-Za-z_]|^[[:space:]]*((public|private|protected|internal|static|final|abstract|synchronized|override|async|virtual)[[:space:]]+)+[][A-Za-z_<>,.?[:space:]]+[[:space:]]+[A-Za-z_][A-Za-z0-9_]*[[:space:]]*\(' ;;
-    rb|rake)
-      echo '^[[:space:]]*(def|class|module)[[:space:]]' ;;
-    php)
-      echo '^[[:space:]]*((public|private|protected|static|abstract|final)[[:space:]]+)*(function|class|interface|trait|enum)[[:space:]]+[A-Za-z_]' ;;
-    c|h|cc|cpp|cxx|hpp|hh|m|mm)
-      echo '^[A-Za-z_][A-Za-z0-9_:<>,*&[:space:]]*[[:space:]*&]+[A-Za-z_~][A-Za-z0-9_:~]*[[:space:]]*\([^;]*$|^(typedef[[:space:]]+)?(struct|class|enum|union|namespace)[[:space:]]+[A-Za-z_]|^#define[[:space:]]+[A-Z_]' ;;
-    sh|bash|zsh)
-      echo '^[[:space:]]*(function[[:space:]]+)?[A-Za-z_][A-Za-z0-9_:-]*[[:space:]]*\(\)[[:space:]]*\{?|^[[:space:]]*function[[:space:]]+[A-Za-z_]' ;;
-    md|mdx|markdown|rst|adoc)
-      echo '^#{1,4}[[:space:]]' ;;
-    yml|yaml)
-      echo '^[A-Za-z_][A-Za-z0-9_.-]*:|^  [A-Za-z_][A-Za-z0-9_.-]*:[[:space:]]*$' ;;
-    toml|ini|cfg)
-      echo '^\[' ;;
-    sql)
-      echo '^[[:space:]]*(create|alter|CREATE|ALTER)[[:space:]]+' ;;
-    json)
-      echo '^  "[^"]+"[[:space:]]*:' ;;
-    *)
-      echo '^[[:space:]]*(export[[:space:]]+)?(pub[[:space:]]+)?(async[[:space:]]+)?(def|fn|func|function|class|interface|struct|enum|trait|impl|module|type)[[:space:]]+[A-Za-z_]|^#{1,3}[[:space:]]' ;;
-  esac
+  # Regexes live in config/outline.json, shared with the TypeScript engine.
+  jq -r --arg e "$ext" '(.languages[] | select(.exts | index($e)) | .regex) // .default' \
+    "$CO_ROOT/config/outline.json" 2>/dev/null | head -n 1
 }
 
 # co_outline <file> [max_entries] — prints "  L<n>: <trimmed line>" rows.

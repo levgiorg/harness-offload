@@ -262,7 +262,7 @@ co_oc_attempt() {
     cd "$workdir" 2>/dev/null || exit 1
     PWD="$workdir"; export PWD
     if co_cfg_bool '.opencode.disable_claude_code_compat' true; then export OPENCODE_DISABLE_CLAUDE_CODE=1; fi
-    OPENCODE_CONFIG_CONTENT="$cfg" OPENCODE_DISABLE_AUTOUPDATE=1 \
+    OPENCODE_CONFIG_CONTENT="$cfg" OPENCODE_DISABLE_AUTOUPDATE=1 OFFLOAD_DISABLE=1 \
       exec "$bin" "${args[@]}" < "$prompt_file" > "$out" 2> "$errf"
   ) &
   pid=$!
