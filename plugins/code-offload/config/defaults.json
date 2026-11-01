@@ -1,5 +1,9 @@
 {
   "enabled": true,
+  "backend": "opencode",
+  "endpoints": {},
+  "agents": {},
+  "hosts": { "codex": { "call": "mcp" }, "cursor": { "call": "mcp" } },
 
   "models": {
     "default": "",

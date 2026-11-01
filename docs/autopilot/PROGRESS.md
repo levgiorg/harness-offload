@@ -12,3 +12,13 @@
 - Verified: the bash conformance suite run against the TS CLI → 154/154. Fixed along the way: process-group kill on timeout (stuck grandchildren kept pipes open).
 - Research saved: `docs/research/pi-gemini-opencode.md`, `docs/research/codex-cursor-devin.md`.
 - Next: TS hook logic + `offload hook <host> <event>` adapters (claude, codex, cursor, gemini), MCP server, per-host plugin packaging, install/setup, CI.
+
+## 2026-11-02 ~01:30 UTC — M1, M3, M4, M5, M6 mostly done
+- `offload worker` transport: the bash engine routes `BACKEND:MODEL` refs through the TS connectors (one implementation per connector). HTTP connector tests (mock OpenAI endpoint: tools, explore loop, secrets, path escape, 401/429) → 166/166 on both engines.
+- TS hook logic + adapters (`offload hook <host> <event>`) for claude/codex/cursor/gemini; routing table 49/49 on bash and TS hooks; bun tests for adapters.
+- MCP server (`offload mcp`, 7 tools) tested with the SDK client.
+- Host packaging: `.codex-plugin` (hooks/MCP/skill), `.cursor-plugin` (hooks/MCP/always-on rule), Gemini extension, Pi extension (native tools, guard, digest, guide), OpenCode v1+v2 plugin. **Verified in real hosts:** OpenCode 1.19.5 & 2.2.5 block a 1,200-line read via the plugin; Pi 1.4.0 loads the extension and blocks it; Pi works as a worker; Claude Code and Codex CLIs install the plugin from the bundled marketplace (installed + enabled).
+- `offload install/uninstall` for 8 hosts (stub-tested + real claude/codex); `offload setup` wizard (driven end-to-end through a pty) + `--yes` mode.
+- CI (TS on ubuntu/macos/windows; bash suites incl. macOS system bash 3.2; shellcheck; manifest/version checks), release workflow (bun-compiled binaries for 5 targets, npm publish, plugin zip), install.sh/install.ps1. Standalone binary smoke-tested locally.
+- README rewritten; docs/hosts.md, CHANGELOG, CONTRIBUTING, SECURITY.
+- Next (M7): real-model validation pass, polish, warm server, more hosts.

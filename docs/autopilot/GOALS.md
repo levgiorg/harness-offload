@@ -36,30 +36,38 @@ CLI, OpenCode, Windsurf, and anything that speaks MCP.
 - [x] `scripts/set-owner.sh OWNER` rewrites placeholders.
 
 ### M1 Repo & CI
-- [ ] Monorepo layout: `plugins/code-offload` (Claude Code), `packages/cli` (TS), `integrations/*`, `docs/`, `scripts/`.
-- [ ] `.github/workflows/ci.yml`: bash suite on ubuntu + macos (real bash 3.2), shellcheck, TS typecheck+tests on ubuntu/macos/windows, plugin validate.
-- [ ] `.github/workflows/release.yml`: on tag → bun-compiled binaries (linux x64/arm64, macOS x64/arm64, windows x64) + npm publish (dry-run without token) + GitHub release.
-- [ ] `install.sh` / `install.ps1` one-liners (placeholder URLs).
+- [x] Monorepo layout: `plugins/code-offload` (Claude Code), `packages/cli` (TS), `integrations/*`, `docs/`, `scripts/`.
+- [x] `.github/workflows/ci.yml`: bash suite on ubuntu + macos (real bash 3.2), shellcheck, TS typecheck+tests on ubuntu/macos/windows, plugin validate.
+- [x] `.github/workflows/release.yml`: on tag → bun-compiled binaries (linux x64/arm64, macOS x64/arm64, windows x64) + npm publish (dry-run without token) + GitHub release.
+- [x] `install.sh` / `install.ps1` one-liners (placeholder URLs).
 
 ### M2 TypeScript engine (parity)
 - [x] `offload read|explore|run|summarize|write|ask|outline|doctor|stats|config` with the same flags, outputs and exit codes as bash.
 - [x] Conformance suite passes against both engines.
 
 ### M3 Connectors (worker backends)
-- [ ] opencode (v1/v2), openai-compatible HTTP (OpenRouter, Ollama, LM Studio, vLLM, Groq, DeepSeek, Together, Mistral, Gemini-OpenAI, …), anthropic API, pi, codex exec, gemini CLI, claude -p. Per-task backend+model, fallback chain across backends, cooldowns.
-- [ ] Each connector tested against a mock (no real calls in CI).
+- [x] opencode (v1/v2), openai-compatible HTTP (OpenRouter, Ollama, LM Studio, vLLM, Groq, DeepSeek, Together, Mistral, Gemini-OpenAI, …), anthropic API, pi, codex exec, gemini CLI, claude -p. Per-task backend+model, fallback chain across backends, cooldowns.
+- [x] Each connector tested against a mock (no real calls in CI).
 
 ### M4 Setup wizard & aesthetics
-- [ ] `offload setup`: detects harnesses + backends, asks backend/API key/models per task, writes config (keys stored 0600 or as env references), installs chosen host integrations. Non-interactive flags for CI.
+- [x] `offload setup`: detects harnesses + backends, asks backend/API key/models per task, writes config (keys stored 0600 or as env references), installs chosen host integrations. Non-interactive flags for CI.
 - [ ] Beautiful CLI: banner, colors (NO_COLOR respected), spinners, tables (stats, doctor), `--json` output for scripts.
 
 ### M5 Host integrations
-- [ ] Claude Code (plugin, done) · Codex (plugin + hooks/AGENTS.md/MCP) · Cursor (plugin/hooks/rules/MCP) · Pi (package + extension) · Gemini CLI (extension + hooks) · OpenCode (plugin) · Windsurf (hooks/rules/MCP) · generic MCP server (`offload mcp`).
-- [ ] `offload install <host>` / `uninstall <host>` idempotent; tested with fixture home dirs.
+- [x] Claude Code (plugin, done) · Codex (plugin + hooks/AGENTS.md/MCP) · Cursor (plugin/hooks/rules/MCP) · Pi (package + extension) · Gemini CLI (extension + hooks) · OpenCode (plugin) · Windsurf (hooks/rules/MCP) · generic MCP server (`offload mcp`).
+- [x] `offload install <host>` / `uninstall <host>` idempotent; tested with fixture home dirs.
 
 ### M6 Docs & polish
-- [ ] README with quickstart per host, demo GIF placeholder, comparison table, FAQ; docs/ per host; CHANGELOG; CONTRIBUTING; SECURITY.
+- [x] README with quickstart per host, demo GIF placeholder, comparison table, FAQ; docs/ per host; CHANGELOG; CONTRIBUTING; SECURITY.
 - [ ] Real-model validation report updated (sparingly).
+
+### M7 Raise the bar (added during the night)
+- [ ] Real-model validation pass with the new fixtures (benchmark.sh via Pi/claude-agent; record in docs/VALIDATION.md).
+- [ ] Beautiful CLI polish: `--json` everywhere it makes sense, consistent colors in read/explore footers on TTY only, `offload stats` sparkline.
+- [ ] Context-aware thresholds (estimate the agent's context size from transcript_path; raise/lower the guard).
+- [ ] `offload serve`: warm OpenCode server to cut the 1.5–3 s start-up per call.
+- [ ] More hosts: Kilo Code (OpenCode v1 plugin API), GitHub Copilot CLI hooks, Crush hooks, Qwen Code hooks.
+- [ ] Per-host e2e with real binaries where available (codex exec worker, gemini CLI) behind `--integration`.
 
 ## Loop protocol (every iteration, including the 30-minute /loop wake-ups)
 1. Read GOALS.md, the tail of PROGRESS.md and DECISIONS.md; `git log --oneline | head`.
