@@ -10,6 +10,8 @@ import { Backend, classify, E, WorkerError, WorkerRequest, WorkerResult } from "
 
 interface AgentSpec {
   label: string;
+  /** Model ids to suggest in the setup wizard (or a way to list them). */
+  models?: () => Promise<string[]>;
   bin: string;
   install: string;
   args(req: WorkerRequest): { args: string[]; input: string };
@@ -48,7 +50,8 @@ const merged = (req: WorkerRequest) => `<instructions>\n${req.system}\n</instruc
 
 export const CLI_AGENTS: Record<string, AgentSpec> = {
   claude: {
-    label: "Claude Code (claude -p)",
+    label: "Claude Code (claude -p) — uses your Claude plan",
+    models: async () => ["haiku", "sonnet"],
     bin: "claude",
     install: "https://claude.com/claude-code",
     args: (req) => {
@@ -71,7 +74,8 @@ export const CLI_AGENTS: Record<string, AgentSpec> = {
     },
   },
   codex: {
-    label: "OpenAI Codex CLI (codex exec)",
+    label: "OpenAI Codex CLI (codex exec) — ChatGPT plan",
+    models: async () => ["gpt-6-luna", "gpt-6.1-terra", "gpt-6.1-sol"],
     bin: "codex",
     install: "npm i -g @openai/codex  (then: codex login)",
     args: (req) => {
@@ -103,7 +107,8 @@ export const CLI_AGENTS: Record<string, AgentSpec> = {
     },
   },
   gemini: {
-    label: "Gemini CLI (gemini -p)",
+    label: "Gemini CLI (gemini -p) — Google account",
+    models: async () => ["flash-lite", "flash", "pro"],
     bin: "gemini",
     install: "npm i -g @google/gemini-cli",
     args: (req) => {
@@ -137,7 +142,11 @@ export const CLI_AGENTS: Record<string, AgentSpec> = {
     exitCode: (code) => (code === 41 ? E.AUTH : code === 53 ? E.WORKER : undefined),
   },
   pi: {
-    label: "Pi coding agent (pi -p)",
+    label: "Pi coding agent (pi -p) — its logins and API keys",
+    models: async () => {
+      const r = await runProcess(cfgStr("agents.pi.bin", "pi"), ["--list-models"], { timeoutMs: 30_000 });
+      return r.stdout.split("\n").slice(1).map((l) => l.trim().split(/\s+/)).filter((c) => c.length >= 2 && c[0] && c[1]).map((c) => `${c[0]}/${c[1]}`);
+    },
     bin: "pi",
     install: "npm i -g @earendil-works/pi-coding-agent",
     args: (req) => {
@@ -172,7 +181,7 @@ export const CLI_AGENTS: Record<string, AgentSpec> = {
     },
   },
   cursor: {
-    label: "Cursor CLI (cursor-agent -p)",
+    label: "Cursor CLI (cursor-agent -p) — Cursor plan",
     bin: "cursor-agent",
     install: "curl https://cursor.com/install -fsS | bash  (then: cursor-agent login)",
     args: (req) => {
@@ -198,6 +207,7 @@ export function cliAgentBackend(name: string): Backend {
   return {
     kind: name,
     label: spec.label,
+    models: spec.models,
     async available() {
       const p = await which(bin());
       return p ? { ok: true, detail: p } : { ok: false, detail: `${bin()} not found — ${spec.install}` };

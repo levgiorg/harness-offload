@@ -1,4 +1,254 @@
-export async function cmdSetup(..._a: unknown[]): Promise<number> {
-  process.stderr.write("offload: not implemented yet\n");
-  return 2;
+// `offload setup` — the interactive wizard (and a --yes mode for scripts).
+// Detects agent harnesses and worker backends, asks which backends to use
+// (OpenCode subscriptions, other agent CLIs, API keys, local models), picks
+// models per task, sets the read guard, installs host integrations and runs
+// a live test.
+import * as p from "@clack/prompts";
+import { chmodSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { dirname } from "node:path";
+import { list, parseFlags, str } from "../args.ts";
+import { Task } from "../assets.ts";
+import { readConfigFile, resetConfig, writeConfigFile } from "../config.ts";
+import { credentialsPath, endpoint, PRESETS } from "../backends/http.ts";
+import { CLI_AGENTS } from "../backends/agents.ts";
+import { backendFor } from "../backends/registry.ts";
+import { invoke } from "../engine.ts";
+import { detectHosts, HOST_LABELS, HOSTS, HostName, install } from "../hosts/install.ts";
+import { projectConfigPath, userConfigPath } from "../paths.ts";
+import { workDir } from "../state.ts";
+import { banner, color } from "../ui.ts";
+
+interface BackendInfo {
+  name: string;
+  label: string;
+  ready: boolean;
+  detail: string;
+  kind: "opencode" | "agent" | "http";
+  local?: boolean;
+}
+
+async function detectBackends(): Promise<BackendInfo[]> {
+  const out: BackendInfo[] = [];
+  const oc = backendFor("opencode")!;
+  const a = await oc.available();
+  out.push({ name: "opencode", label: "OpenCode (Zen/Go, ChatGPT, Copilot, coding plans, local…)", ready: a.ok, detail: a.detail, kind: "opencode" });
+  for (const name of Object.keys(CLI_AGENTS)) {
+    const b = backendFor(name)!;
+    const av = await b.available();
+    out.push({ name, label: b.label, ready: av.ok, detail: av.detail, kind: "agent" });
+  }
+  for (const name of Object.keys(PRESETS)) {
+    const ep = endpoint(name)!;
+    const local = /127\.0\.0\.1|localhost/.test(ep.base_url);
+    let ready = false;
+    let detail = "";
+    if (local) {
+      try {
+        const r = await fetch(`${ep.base_url}/models`, { signal: AbortSignal.timeout(800) });
+        ready = r.ok;
+        detail = ready ? `running at ${ep.base_url}` : "not running";
+      } catch {
+        detail = "not running";
+      }
+    } else {
+      const av = await backendFor(name)!.available();
+      ready = av.ok;
+      detail = av.ok ? "API key found" : `needs ${ep.api_key_env ?? "an API key"}`;
+    }
+    out.push({ name, label: ep.label ?? name, ready, detail, kind: "http", local });
+  }
+  return out;
+}
+
+function storeKey(name: string, key: string): void {
+  const f = credentialsPath();
+  let all: Record<string, string> = {};
+  try {
+    all = JSON.parse(readFileSync(f, "utf8"));
+  } catch {
+    /* new file */
+  }
+  all[name] = key;
+  mkdirSync(dirname(f), { recursive: true });
+  writeFileSync(f, JSON.stringify(all, null, 2) + "\n", { mode: 0o600 });
+  try {
+    chmodSync(f, 0o600);
+  } catch {
+    /* windows */
+  }
+}
+
+async function modelsFor(b: BackendInfo): Promise<string[]> {
+  const backend = backendFor(b.name);
+  if (!backend?.models) return [];
+  try {
+    const ms = await backend.models();
+    return ms.map((m) => (b.kind === "opencode" ? m : `${b.name}:${m}`));
+  } catch {
+    return [];
+  }
+}
+
+const CHEAP = /(flash|mini|lite|luna|haiku|nano|small|8b|7b|turbo|fast|air|tiny)/i;
+const CODER = /(coder|code|codex|devstral|kimi|qwen3|glm|deepseek)/i;
+function rank(models: string[], prefer: RegExp): string[] {
+  return [...models].sort((x, y) => Number(prefer.test(y)) - Number(prefer.test(x)) || x.localeCompare(y));
+}
+
+function bail<T>(v: T): Exclude<T, symbol> {
+  if (p.isCancel(v)) {
+    p.cancel("Setup cancelled — nothing was changed.");
+    process.exit(0);
+  }
+  return v as Exclude<T, symbol>;
+}
+
+async function pickModel(message: string, candidates: string[], initial?: string): Promise<string> {
+  if (!candidates.length) {
+    return bail(await p.text({ message: `${message} (BACKEND:MODEL, or provider/model for OpenCode)`, placeholder: "openrouter:qwen/qwen3-coder", initialValue: initial ?? "", validate: (v) => (v && v.trim() ? undefined : "required") }));
+  }
+  const manual = "__manual__";
+  const options = [...candidates.slice(0, 400).map((m) => ({ value: m, label: m })), { value: manual, label: "type another model id…" }];
+  const v = bail(await p.autocomplete({ message, options, initialValue: initial && candidates.includes(initial) ? initial : candidates[0], maxItems: 12, placeholder: "type to filter" }));
+  if (v === manual) return bail(await p.text({ message: "Model id", placeholder: "openrouter:qwen/qwen3-coder" }));
+  return v as string;
+}
+
+function writeSettings(target: string, models: Partial<Record<Task | "default", string>>, fallback: string[], guard: string): void {
+  const cur = readConfigFile(target);
+  const m = (cur.models as Record<string, unknown>) ?? {};
+  cur.models = { ...m, ...models, fallback };
+  cur.hooks = { ...((cur.hooks as Record<string, unknown>) ?? {}), read_guard: guard };
+  writeConfigFile(target, cur);
+}
+
+async function nonInteractive(opts: Record<string, unknown>): Promise<number> {
+  const model = str(opts.model);
+  if (!model) {
+    process.stderr.write("offload setup --yes needs --model BACKEND:MODEL (and optionally --fallback, --hosts, --key NAME=KEY, --guard)\n");
+    return 2;
+  }
+  for (const kv of list(opts.key)) {
+    const i = kv.indexOf("=");
+    if (i > 0) storeKey(kv.slice(0, i), kv.slice(i + 1));
+  }
+  const target = opts.project ? projectConfigPath() : userConfigPath();
+  writeSettings(target, { default: model }, list(opts.fallback), str(opts.guard) || "block");
+  process.stdout.write(`wrote ${target}\n`);
+  let failed = 0;
+  for (const h of str(opts.hosts).split(",").filter(Boolean) as HostName[]) {
+    if (!HOSTS.includes(h)) continue;
+    for (const s of await install(h)) {
+      process.stdout.write(`${s.ok ? "✓" : "✗"} ${s.text}\n`);
+      if (!s.ok) failed++;
+    }
+  }
+  return failed ? 1 : 0;
+}
+
+export async function cmdSetup(argv: string[]): Promise<number> {
+  const { opts } = parseFlags(argv, { yes: { alias: ["-y"] }, model: { alias: ["-m"], value: true }, fallback: { value: true, multi: true }, hosts: { value: true }, key: { value: true, multi: true }, guard: { value: true }, project: {} });
+  if (opts.yes || !process.stdin.isTTY || !process.stdout.isTTY) return nonInteractive(opts);
+
+  process.stdout.write(banner("setup"));
+  p.intro(color.bold("Let's set up Code Offload"));
+  const s = p.spinner();
+  s.start("Looking for agent harnesses and worker backends");
+  const [hosts, backends] = await Promise.all([detectHosts(), detectBackends()]);
+  s.stop("Scan complete");
+
+  const foundHosts = HOSTS.filter((h) => hosts[h] && h !== "mcp");
+  p.note(
+    [
+      `${color.bold("Agent harnesses")}: ${foundHosts.length ? foundHosts.map((h) => HOST_LABELS[h]).join(", ") : "none detected"}`,
+      `${color.bold("Ready worker backends")}: ${backends.filter((b) => b.ready).map((b) => b.name).join(", ") || "none yet"}`,
+    ].join("\n"),
+    "Found",
+  );
+
+  const chosen = bail(
+    await p.multiselect({
+      message: "Which worker backends should do the cheap work? (space to toggle)",
+      options: backends.map((b) => ({ value: b.name, label: b.label, hint: b.ready ? color.green(b.detail || "ready") : b.detail })),
+      initialValues: backends.filter((b) => b.ready && (b.kind !== "agent" || b.name === "opencode")).map((b) => b.name).slice(0, 3),
+      required: true,
+    }),
+  ) as string[];
+
+  for (const name of chosen) {
+    const b = backends.find((x) => x.name === name)!;
+    if (b.kind === "http" && !b.ready && !b.local) {
+      const key = bail(await p.password({ message: `API key for ${b.label} (saved to ${credentialsPath()}, mode 600; empty = use $${endpoint(name)?.api_key_env ?? "ENV"})` }));
+      if (key) storeKey(name, key);
+    }
+    if (b.kind === "agent" && !b.ready) p.log.warn(`${b.label}: ${b.detail}`);
+    if (name === "claude") p.log.warn("The claude backend spends your Claude plan — fine for testing, but it does not save Claude quota.");
+  }
+  resetConfig();
+
+  s.start("Fetching model lists");
+  const candidates: string[] = [];
+  for (const name of chosen) candidates.push(...(await modelsFor(backends.find((x) => x.name === name)!)));
+  s.stop(`${candidates.length} models available`);
+
+  const readModel = await pickModel("Model for reading & digesting (fast, cheap, long context)", rank(candidates, CHEAP));
+  const sameExplore = bail(await p.confirm({ message: "Use the same model for codebase exploration?", initialValue: true }));
+  const exploreModel = sameExplore ? readModel : await pickModel("Model for exploration (good at tool calling)", rank(candidates, CHEAP));
+  const writeModel = await pickModel("Model for writing boilerplate/tests (best cheap coder)", rank(candidates, CODER), readModel);
+  const backendOf = (m: string) => (m.includes(":") && !m.includes("/") ? m.split(":")[0] : m.includes(":") ? m.split(":")[0] : "opencode");
+  const others = candidates.filter((m) => backendOf(m) !== backendOf(readModel));
+  let fallback: string[] = [];
+  if (others.length) {
+    const fb = bail(await p.select({ message: "Fallback model from a different backend (used when the first hits a quota wall)", options: [{ value: "", label: "no fallback" }, ...rank(others, CHEAP).slice(0, 60).map((m) => ({ value: m, label: m }))] }));
+    if (fb) fallback = [fb as string];
+  }
+
+  const guard = bail(
+    await p.select({
+      message: "When the agent tries to read a huge file in one go…",
+      options: [
+        { value: "block", label: "Block it and show an outline + options", hint: "recommended" },
+        { value: "suggest", label: "Allow it, but suggest offload next time" },
+        { value: "ask", label: "Ask me each time" },
+        { value: "off", label: "Do nothing (tools only)" },
+      ],
+      initialValue: "block",
+    }),
+  ) as string;
+
+  const scope = bail(await p.select({ message: "Save these settings for…", options: [{ value: "user", label: "all my projects", hint: userConfigPath() }, { value: "project", label: "this project only", hint: projectConfigPath() }] }));
+  const target = scope === "project" ? projectConfigPath() : userConfigPath();
+  const models: Partial<Record<Task | "default", string>> = { default: readModel, read: readModel, summarize: readModel, explore: exploreModel, write: writeModel, ask: readModel };
+  writeSettings(target, models, fallback, guard);
+  p.log.success(`Saved ${target}`);
+
+  const installable = HOSTS.filter((h) => h !== "mcp");
+  const which = bail(
+    await p.multiselect({
+      message: "Install the integration into…",
+      options: [...installable.map((h) => ({ value: h, label: HOST_LABELS[h], hint: hosts[h] ? "detected" : "not found" })), { value: "mcp", label: HOST_LABELS.mcp, hint: "prints the config" }],
+      initialValues: foundHosts,
+      required: false,
+    }),
+  ) as HostName[];
+  for (const h of which) {
+    s.start(`Installing for ${HOST_LABELS[h]}`);
+    const steps = await install(h);
+    s.stop(`${HOST_LABELS[h]}`);
+    for (const st of steps) (st.ok ? p.log.success : p.log.error)(st.text);
+  }
+
+  if (bail(await p.confirm({ message: "Run a live test (one tiny request per model)?", initialValue: true }))) {
+    for (const ref of [...new Set([readModel, exploreModel, writeModel, ...fallback])]) {
+      s.start(`Pinging ${ref}`);
+      try {
+        const r = await invoke("ask" as Task, "Reply with exactly the word: pong\n", workDir(), ref);
+        s.stop(`${color.green("✓")} ${ref} → ${r.text.trim().slice(0, 30)} (${r.seconds}s)`);
+      } catch (e) {
+        s.stop(`${color.red("✗")} ${ref} → ${String((e as Error).message).split("\n").slice(0, 2).join(" ").slice(0, 160)}`);
+      }
+    }
+  }
+  p.outro(`Done. Try ${color.cyan('offload read -q "what does this do?" <big-file>')} — and ${color.cyan("offload doctor")} any time.`);
+  return 0;
 }
