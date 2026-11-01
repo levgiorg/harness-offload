@@ -18,6 +18,7 @@ const HELP = () => `${banner()}
 
   ${color.bold("Set up")}
     offload setup                           interactive wizard: backends, keys, models, hosts
+    offload demo                            10-second tour, no model calls
     offload install <host> | uninstall <host>   claude · codex · cursor · pi · gemini · opencode · windsurf
     offload doctor [--ping] [--reset]       check everything; --ping makes one tiny call per model
     offload models [BACKEND...]             list models your backends offer
@@ -74,6 +75,8 @@ async function main(argv: string[]): Promise<number> {
     case "stats":
       cmdStats(rest);
       return 0;
+    case "demo":
+      return (await import("./commands/demo.ts")).cmdDemo();
     case "statusline":
       cmdStatusline();
       return 0;

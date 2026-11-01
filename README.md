@@ -38,6 +38,7 @@ Every citation's quote is **checked against the file** before your agent sees it
 
 ```bash
 npm install -g code-offload          # or: curl -fsSL https://raw.githubusercontent.com/OWNER/code-offload/main/install.sh | sh
+offload demo                         # 10-second tour of the guard and the digest — no model calls
 offload setup                        # pick worker backends, API keys, models, and the agents to wire up
 ```
 
