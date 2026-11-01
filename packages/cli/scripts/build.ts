@@ -39,5 +39,5 @@ const { cpSync, rmSync, mkdirSync } = await import("node:fs");
 rmSync("assets/marketplace", { recursive: true, force: true });
 mkdirSync("assets/marketplace/.claude-plugin", { recursive: true });
 cpSync("../../.claude-plugin/marketplace.json", "assets/marketplace/.claude-plugin/marketplace.json");
-cpSync("../../plugins/code-offload", "assets/marketplace/plugins/code-offload", { recursive: true, filter: (p) => !p.includes("/tests") });
+cpSync("../../plugins/harness-offload", "assets/marketplace/plugins/harness-offload", { recursive: true, filter: (p) => !p.includes("/tests") });
 console.log("built dist/cli.js, dist/pi.js, dist/opencode.js, assets/marketplace");

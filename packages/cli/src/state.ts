@@ -4,7 +4,7 @@ import { cfgInt, cfgStr } from "./config.ts";
 import { stateHome } from "./paths.ts";
 
 export function stateDir(): string {
-  const d = cfgStr("state_dir") || join(stateHome(), "code-offload");
+  const d = cfgStr("state_dir") || join(stateHome(), "harness-offload");
   for (const sub of ["logs", "cooldowns", "work"]) mkdirSync(join(d, sub), { recursive: true });
   return d;
 }

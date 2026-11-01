@@ -10,9 +10,9 @@ files=$(git ls-files | grep -vE '^(scripts/set-owner\.sh|docs/autopilot/)' | whi
 done)
 [ -z "$files" ] && { echo "no OWNER placeholders left"; exit 0; }
 for f in $files; do
-  # github.com/OWNER and OWNER/code-offload use the handle; "name": "OWNER" and copyright use the display name
+  # github.com/OWNER and OWNER/harness-offload use the handle; "name": "OWNER" and copyright use the display name
   LC_ALL=C sed -e "s#github\.com/OWNER#github.com/$owner#g" \
-               -e "s#OWNER/code-offload#$owner/code-offload#g" \
+               -e "s#OWNER/harness-offload#$owner/harness-offload#g" \
                -e "s#\"name\": \"OWNER\"#\"name\": \"$display\"#g" \
                -e "s#Copyright (c) \([0-9]*\) OWNER#Copyright (c) \1 $display#g" \
                -e "s#OWNER#$owner#g" "$f" > "$f.tmp" && cat "$f.tmp" > "$f" && rm -f "$f.tmp"

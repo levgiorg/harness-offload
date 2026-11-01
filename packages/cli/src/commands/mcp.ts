@@ -34,10 +34,10 @@ function result(r: { code: number; out: string; err: string }, okCodes: number[]
 
 export async function cmdMcp(_argv: string[]): Promise<number> {
   const server = new McpServer(
-    { name: "code-offload", version: VERSION },
+    { name: "harness-offload", version: VERSION },
     {
       instructions:
-        "Code Offload delegates bulk I/O to cheap worker models so it never enters your context. Use offload_read for questions about large files, offload_explore to search a codebase, offload_run for noisy commands (tests, builds), offload_write for boilerplate that follows a reference file. Citations in answers are machine-checked; read the cited lines before editing.",
+        "Harness Offload delegates bulk I/O to cheap worker models so it never enters your context. Use offload_read for questions about large files, offload_explore to search a codebase, offload_run for noisy commands (tests, builds), offload_write for boilerplate that follows a reference file. Citations in answers are machine-checked; read the cited lines before editing.",
     },
   );
   const cwd = z.string().optional().describe("Working directory (default: the server's cwd, usually the project root)");

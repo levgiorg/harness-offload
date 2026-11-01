@@ -516,7 +516,7 @@ cmd_doctor() {
   while IFS= read -r m; do
     [ -z "$m" ] && continue
     if co_is_ts_ref "$m"; then
-      if cli=$(co_ts_cli); then echo "  $ok $m (via $cli)"; else echo "  $bad $m needs the code-offload CLI: npm i -g code-offload"; problems=$((problems + 1)); fi
+      if cli=$(co_ts_cli); then echo "  $ok $m (via $cli)"; else echo "  $bad $m needs the harness-offload CLI: npm i -g harness-offload"; problems=$((problems + 1)); fi
     elif [ "$m" = "@default" ]; then
       echo "  $warn @default = OpenCode's own default model. Pin a cheap one: offload config set models.default PROVIDER/MODEL"
     elif [ -n "$models_list" ] && ! printf '%s\n' "$models_list" | grep -qxF "$m"; then

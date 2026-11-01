@@ -1,11 +1,11 @@
 {
-  "name": "code-offload",
+  "name": "harness-offload",
   "owner": { "name": "OWNER" },
-  "description": "Code Offload: delegate bulk I/O from Claude Code to cheap OpenCode models.",
+  "description": "Harness Offload: delegate bulk I/O from Claude Code to cheap OpenCode models.",
   "plugins": [
     {
-      "name": "code-offload",
-      "source": "./plugins/code-offload",
+      "name": "harness-offload",
+      "source": "./plugins/harness-offload",
       "description": "Offload large reads, noisy command output, exploration and boilerplate to cheap OpenCode models.",
       "category": "productivity"
     }

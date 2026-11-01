@@ -1,5 +1,5 @@
 {
-  "name": "code-offload",
+  "name": "harness-offload",
   "version": "0.2.0",
   "description": "Keep bulk I/O out of Codex's context: large reads, noisy command output and codebase exploration go to cheap worker models you already pay for.",
   "keywords": ["token-optimization", "delegation", "context", "mcp", "opencode"],
@@ -7,13 +7,13 @@
   "hooks": "./hosts/codex/hooks.json",
   "mcpServers": "./hosts/codex/mcp.json",
   "interface": {
-    "displayName": "Code Offload",
+    "displayName": "Harness Offload",
     "shortDescription": "Offload big reads, logs and exploration to cheap models",
-    "longDescription": "Code Offload blocks full reads of huge files (with an outline and options), digests long command output, and gives Codex MCP tools that delegate reading, exploring, log digesting and boilerplate to cheap worker models — OpenCode, OpenRouter, Ollama, Pi, Gemini and more.",
+    "longDescription": "Harness Offload blocks full reads of huge files (with an outline and options), digests long command output, and gives Codex MCP tools that delegate reading, exploring, log digesting and boilerplate to cheap worker models — OpenCode, OpenRouter, Ollama, Pi, Gemini and more.",
     "developerName": "OWNER",
     "category": "Developer Tools",
     "capabilities": ["Read", "CLI"],
-    "defaultPrompt": ["Check my Code Offload setup.", "Explore this repo with Code Offload: where is auth handled?", "Run the tests through Code Offload and summarize failures."],
+    "defaultPrompt": ["Check my Harness Offload setup.", "Explore this repo with Harness Offload: where is auth handled?", "Run the tests through Harness Offload and summarize failures."],
     "brandColor": "#0EA5A4"
   }
 }

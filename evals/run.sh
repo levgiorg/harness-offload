@@ -5,7 +5,7 @@
 set -u
 HERE="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$(cd "$HERE/.." && pwd)"
-PLUGIN="$ROOT/plugins/code-offload"
+PLUGIN="$ROOT/plugins/harness-offload"
 engine=bash
 [ "${1:-}" = "--ts" ] && engine=ts
 

@@ -151,7 +151,7 @@ export async function cmdSetup(argv: string[]): Promise<number> {
   if (opts.yes || !process.stdin.isTTY || !process.stdout.isTTY) return nonInteractive(opts);
 
   process.stdout.write(banner("setup"));
-  p.intro(color.bold("Let's set up Code Offload"));
+  p.intro(color.bold("Let's set up Harness Offload"));
   const s = p.spinner();
   s.start("Looking for agent harnesses and worker backends");
   const [hosts, backends] = await Promise.all([detectHosts(), detectBackends()]);

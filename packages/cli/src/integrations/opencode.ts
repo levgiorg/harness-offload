@@ -17,7 +17,7 @@ async function guardShell(cwd: string, command: string | undefined) {
 }
 
 const plugin = {
-  id: "code-offload",
+  id: "harness-offload",
 
   // ---- OpenCode v2
   async setup(ctx: any) {

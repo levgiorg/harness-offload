@@ -1,9 +1,9 @@
 ---
-name: code-offload
-description: Use Code Offload's MCP tools (offload_read, offload_explore, offload_run, offload_write) instead of reading large files, scanning many files, or reading long command output yourself. Use when a file is over ~600 lines, a question spans many files, or a command prints a lot (tests, builds, installs, logs).
+name: harness-offload
+description: Use Harness Offload's MCP tools (offload_read, offload_explore, offload_run, offload_write) instead of reading large files, scanning many files, or reading long command output yourself. Use when a file is over ~600 lines, a question spans many files, or a command prints a lot (tests, builds, installs, logs).
 ---
 
-Code Offload keeps bulk I/O out of your context by delegating it to a cheap worker model.
+Harness Offload keeps bulk I/O out of your context by delegating it to a cheap worker model.
 
 - **Big files**: `offload_read` with `question` and `paths` (files, dirs, or `file:START-END`). Answers cite `path:Lx-Ly` with quotes checked against the files — read only those lines before editing.
 - **Where/how is X done?** across many files: `offload_explore` with `question`.

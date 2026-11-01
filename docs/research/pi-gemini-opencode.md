@@ -7,7 +7,7 @@
 - Extension: `export default function (pi: ExtensionAPI) {}`
   - `pi.on("tool_call", (event, ctx) => ({ block: true, reason }))`; event `{toolName, toolCallId, input}` (input mutable). Throwing blocks.
   - `pi.on("tool_result", (event) => ({ content: [{type:"text", text}], structuredContent }))` — return structuredContent too or it is dropped.
-  - `pi.on("before_agent_start", (event) => { event.systemPromptOptions.sections.code_offload = TEXT })` or `appendSystemPrompt += ...`.
+  - `pi.on("before_agent_start", (event) => { event.systemPromptOptions.sections.harness_offload = TEXT })` or `appendSystemPrompt += ...`.
   - `pi.registerTool(defineTool({ name, label, description, parameters: Type.Object({...}), execute(id, params, signal, onUpdate, ctx) }))`; `pi.registerCommand(name, {description, handler})`.
   - Tools: `read {path, offset?, limit?}` (2000 lines/50KB cap), `bash {command, timeout?}` (structured `{output, truncated, full_output_path?, exit_code}`), `edit`, `write`, `grep`, `find`, `ls`.
 - Worker: `pi -p --mode json --no-session -na -ne -ns -nc --no-mcp --tools read,grep,find,ls|-nt --model provider/id[:thinking] --system-prompt TEXT "prompt"`;

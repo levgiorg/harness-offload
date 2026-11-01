@@ -1,5 +1,5 @@
 name: Bug report
-description: Something in Code Offload misbehaves
+description: Something in Harness Offload misbehaves
 labels: [bug]
 body:
   - type: input

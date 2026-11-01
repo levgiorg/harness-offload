@@ -18,7 +18,7 @@ export function stateHome(): string {
 }
 
 export function userConfigPath(): string {
-  return process.env.OFFLOAD_CONFIG || join(configHome(), "code-offload", "config.json");
+  return process.env.OFFLOAD_CONFIG || join(configHome(), "harness-offload", "config.json");
 }
 
 let projectDirCache: string | undefined;
@@ -40,5 +40,5 @@ export function setProjectDir(dir: string): void {
 }
 
 export function projectConfigPath(): string {
-  return join(projectDir(), ".code-offload.json");
+  return join(projectDir(), ".harness-offload.json");
 }

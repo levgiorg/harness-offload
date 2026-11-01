@@ -1,12 +1,12 @@
 <div align="center">
 
-# ▌code offload
+# ▌harness offload
 
 **The harness offloader.** Keep bulk I/O out of your expensive coding agent's context —
 let the models you already pay for do the heavy lifting.
 
-[![ci](https://github.com/OWNER/code-offload/actions/workflows/ci.yml/badge.svg)](https://github.com/OWNER/code-offload/actions/workflows/ci.yml)
-[![npm](https://img.shields.io/npm/v/code-offload)](https://www.npmjs.com/package/code-offload)
+[![ci](https://github.com/OWNER/harness-offload/actions/workflows/ci.yml/badge.svg)](https://github.com/OWNER/harness-offload/actions/workflows/ci.yml)
+[![npm](https://img.shields.io/npm/v/harness-offload)](https://www.npmjs.com/package/harness-offload)
 [![license: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
 Claude Code · Codex · Cursor · Gemini CLI · Pi · OpenCode · Devin/Windsurf · any MCP client
@@ -19,7 +19,7 @@ Your agent reads a 4,000-line file to answer one question. It dumps 30 KB of tes
 failing assertion. It greps through forty files to learn where auth happens. Every one of those tokens
 sits in its context for the rest of the session, on the most expensive model you use.
 
-**Code Offload** hands that bulk work to a cheap worker model — through OpenCode, Pi, Codex, Gemini,
+**Harness Offload** hands that bulk work to a cheap worker model — through OpenCode, Pi, Codex, Gemini,
 any OpenAI-compatible API or a local model — and gives your agent back only the answer:
 
 ```text
@@ -37,7 +37,7 @@ Every citation's quote is **checked against the file** before your agent sees it
 ## Quickstart
 
 ```bash
-npm install -g code-offload          # or: curl -fsSL https://raw.githubusercontent.com/OWNER/code-offload/main/install.sh | sh
+npm install -g harness-offload          # or: curl -fsSL https://raw.githubusercontent.com/OWNER/harness-offload/main/install.sh | sh
 offload demo                         # 10-second tour of the guard and the digest — no model calls
 offload setup                        # pick worker backends, API keys, models, and the agents to wire up
 ```
@@ -46,8 +46,8 @@ The wizard detects your agent harnesses and worker backends, lets you choose a m
 (and a fallback from another provider), sets the read guard, installs the integrations and runs a
 live test. Scripted: `offload setup --yes --model openrouter:qwen/qwen3-coder --hosts claude,codex`.
 
-Prefer a plugin marketplace? In Claude Code: `/plugin marketplace add OWNER/code-offload`, then
-`/plugin install code-offload@code-offload`. Codex: `codex plugin marketplace add OWNER/code-offload`
+Prefer a plugin marketplace? In Claude Code: `/plugin marketplace add OWNER/harness-offload`, then
+`/plugin install harness-offload@harness-offload`. Codex: `codex plugin marketplace add OWNER/harness-offload`
 (then trust the hooks in `/hooks`).
 
 ## What it does
@@ -137,16 +137,16 @@ agent ── offload read/explore/run/write (CLI, MCP or native tools)
 - **Workers never act.** No edits, no shell; workers run with `OFFLOAD_DISABLE=1` so they can't
   trigger offload's own hooks.
 - **Two engines, one behaviour.** The Claude Code hooks are dependency-free bash (+`jq`); the
-  `code-offload` package is TypeScript (CLI, wizard, MCP server, connectors, other hosts, Windows).
+  `harness-offload` package is TypeScript (CLI, wizard, MCP server, connectors, other hosts, Windows).
   Both run the same black-box conformance suite in CI.
 
 More in [docs/DESIGN.md](docs/DESIGN.md).
 
 ## Configuration
 
-`~/.config/code-offload/config.json` (user) and `<repo>/.code-offload.json` (project, wins). Edit
+`~/.config/harness-offload/config.json` (user) and `<repo>/.harness-offload.json` (project, wins). Edit
 with `offload config set KEY VALUE [--project]`; inspect with `offload config show`. Defaults:
-[`plugins/code-offload/config/defaults.json`](plugins/code-offload/config/defaults.json).
+[`plugins/harness-offload/config/defaults.json`](plugins/harness-offload/config/defaults.json).
 
 | Key | Default | Meaning |
 |---|---|---|
@@ -180,7 +180,7 @@ with `OFFLOAD_RAW=1 ` to bypass the shell guard and digest.
 - AWS/GitHub/OpenAI/Slack/Google keys, JWTs, `password=…` values and private-key blocks are masked
   in everything sent to a worker.
 - Some providers train on prompts — pick ones that don't for private code.
-- API keys stored by `offload setup` live in `~/.config/code-offload/credentials.json` (mode `600`).
+- API keys stored by `offload setup` live in `~/.config/harness-offload/credentials.json` (mode `600`).
 
 ## Honest caveats
 
@@ -202,9 +202,9 @@ with `OFFLOAD_RAW=1 ` to bypass the shell guard and digest.
 
 ```bash
 cd packages/cli && bun install && bun run build && bun test   # TypeScript: unit, adapters, MCP, installers
-bash plugins/code-offload/tests/run.sh                         # conformance suite (bash engine)
-OFFLOAD_CLI=$PWD/packages/cli/dist/offload-node bash plugins/code-offload/tests/run.sh   # … TS engine
-bash plugins/code-offload/tests/run.sh --e2e                   # + real Claude Code against a mock API
+bash plugins/harness-offload/tests/run.sh                         # conformance suite (bash engine)
+OFFLOAD_CLI=$PWD/packages/cli/dist/offload-node bash plugins/harness-offload/tests/run.sh   # … TS engine
+bash plugins/harness-offload/tests/run.sh --e2e                   # + real Claude Code against a mock API
 bash evals/run.sh [--ts]                                       # host-neutral routing table (49 cases)
 bash evals/benchmark.sh -m <model>                             # token savings with a real model
 ```
@@ -215,7 +215,7 @@ standalone binaries for macOS/Linux/Windows and publish to npm. Set the GitHub o
 `scripts/set-owner.sh <owner>`.
 
 ```
-plugins/code-offload/     Claude Code plugin (bash hooks, CLI, prompts, config) + Codex/Cursor/Gemini host files
+plugins/harness-offload/     Claude Code plugin (bash hooks, CLI, prompts, config) + Codex/Cursor/Gemini host files
 packages/cli/             TypeScript package: CLI, wizard, MCP server, connectors, host adapters, Pi/OpenCode integrations
 evals/                    routing table, fixtures, benchmarks
 docs/                     design notes, host details, research, autopilot logs
@@ -223,7 +223,7 @@ docs/                     design notes, host details, research, autopilot logs
 
 ## Acknowledgements
 
-Code Offload is original MIT-licensed code. Its ideas were shaped by:
+Harness Offload is original MIT-licensed code. Its ideas were shaped by:
 
 - **Spotify's "shunt" plugin** (Apache-2.0, in `spotify/portal-ai-plugins`) — using coding-agent hooks
   to route large reads to cheaper worker models through scripts and skills.

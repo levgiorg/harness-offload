@@ -3,7 +3,7 @@
   "configVersion": 1,
   "workspaces": {
     "": {
-      "name": "code-offload",
+      "name": "harness-offload",
       "dependencies": {
         "@clack/prompts": "^1.8.1",
         "@modelcontextprotocol/sdk": "^1.32.2",

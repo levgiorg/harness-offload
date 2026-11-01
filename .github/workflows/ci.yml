@@ -65,9 +65,9 @@ jobs:
           echo "$RUNNER_TEMP/sysbash" >> "$GITHUB_PATH"
       - run: bash --version | head -1
       - name: Conformance suite — bash engine
-        run: bash plugins/code-offload/tests/run.sh
+        run: bash plugins/harness-offload/tests/run.sh
       - name: Conformance suite — TypeScript engine
-        run: OFFLOAD_CLI="$PWD/packages/cli/dist/offload-node" bash plugins/code-offload/tests/run.sh
+        run: OFFLOAD_CLI="$PWD/packages/cli/dist/offload-node" bash plugins/harness-offload/tests/run.sh
       - name: Routing table — bash hooks
         run: bash evals/run.sh
       - name: Routing table — TypeScript hooks
@@ -81,24 +81,24 @@ jobs:
       - name: shellcheck
         run: |
           sudo apt-get update -qq && sudo apt-get install -y -qq shellcheck
-          shellcheck -S error plugins/code-offload/bin/offload plugins/code-offload/bin/offload-ts \
-            plugins/code-offload/hooks/pre-read plugins/code-offload/hooks/pre-bash \
-            plugins/code-offload/hooks/post-bash plugins/code-offload/hooks/session-start \
-            plugins/code-offload/lib/*.sh scripts/*.sh evals/*.sh
+          shellcheck -S error plugins/harness-offload/bin/offload plugins/harness-offload/bin/offload-ts \
+            plugins/harness-offload/hooks/pre-read plugins/harness-offload/hooks/pre-bash \
+            plugins/harness-offload/hooks/post-bash plugins/harness-offload/hooks/session-start \
+            plugins/harness-offload/lib/*.sh scripts/*.sh evals/*.sh
       - name: JSON manifests parse
         run: |
-          for f in .claude-plugin/marketplace.json plugins/code-offload/.claude-plugin/plugin.json \
-                   plugins/code-offload/.codex-plugin/plugin.json plugins/code-offload/.cursor-plugin/plugin.json \
-                   plugins/code-offload/hooks/hooks.json plugins/code-offload/hosts/*/*.json \
-                   plugins/code-offload/hosts/gemini/hooks/hooks.json plugins/code-offload/config/*.json evals/*.json; do
+          for f in .claude-plugin/marketplace.json plugins/harness-offload/.claude-plugin/plugin.json \
+                   plugins/harness-offload/.codex-plugin/plugin.json plugins/harness-offload/.cursor-plugin/plugin.json \
+                   plugins/harness-offload/hooks/hooks.json plugins/harness-offload/hosts/*/*.json \
+                   plugins/harness-offload/hosts/gemini/hooks/hooks.json plugins/harness-offload/config/*.json evals/*.json; do
             jq -e . "$f" > /dev/null || { echo "bad JSON: $f"; exit 1; }
           done
       - name: Versions agree
         run: |
-          v=$(jq -r .version plugins/code-offload/.claude-plugin/plugin.json)
-          for f in plugins/code-offload/.codex-plugin/plugin.json plugins/code-offload/.cursor-plugin/plugin.json plugins/code-offload/hosts/gemini/gemini-extension.json packages/cli/package.json; do
+          v=$(jq -r .version plugins/harness-offload/.claude-plugin/plugin.json)
+          for f in plugins/harness-offload/.codex-plugin/plugin.json plugins/harness-offload/.cursor-plugin/plugin.json plugins/harness-offload/hosts/gemini/gemini-extension.json packages/cli/package.json; do
             [ "$(jq -r .version "$f")" = "$v" ] || { echo "$f is not $v"; exit 1; }
           done
-          grep -q "CO_VERSION=\"$v\"" plugins/code-offload/lib/common.sh
+          grep -q "CO_VERSION=\"$v\"" plugins/harness-offload/lib/common.sh
       - name: Claude Code plugin validation
-        run: npx --yes @anthropic-ai/claude-code plugin validate plugins/code-offload || echo "::warning::claude plugin validate unavailable"
+        run: npx --yes @anthropic-ai/claude-code plugin validate plugins/harness-offload || echo "::warning::claude plugin validate unavailable"

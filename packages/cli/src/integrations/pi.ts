@@ -16,7 +16,7 @@ function schema(spec: Record<string, string>) {
   return Type.Object(props);
 }
 
-export default function codeOffload(pi: any): void {
+export default function harnessOffload(pi: any): void {
   pi.on("before_agent_start", (event: any) => {
     const opts = event?.systemPromptOptions;
     if (!opts) return;

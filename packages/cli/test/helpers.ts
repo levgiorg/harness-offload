@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
 export const CLI = resolve(import.meta.dir, "../dist/cli.js");
-export const STUB = resolve(import.meta.dir, "../../../plugins/code-offload/tests/stub-opencode");
+export const STUB = resolve(import.meta.dir, "../../../plugins/harness-offload/tests/stub-opencode");
 
 export function sandbox(): { dir: string; env: NodeJS.ProcessEnv } {
   const dir = mkdtempSync(join(tmpdir(), "offload-test-"));

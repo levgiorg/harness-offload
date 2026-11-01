@@ -90,11 +90,11 @@ co_project_dir() {
 }
 
 co_user_config_path() {
-  printf '%s' "${OFFLOAD_CONFIG:-${XDG_CONFIG_HOME:-$HOME/.config}/code-offload/config.json}"
+  printf '%s' "${OFFLOAD_CONFIG:-${XDG_CONFIG_HOME:-$HOME/.config}/harness-offload/config.json}"
 }
 
 co_project_config_path() {
-  printf '%s/.code-offload.json' "$(co_project_dir)"
+  printf '%s/.harness-offload.json' "$(co_project_dir)"
 }
 
 # Loads defaults <- user config <- project config <- env overrides into
@@ -174,7 +174,7 @@ co_cfg_list() {
 co_state_dir() {
   local d
   d=$(co_cfg '.state_dir')
-  [ -z "$d" ] && d="${XDG_STATE_HOME:-$HOME/.local/state}/code-offload"
+  [ -z "$d" ] && d="${XDG_STATE_HOME:-$HOME/.local/state}/harness-offload"
   mkdir -p "$d/logs" "$d/cooldowns" 2>/dev/null
   printf '%s' "$d"
 }

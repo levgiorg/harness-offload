@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 
 const here = () => dirname(fileURLToPath(import.meta.url));
 
-/** Root of a Claude-format marketplace containing plugins/code-offload. */
+/** Root of a Claude-format marketplace containing plugins/harness-offload. */
 export function marketplaceRoot(): string {
   const candidates = [
     process.env.OFFLOAD_MARKETPLACE_DIR,
@@ -13,11 +13,11 @@ export function marketplaceRoot(): string {
     resolve(here(), "..", "..", ".."), // repo checkout: packages/cli/dist → repo root
     resolve(here(), "..", "..", "..", ".."),
   ].filter(Boolean) as string[];
-  for (const c of candidates) if (existsSync(join(c, ".claude-plugin", "marketplace.json")) && existsSync(join(c, "plugins", "code-offload"))) return c;
+  for (const c of candidates) if (existsSync(join(c, ".claude-plugin", "marketplace.json")) && existsSync(join(c, "plugins", "harness-offload"))) return c;
   throw new Error("cannot find the bundled plugin files (set OFFLOAD_MARKETPLACE_DIR)");
 }
 
-export const pluginDir = (): string => join(marketplaceRoot(), "plugins", "code-offload");
+export const pluginDir = (): string => join(marketplaceRoot(), "plugins", "harness-offload");
 
 /** The package root (has package.json with the "pi" manifest and dist/). */
 export function packageRoot(): string {

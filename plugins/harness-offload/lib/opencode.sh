@@ -234,17 +234,17 @@ co_oc_forget_session() {
 
 # The TypeScript CLI, used as the transport for every backend that is not
 # OpenCode (HTTP APIs, pi, codex, gemini, claude, cursor). Resolution order:
-# $OFFLOAD_TS_CLI, `code-offload` on PATH, a built repo checkout, npx.
+# $OFFLOAD_TS_CLI, `harness-offload` on PATH, a built repo checkout, npx.
 co_ts_cli() {
   if [ -n "${OFFLOAD_TS_CLI:-}" ]; then printf '%s' "$OFFLOAD_TS_CLI"; return 0; fi
-  if command -v code-offload >/dev/null 2>&1; then printf 'code-offload'; return 0; fi
+  if command -v harness-offload >/dev/null 2>&1; then printf 'harness-offload'; return 0; fi
   local js
-  # repo checkout (plugins/code-offload → packages/cli) or the npm package's
-  # bundled marketplace (assets/marketplace/plugins/code-offload → dist/)
+  # repo checkout (plugins/harness-offload → packages/cli) or the npm package's
+  # bundled marketplace (assets/marketplace/plugins/harness-offload → dist/)
   for js in "$CO_ROOT/../../packages/cli/dist/cli.js" "$CO_ROOT/../../../../dist/cli.js"; do
     if [ -f "$js" ] && command -v node >/dev/null 2>&1; then printf 'node %s' "$js"; return 0; fi
   done
-  if command -v npx >/dev/null 2>&1; then printf 'npx --yes code-offload@%s' "$CO_VERSION"; return 0; fi
+  if command -v npx >/dev/null 2>&1; then printf 'npx --yes harness-offload@%s' "$CO_VERSION"; return 0; fi
   return 1
 }
 
@@ -265,7 +265,7 @@ co_ts_attempt() {
   local cli errf rc line start
   CO_OC_TOKENS_IN=0 CO_OC_TOKENS_OUT=0 CO_OC_CTX_IN=0 CO_OC_COST=0 CO_OC_ERROR=""
   if ! cli=$(co_ts_cli); then
-    CO_OC_ERROR="backend for $model needs the code-offload CLI (npm i -g code-offload) or node"
+    CO_OC_ERROR="backend for $model needs the harness-offload CLI (npm i -g harness-offload) or node"
     return $CO_E_NOOC
   fi
   co_tmp errf

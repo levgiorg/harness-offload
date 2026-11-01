@@ -257,7 +257,7 @@ expect_has "doctor runs" "$out" "worker agents load"
 
 # ------------------------------------------------------------ http connector
 section "http connector (mock OpenAI-compatible endpoint)"
-if command -v python3 >/dev/null 2>&1 && { [ -n "${OFFLOAD_TS_CLI:-}" ] || [ -f "$PLUGIN/../../packages/cli/dist/cli.js" ] || command -v code-offload >/dev/null 2>&1; }; then
+if command -v python3 >/dev/null 2>&1 && { [ -n "${OFFLOAD_TS_CLI:-}" ] || [ -f "$PLUGIN/../../packages/cli/dist/cli.js" ] || command -v harness-offload >/dev/null 2>&1; }; then
   HPORT=$(( 20000 + $$ % 20000 ))
   MOCK_PORT=$HPORT MOCK_LOG="$T/http-mock.log" python3 "$HERE/mock_openai.py" > "$T/http-mock.out" 2>&1 &
   HPID=$!

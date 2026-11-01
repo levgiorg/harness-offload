@@ -40,7 +40,7 @@ export const PRESETS: Record<string, Omit<Endpoint, "name">> = {
 };
 
 export function credentialsPath(): string {
-  return process.env.OFFLOAD_CREDENTIALS || join(configHome(), "code-offload", "credentials.json");
+  return process.env.OFFLOAD_CREDENTIALS || join(configHome(), "harness-offload", "credentials.json");
 }
 
 function storedKey(name: string): string | undefined {

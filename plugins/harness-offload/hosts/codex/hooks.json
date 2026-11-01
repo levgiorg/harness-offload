@@ -1,0 +1,14 @@
+{
+  "description": "Harness Offload: guard large reads (Codex reads files through Bash), digest long command output, inject usage guidance.",
+  "hooks": {
+    "SessionStart": [
+      { "matcher": "startup|resume|clear|compact", "hooks": [ { "type": "command", "command": "\"${PLUGIN_ROOT}/bin/offload-ts\" hook codex session-start", "timeout": 20, "statusMessage": "Harness Offload" } ] }
+    ],
+    "PreToolUse": [
+      { "matcher": "^Bash$", "hooks": [ { "type": "command", "command": "\"${PLUGIN_ROOT}/bin/offload-ts\" hook codex pre-tool", "timeout": 20 } ] }
+    ],
+    "PostToolUse": [
+      { "matcher": "^Bash$", "hooks": [ { "type": "command", "command": "\"${PLUGIN_ROOT}/bin/offload-ts\" hook codex post-tool", "timeout": 240, "statusMessage": "Harness Offload: digesting output" } ] }
+    ]
+  }
+}

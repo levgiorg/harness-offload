@@ -1,42 +1,42 @@
-# Code Offload — autopilot goals
+# Harness Offload — autopilot goals
 
 The owner is away. Work through these goals in order, autonomously, in loops:
 **pick the next unmet acceptance criterion → build it → verify it with a test → commit → log it.**
 Never claim a goal is met without a passing check. Prefer finishing one goal well over starting three.
 
 ## Mission
-Code Offload ("the harness offloader") keeps bulk I/O — huge file reads, long command output,
+Harness Offload ("the harness offloader") keeps bulk I/O — huge file reads, long command output,
 codebase exploration, boilerplate — out of expensive coding agents' context by delegating it to
 cheap models the user already pays for (OpenCode, Pi, Codex, Gemini, any OpenAI-compatible API,
 local models). It plugs into every popular agent harness: Claude Code, Codex, Cursor, Pi, Gemini
 CLI, OpenCode, Windsurf, and anything that speaks MCP.
 
 ## Ground rules
-- Repo: `/home/user/code-offload` (git, branch `main`). Commit after every verified step with a
+- Repo: `/home/user/harness-offload` (git, branch `main`). Commit after every verified step with a
   clear message ending in the attribution lines from the session reminder.
-- Owner-specific values are placeholders: `OWNER` (GitHub owner), `REPO` = `code-offload`.
+- Owner-specific values are placeholders: `OWNER` (GitHub owner), `REPO` = `harness-offload`.
 - License MIT. No third-party code copied verbatim; ideas credited in README "Acknowledgements".
   No references to other projects inside source files.
 - Two engines kept in sync ("both"): **bash** (Claude Code plugin hooks + `offload` CLI, zero
-  deps beyond jq) and **TypeScript** (`code-offload` npm package: CLI, setup wizard, MCP server,
+  deps beyond jq) and **TypeScript** (`harness-offload` npm package: CLI, setup wizard, MCP server,
   connectors, host installers, Windows). Shared: `config/defaults.json` schema, `prompts/*.md`,
   state dir layout, stats format, exit codes, and a black-box conformance suite run against both.
 - Verification first (Boris Cherny's rule: give the agent a way to check its work). Every feature
   lands with a test. Mock backends/hosts for free tests; real-model tests sparingly (Haiku/Sonnet,
   a few per milestone — owner approved "with measure").
-- Never break: `bash plugins/code-offload/tests/run.sh` must stay green.
+- Never break: `bash plugins/harness-offload/tests/run.sh` must stay green.
 - Record open questions and the answer chosen in `DECISIONS.md` instead of waiting for the owner.
 - Log each loop iteration in `PROGRESS.md` (what changed, what was verified, what's next).
 
 ## Milestones & acceptance criteria
 ### M0 Identity & legal
-- [x] Renamed everywhere (no "sidecar"/"shunt"/"spotify" in source); CLI `offload`, package `code-offload`.
+- [x] Renamed everywhere (no "sidecar"/"shunt"/"spotify" in source); CLI `offload`, package `harness-offload`.
 - [x] MIT `LICENSE`; README "Acknowledgements" crediting ideas (Spotify shunt, OpenCode, survey sources).
 - [x] Original eval cases + fixtures (written from scratch) replace third-party ones.
 - [x] `scripts/set-owner.sh OWNER` rewrites placeholders.
 
 ### M1 Repo & CI
-- [x] Monorepo layout: `plugins/code-offload` (Claude Code), `packages/cli` (TS), `integrations/*`, `docs/`, `scripts/`.
+- [x] Monorepo layout: `plugins/harness-offload` (Claude Code), `packages/cli` (TS), `integrations/*`, `docs/`, `scripts/`.
 - [x] `.github/workflows/ci.yml`: bash suite on ubuntu + macos (real bash 3.2), shellcheck, TS typecheck+tests on ubuntu/macos/windows, plugin validate.
 - [x] `.github/workflows/release.yml`: on tag → bun-compiled binaries (linux x64/arm64, macOS x64/arm64, windows x64) + npm publish (dry-run without token) + GitHub release.
 - [x] `install.sh` / `install.ps1` one-liners (placeholder URLs).
@@ -70,7 +70,7 @@ CLI, OpenCode, Windsurf, and anything that speaks MCP.
 - [ ] Per-host e2e with real binaries where available (codex exec worker, gemini CLI) behind `--integration`.
 
 ### M8 Owner requests (2026-11-02, before sleeping) — TOP PRIORITY
-- [ ] **Rename to "Harness Offload"** everywhere (plugin/package/config dirs/docs). CLI stays `offload` (+ alias `harness-offload`); npm `harness-offload` (free on 2026-11-02).
+- [x] **Rename to "Harness Offload"** everywhere (plugin/package/config dirs/docs). CLI stays `offload` (+ alias `harness-offload`); npm `harness-offload` (free on 2026-11-02).
 - [ ] **"Use my agent's own subscription" option, for every plugin/host**: model ref `@host` resolves to the calling harness's cheap model (Claude Code → `claude:haiku`, Codex → `codex:gpt-6-luna`, Gemini CLI → `gemini:flash-lite`, Cursor → `cursor:` default, Pi → `pi:` default, OpenCode/Kilo → OpenCode default). Host known from hooks/MCP launchers (`OFFLOAD_HOST`) or env detection (`CLAUDECODE`, `CODEX_*`, `CURSOR_AGENT`, `GEMINI_CLI`, …). Wizard offers it first; doctor explains it.
 - [ ] Claude worker hardened for subscription use: `claude -p --setting-sources … --strict-mcp-config --disable-slash-commands --no-session-persistence --system-prompt … --tools ""`, `OFFLOAD_DISABLE=1` (no recursion). (`--bare` can't use OAuth subscriptions — don't use it.)
 - [ ] **Bash engine native CLI-agent connectors** (claude, codex, gemini, cursor, pi) and HTTP (curl, non-explore), so the Claude Code plugin works with the same subscription WITHOUT Node/npm (the owner's zip install failed exactly here).

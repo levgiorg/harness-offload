@@ -14,7 +14,7 @@ export const sym = {
 
 /** Small gradient wordmark; plain when colors are off. */
 export function banner(sub = "the harness offloader"): string {
-  const word = "code offload";
+  const word = "harness offload";
   const shades = [color.cyan, color.cyan, color.blue, color.blue, color.magenta, color.magenta];
   const painted = [...word].map((ch, i) => shades[Math.floor((i / word.length) * shades.length)](color.bold(ch))).join("");
   return `\n  ${color.dim("▌")}${painted}  ${color.dim(sub)}\n`;

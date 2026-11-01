@@ -23,24 +23,24 @@ describe("offload install", () => {
   test("claude: marketplace add + plugin install", () => {
     const r = cli(["install", "claude"], { env: s.env });
     expect(r.code).toBe(0);
-    expect(calls()).toMatch(/claude plugin marketplace add .+\nclaude plugin install code-offload@code-offload/);
+    expect(calls()).toMatch(/claude plugin marketplace add .+\nclaude plugin install harness-offload@harness-offload/);
   });
   test("codex: marketplace add + plugin add, with a /hooks trust reminder", () => {
     const r = cli(["install", "codex"], { env: s.env });
-    expect(calls()).toContain("codex plugin add code-offload@code-offload");
+    expect(calls()).toContain("codex plugin add harness-offload@harness-offload");
     expect(r.stdout).toContain("/hooks");
   });
   test("cursor: local plugin copy", () => {
     expect(cli(["install", "cursor"], { env: s.env }).code).toBe(0);
-    const dir = join(s.dir, "home", ".cursor", "plugins", "local", "code-offload");
-    expect(JSON.parse(readFileSync(join(dir, ".cursor-plugin", "plugin.json"), "utf8")).name).toBe("code-offload");
-    expect(existsSync(join(dir, "hosts", "cursor", "rules", "code-offload.mdc"))).toBe(true);
+    const dir = join(s.dir, "home", ".cursor", "plugins", "local", "harness-offload");
+    expect(JSON.parse(readFileSync(join(dir, ".cursor-plugin", "plugin.json"), "utf8")).name).toBe("harness-offload");
+    expect(existsSync(join(dir, "hosts", "cursor", "rules", "harness-offload.mdc"))).toBe(true);
     expect(cli(["uninstall", "cursor"], { env: s.env }).code).toBe(0);
     expect(existsSync(dir)).toBe(false);
   });
   test("gemini: self-contained extension with absolute launcher", () => {
     expect(cli(["install", "gemini"], { env: s.env }).code).toBe(0);
-    const dir = join(s.dir, "home", ".gemini", "extensions", "code-offload");
+    const dir = join(s.dir, "home", ".gemini", "extensions", "harness-offload");
     const ext = JSON.parse(readFileSync(join(dir, "gemini-extension.json"), "utf8"));
     expect(ext.mcpServers.offload.command).toMatch(/\/bin\/offload-ts$/);
     const hooks = JSON.parse(readFileSync(join(dir, "hooks", "hooks.json"), "utf8"));
@@ -48,17 +48,17 @@ describe("offload install", () => {
   });
   test("opencode: plugin re-export file for the detected major version", () => {
     expect(cli(["install", "opencode"], { env: s.env }).code).toBe(0);
-    const f = join(s.dir, "home", ".config", "opencode", "plugin", "code-offload.js");
+    const f = join(s.dir, "home", ".config", "opencode", "plugin", "harness-offload.js");
     expect(readFileSync(f, "utf8")).toMatch(/export \{ default \} from "file:\/\/.*\/dist\/opencode\.js";/);
   });
   test("kilo: OpenCode-v1-style plugin file", () => {
     expect(cli(["install", "kilo"], { env: s.env }).code).toBe(0);
-    expect(readFileSync(join(s.dir, "home", ".config", "kilo", "plugin", "code-offload.js"), "utf8")).toContain("dist/opencode.js");
+    expect(readFileSync(join(s.dir, "home", ".config", "kilo", "plugin", "harness-offload.js"), "utf8")).toContain("dist/opencode.js");
   });
   test("pi and devin call their CLIs", () => {
     cli(["install", "pi", "devin"], { env: s.env });
     expect(calls()).toMatch(/pi install .*packages\/cli/);
-    expect(calls()).toMatch(/devin plugins install --local .*plugins\/code-offload/);
+    expect(calls()).toMatch(/devin plugins install --local .*plugins\/harness-offload/);
   });
   test("sync refreshes recorded installs and lists unwired hosts", () => {
     const r = cli(["sync", "--dry-run"], { env: s.env });

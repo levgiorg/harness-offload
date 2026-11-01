@@ -22,3 +22,7 @@
 - CI (TS on ubuntu/macos/windows; bash suites incl. macOS system bash 3.2; shellcheck; manifest/version checks), release workflow (bun-compiled binaries for 5 targets, npm publish, plugin zip), install.sh/install.ps1. Standalone binary smoke-tested locally.
 - README rewritten; docs/hosts.md, CHANGELOG, CONTRIBUTING, SECURITY.
 - Next (M7): real-model validation pass, polish, warm server, more hosts.
+
+## 2026-11-02 ~00:10 UTC — renamed to Harness Offload
+- Repo moved to `/home/user/harness-offload` (symlink from the old path), plugin `plugins/harness-offload`, npm `harness-offload` (bins `offload`, `harness-offload`), config `~/.config/harness-offload/`, project file `.harness-offload.json`, marketplace `harness-offload@harness-offload`. Loop re-created with the new path (job ec77080e).
+- All suites green after the rename: bun 31/31, conformance 166/166 ×2 engines, routing 49/49 ×2.

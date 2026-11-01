@@ -1,6 +1,6 @@
 {
-  "name": "code-offload",
-  "displayName": "Code Offload",
+  "name": "harness-offload",
+  "displayName": "Harness Offload",
   "version": "0.2.0",
   "description": "Keep bulk I/O out of Cursor's context: large reads, noisy command output and codebase exploration go to cheap worker models you already pay for.",
   "author": { "name": "OWNER" },

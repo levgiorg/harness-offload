@@ -1,4 +1,4 @@
-# Code Offload — design notes
+# Harness Offload — design notes
 
 Why the code is shaped the way it is. Prior art and credits are in the README's
 "Acknowledgements" section; validation runs are in `docs/VALIDATION.md`.
@@ -13,7 +13,7 @@ Why the code is shaped the way it is. Prior art and credits are in the README's
   secrets). Only the orchestrating agent edits files or runs commands.
 - **Avoid extra turns.** A deny that costs the agent a turn re-reads its whole context; deny
   messages therefore carry an outline and a ready-to-run command.
-- **One config, every host.** `~/.config/code-offload/config.json` + `<repo>/.code-offload.json`
+- **One config, every host.** `~/.config/harness-offload/config.json` + `<repo>/.harness-offload.json`
   serve Claude Code, Codex, Cursor, Pi, Gemini CLI, OpenCode, Windsurf and MCP clients alike.
 
 ## 1. Facts the implementation relies on

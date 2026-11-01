@@ -6,7 +6,7 @@
 set -u
 HERE="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$(cd "$HERE/.." && pwd)"
-CLI="$ROOT/plugins/code-offload/bin/offload"
+CLI="$ROOT/plugins/harness-offload/bin/offload"
 model=""
 while [ $# -gt 0 ]; do
   case "$1" in
