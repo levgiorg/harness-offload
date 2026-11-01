@@ -62,11 +62,11 @@ CLI, OpenCode, Windsurf, and anything that speaks MCP.
 - [ ] Real-model validation report updated (sparingly).
 
 ### M7 Raise the bar (added during the night)
-- [ ] Real-model validation pass with the new fixtures (benchmark.sh via Pi/claude-agent; record in docs/VALIDATION.md).
+- [x] Real-model validation pass with the new fixtures (benchmark.sh via Pi/claude-agent; record in docs/VALIDATION.md).
 - [ ] Beautiful CLI polish: `--json` everywhere it makes sense, consistent colors in read/explore footers on TTY only, `offload stats` sparkline.
 - [ ] Context-aware thresholds (estimate the agent's context size from transcript_path; raise/lower the guard).
-- [ ] `offload serve`: warm OpenCode server to cut the 1.5–3 s start-up per call.
-- [ ] More hosts: Kilo Code (OpenCode v1 plugin API), GitHub Copilot CLI hooks, Crush hooks, Qwen Code hooks.
+- [ ] `offload serve`: warm OpenCode server to cut the 1.5–3 s start-up per call. (deferred — see DECISIONS #14)
+- [~] More hosts: Kilo Code ✓ (OpenCode v1 plugin API); GitHub Copilot CLI hooks, Crush hooks, Qwen Code hooks (formats unverified).
 - [ ] Per-host e2e with real binaries where available (codex exec worker, gemini CLI) behind `--integration`.
 
 ## Loop protocol (every iteration, including the 30-minute /loop wake-ups)
