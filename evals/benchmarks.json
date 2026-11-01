@@ -1,0 +1,34 @@
+{
+  "description": "Token-savings scenarios. 'without' = chars/4 of what the agent would have read; 'with' = chars/4 of what offload returned. Files under {{DIR}} come from fixtures/generate.sh + fixtures/warehouse.",
+  "scenarios": [
+    {
+      "name": "large-module-facts",
+      "kind": "read",
+      "question": "What is MAX_BATCH, what does applyLateFee do (rate, threshold, any TODO), and how many reconcile methods does LedgerReconciler have?",
+      "paths": ["{{DIR}}/ledger.ts"],
+      "must_mention": ["500", "0.025", "30", "TODO"]
+    },
+    {
+      "name": "cross-file",
+      "kind": "read",
+      "question": "Which InventoryService methods are covered by the tests, which are not, and what error does reserve throw when stock is short?",
+      "paths": ["{{DIR}}/warehouse/inventory.ts", "{{DIR}}/warehouse/inventory.test.ts"],
+      "must_mention": ["OutOfStockError", "restock", "needsReorder"]
+    },
+    {
+      "name": "ci-log-digest",
+      "kind": "summarize",
+      "question": "Which tests failed and why?",
+      "paths": ["{{DIR}}/ci.log"],
+      "must_mention": ["inventory.test.ts", "pricing.test.ts", "1071.36"]
+    },
+    {
+      "name": "tests-from-reference",
+      "kind": "write",
+      "spec": "Write pytest tests for pricing.py: bulk tiers at 10/50/100 units, VAT per country, unsupported country raises ValueError, money rounding.",
+      "reference": "{{DIR}}/warehouse/inventory.test.ts",
+      "context": ["{{DIR}}/warehouse/pricing.py"],
+      "must_mention": ["def test_", "ValueError"]
+    }
+  ]
+}

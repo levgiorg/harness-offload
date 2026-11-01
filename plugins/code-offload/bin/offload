@@ -1,0 +1,679 @@
+#!/usr/bin/env bash
+# offload — hand bulk I/O work to cheap OpenCode models so it never enters
+# Claude's context. See `offload help`.
+
+# Resolve symlinks (e.g. ~/.local/bin/offload -> repo) with plain readlink:
+# `readlink -f`/`realpath` are missing on older macOS.
+src="$0"
+while [ -h "$src" ]; do
+  dir=$(cd -P "$(dirname "$src")" && pwd)
+  src=$(readlink "$src")
+  case "$src" in /*) ;; *) src="$dir/$src" ;; esac
+done
+CO_ROOT="$(cd -P "$(dirname "$src")/.." && pwd)"
+unset src dir
+# shellcheck source=../lib/common.sh
+. "$CO_ROOT/lib/common.sh"
+# shellcheck source=../lib/opencode.sh
+. "$CO_ROOT/lib/opencode.sh"
+# shellcheck source=../lib/digest.sh
+. "$CO_ROOT/lib/digest.sh"
+# shellcheck source=../lib/outline.sh
+. "$CO_ROOT/lib/outline.sh"
+
+usage() {
+  cat <<'EOF'
+offload — delegate bulk I/O to cheap OpenCode models (keeps it out of Claude's context)
+
+  offload read -q QUESTION PATH...      Answer a question about files (PATH may be a dir or file:START-END).
+                                        Answers cite path:Lx-Ly with quotes; quotes are verified locally.
+  offload explore QUESTION              Read-only agent greps/reads the repo itself and answers.
+  offload run [-q FOCUS] -- CMD...      Run a noisy command; long output becomes a digest + verbatim
+  offload run [-q FOCUS] -c 'CMD'       error lines + full-log path. Exit code is preserved.
+  offload summarize [-q FOCUS] [FILE]   Digest text from FILE or stdin (e.g. `git log -p | offload summarize`).
+  offload write --spec S --ref FILE [--ref FILE] [--context FILE] [--out PATH] [--check 'CMD']
+                                        Generate pattern-following code (tests, boilerplate, configs).
+  offload ask [--stdin|-f FILE] QUESTION  One-off question to the cheap model.
+  offload outline FILE                  Symbol outline with line numbers (no model call).
+
+  offload doctor [--ping] [--reset]     Check setup; --ping makes a tiny live call per model.
+  offload stats [--days N]              Delegations and estimated Claude tokens saved.
+  offload config [show|path|init|set KEY VALUE] [--project]
+
+Common options: -m/--model PROVIDER/MODEL (one-off override), --allow-secrets.
+Exit codes: 0 ok · 2 usage · 10 quota/rate limit · 11 auth · 12 timeout · 13 unknown model
+            14 worker error · 15 opencode missing · 16 refused (secrets/size)
+EOF
+}
+
+die() { co_err "$1"; exit "${2:-$CO_E_USAGE}"; }
+
+# For option parsers: `need "$@"` before reading "$2" (no endless `shift 2`).
+need() { [ $# -ge 2 ] || die "option $1 needs a value"; }
+
+need_jq() { command -v jq >/dev/null 2>&1 || die "jq is required (macOS: brew install jq · Debian/Ubuntu: apt install jq)" "$CO_E_USAGE"; }
+
+# Footer helper: one compact line so Claude knows where the answer came from.
+footer() { printf '\n[offload %s]\n' "$*"; }
+
+report_failure() {
+  local what="$1" rc="$2"
+  co_err "$what failed (exit $rc): $CO_OC_ERROR"
+  case "$rc" in
+    "$CO_E_NOOC") ;;
+    "$CO_E_QUOTA") co_err "hint: quota/rate limit — add models.fallback in the config, or do this step yourself." ;;
+    "$CO_E_AUTH")  co_err "hint: run \`opencode auth login\` (outside Claude) for that provider." ;;
+    "$CO_E_MODEL") co_err "hint: check the model id with \`opencode models\`; set it with \`offload config set models.default PROVIDER/MODEL\`." ;;
+    "$CO_E_TIMEOUT") co_err "hint: raise opencode.timeout_seconds or send less input." ;;
+  esac
+}
+
+# ------------------------------------------------------------------ read
+
+# Appends one file (or a line range of it) to the prompt, numbered.
+emit_file() {
+  local path="$1" from="$2" to="$3" total="$4"
+  printf '<file path="%s" lines="%s-%s" total_lines="%s">\n' "$path" "$from" "$to" "$total"
+  awk -v a="$from" -v b="$to" 'NR >= a && NR <= b { printf "%6d\t%s\n", NR, $0 } NR > b { exit }' "$path" | co_redact
+  printf '</file>\n\n'
+}
+
+# Lists candidate files under a directory: git-tracked when possible.
+list_dir_files() {
+  local d="$1"
+  if git -C "$d" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    git -C "$d" ls-files --cached --others --exclude-standard 2>/dev/null | LC_ALL=C sed "s|^|${d%/}/|"
+  else
+    find "$d" -type f \
+      -not -path '*/.git/*' -not -path '*/node_modules/*' -not -path '*/dist/*' -not -path '*/build/*' \
+      -not -path '*/.venv/*' -not -path '*/venv/*' -not -path '*/target/*' -not -path '*/vendor/*' 2>/dev/null
+  fi | LC_ALL=C sed 's|^\./||' | LC_ALL=C grep -vE '(^|/)(package-lock\.json|yarn\.lock|pnpm-lock\.yaml|Cargo\.lock|poetry\.lock|go\.sum|.*\.min\.(js|css)|.*\.map)$' | sort
+}
+
+cmd_read() {
+  local question="" model="" verify=true allow_secrets=false
+  local -a items
+  items=()
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      -q|--question) need "$@"; question="$2"; shift 2 ;;
+      -m|--model) need "$@"; model="$2"; shift 2 ;;
+      --no-verify) verify=false; shift ;;
+      --allow-secrets) allow_secrets=true; shift ;;
+      --paths) shift ;;  # alias: the paths simply follow
+      --) shift; while [ $# -gt 0 ]; do items+=("$1"); shift; done ;;
+      -h|--help) usage; exit 0 ;;
+      -*) die "read: unknown option $1" ;;
+      *) items+=("$1"); shift ;;
+    esac
+  done
+  [ -n "$question" ] || die 'read: -q "QUESTION" is required'
+  [ ${#items[@]} -gt 0 ] || die "read: give at least one file or directory"
+
+  local max_bytes max_files prompt answer
+  max_bytes=$(co_cfg_int '.read.max_input_bytes' 1500000)
+  max_files=$(co_cfg_int '.read.max_files' 60)
+  co_tmp prompt; co_tmp answer
+
+  local item path from to total nfiles=0 nlines=0 skipped="" f
+  for item in "${items[@]}"; do
+    from=""; to=""
+    path="$item"
+    if [ ! -e "$item" ] && printf '%s' "$item" | grep -qE ':[0-9]+-[0-9]+$'; then
+      path="${item%:*}"; from="${item##*:}"; to="${from#*-}"; from="${from%-*}"
+    fi
+    path="${path#./}"
+    if [ -d "$path" ]; then
+      while IFS= read -r f; do
+        [ -z "$f" ] && continue
+        [ -f "$f" ] || continue
+        if co_is_secret_path "$f" && ! $allow_secrets; then skipped="$skipped $f(secret)"; continue; fi
+        co_is_text "$f" || continue
+        [ "$nfiles" -ge "$max_files" ] && { skipped="$skipped (+more: max_files=$max_files)"; break; }
+        total=$(co_file_lines "$f")
+        emit_file "$f" 1 "$total" "$total" >> "$prompt"
+        nfiles=$((nfiles + 1)); nlines=$((nlines + total))
+      done <<EOF
+$(list_dir_files "$path")
+EOF
+      continue
+    fi
+    [ -f "$path" ] && [ -r "$path" ] || die "read: file not found or unreadable: $item"
+    if co_is_secret_path "$path" && ! $allow_secrets; then
+      die "read: refusing to send $path to a third-party model (matches privacy.secret_globs). Use --allow-secrets if you are sure." "$CO_E_REFUSED"
+    fi
+    co_is_text "$path" || die "read: $path looks binary; offload only handles text" "$CO_E_REFUSED"
+    total=$(co_file_lines "$path")
+    [ -z "$from" ] && from=1
+    [ -z "$to" ] && to=$total
+    [ "$to" -gt "$total" ] && to=$total
+    emit_file "$path" "$from" "$to" "$total" >> "$prompt"
+    nfiles=$((nfiles + 1)); nlines=$((nlines + to - from + 1))
+  done
+  [ "$nfiles" -gt 0 ] || die "read: no readable text files to send${skipped:+ (skipped:$skipped)}" "$CO_E_REFUSED"
+
+  local bytes
+  bytes=$(co_file_bytes "$prompt")
+  if [ "$bytes" -gt "$max_bytes" ]; then
+    die "read: $(co_fmt_int "$bytes") bytes is over read.max_input_bytes ($(co_fmt_int "$max_bytes")). Send fewer files, use file:START-END ranges, or try \`offload explore\`." "$CO_E_REFUSED"
+  fi
+  printf '<question>%s</question>\n' "$question" >> "$prompt"
+
+  local t0 rc
+  t0=$(co_now)
+  co_oc_invoke read "$prompt" "$(co_work_dir)" "$answer" "$model"; rc=$?
+  if [ "$rc" != 0 ]; then report_failure "read" "$rc"; exit "$rc"; fi
+
+  local cite="" ok=0 bad=0 rep
+  if $verify && co_cfg_bool '.read.verify_citations' true; then
+    co_tmp rep
+    awk -v root="$PWD" -v report="$rep" -f "$CO_ROOT/lib/verify.awk" "$answer" > "$answer.v" && mv "$answer.v" "$answer"
+    read -r ok bad < "$rep" 2>/dev/null || { ok=0; bad=0; }
+    cite=" · citations: $ok verified, $bad unverified"
+  fi
+  cat "$answer"
+  footer "read · $CO_OC_MODEL · $nfiles file(s), $(co_fmt_int "$nlines") lines (~$(co_fmt_int "$(co_est_tokens "$bytes")") tokens) kept out of your context · $(co_elapsed "$t0")s$cite"
+  [ "${bad:-0}" -gt 0 ] && echo "⚠unverified = quote not found near the cited lines; confirm with Read(offset/limit) before acting on it."
+  [ -n "$skipped" ] && echo "skipped:$skipped"
+
+  local abytes
+  abytes=$(co_file_bytes "$answer")
+  co_stats_append "$(jq -nc --arg model "$CO_OC_MODEL" --argjson files "$nfiles" --argjson bin "$bytes" --argjson bout "$abytes" \
+    --argjson secs "$(co_elapsed "$t0")" --argjson ok "${ok:-0}" --argjson bad "${bad:-0}" \
+    --argjson tin "${CO_OC_TOKENS_IN:-0}" --argjson tout "${CO_OC_TOKENS_OUT:-0}" \
+    '{ts: now | floor, kind: "read", model: $model, files: $files, bytes_in: $bin, bytes_out: $bout,
+      saved_tokens: ((($bin - $bout) / 4) | floor | if . < 0 then 0 else . end), seconds: $secs,
+      cites_ok: $ok, cites_bad: $bad, worker_tokens_in: $tin, worker_tokens_out: $tout}')"
+}
+
+# --------------------------------------------------------------- explore
+
+cmd_explore() {
+  local question="" model="" dir="$PWD" verify=true
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      -q|--question) need "$@"; question="$2"; shift 2 ;;
+      -m|--model) need "$@"; model="$2"; shift 2 ;;
+      --dir) need "$@"; dir="$2"; shift 2 ;;
+      --no-verify) verify=false; shift ;;
+      -h|--help) usage; exit 0 ;;
+      --) shift; question="$question${question:+ }$*"; break ;;
+      -*) die "explore: unknown option $1" ;;
+      *) question="$question${question:+ }$1"; shift ;;
+    esac
+  done
+  [ -n "$question" ] || die 'explore: give a question, e.g. offload explore "where are JWTs validated?"'
+  [ -d "$dir" ] || die "explore: no such directory: $dir"
+  dir=$(cd "$dir" && pwd)
+
+  local prompt answer t0 rc
+  co_tmp prompt; co_tmp answer
+  {
+    printf 'Investigate the codebase in the current working directory and answer the question.\n\n'
+    printf '<question>%s</question>\n' "$question"
+  } > "$prompt"
+  t0=$(co_now)
+  co_oc_invoke explore "$prompt" "$dir" "$answer" "$model"; rc=$?
+  if [ "$rc" != 0 ]; then report_failure "explore" "$rc"; exit "$rc"; fi
+
+  local cite="" ok=0 bad=0 rep
+  if $verify; then
+    co_tmp rep
+    awk -v root="$dir" -v report="$rep" -f "$CO_ROOT/lib/verify.awk" "$answer" > "$answer.v" && mv "$answer.v" "$answer"
+    read -r ok bad < "$rep" 2>/dev/null || { ok=0; bad=0; }
+    cite=" · citations: $ok verified, $bad unverified"
+  fi
+  cat "$answer"
+  footer "explore · $CO_OC_MODEL · worker read ~$(co_fmt_int "${CO_OC_CTX_IN:-0}") tokens of context for you · $(co_elapsed "$t0")s$cite"
+  [ "${bad:-0}" -gt 0 ] && echo "⚠unverified = quote not found near the cited lines; confirm with Read(offset/limit) before acting on it."
+
+  local abytes
+  abytes=$(co_file_bytes "$answer")
+  co_stats_append "$(jq -nc --arg model "$CO_OC_MODEL" --argjson ctx "${CO_OC_CTX_IN:-0}" --argjson bout "$abytes" \
+    --argjson secs "$(co_elapsed "$t0")" --argjson ok "${ok:-0}" --argjson bad "${bad:-0}" \
+    --argjson tin "${CO_OC_TOKENS_IN:-0}" --argjson tout "${CO_OC_TOKENS_OUT:-0}" \
+    '{ts: now | floor, kind: "explore", model: $model, bytes_out: $bout,
+      saved_tokens: (($ctx - ($bout / 4)) | floor | if . < 0 then 0 else . end), seconds: $secs,
+      cites_ok: $ok, cites_bad: $bad, worker_tokens_in: $tin, worker_tokens_out: $tout}')"
+}
+
+# ------------------------------------------------------------------- run
+
+small_output() {
+  local f="$1" lines bytes
+  lines=$(co_file_lines "$f"); bytes=$(co_file_bytes "$f")
+  [ "$lines" -le "$(co_cfg_int '.digest.threshold_lines' 150)" ] && [ "$bytes" -le "$(co_cfg_int '.digest.threshold_bytes' 12000)" ]
+}
+
+cmd_run() {
+  local focus="" model="" shcmd="" no_model=false
+  local -a argv
+  argv=()
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      -q|--focus|--question) need "$@"; focus="$2"; shift 2 ;;
+      -m|--model) need "$@"; model="$2"; shift 2 ;;
+      -c) need "$@"; shcmd="$2"; shift 2 ;;
+      --no-model) no_model=true; shift ;;
+      -h|--help) usage; exit 0 ;;
+      --) shift; while [ $# -gt 0 ]; do argv+=("$1"); shift; done ;;
+      *) while [ $# -gt 0 ]; do argv+=("$1"); shift; done ;;
+    esac
+  done
+  local label a
+  if [ -n "$shcmd" ]; then label="$shcmd"
+  elif [ ${#argv[@]} -gt 0 ]; then
+    label=""
+    for a in "${argv[@]}"; do label="$label${label:+ }$(co_shquote "$a")"; done
+  else die "run: nothing to run. Usage: offload run [-q FOCUS] -- CMD ARGS...  or  offload run -c 'CMD'"
+  fi
+
+  local log rc
+  log=$(co_new_log "$label")
+  if [ -n "$shcmd" ]; then bash -c "$shcmd" > "$log" 2>&1; rc=$?
+  else "${argv[@]}" > "$log" 2>&1; rc=$?
+  fi
+
+  if small_output "$log"; then
+    cat "$log"; rm -f "$log"
+    exit "$rc"
+  fi
+  $no_model && export OFFLOAD_NO_MODEL=1
+  OFFLOAD_MODEL_OVERRIDE="$model" co_digest "$log" "$label" "$rc" "$focus" run
+  exit "$rc"
+}
+
+cmd_summarize() {
+  local focus="" model="" label="" file="" no_model=false
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      -q|--focus|--question) need "$@"; focus="$2"; shift 2 ;;
+      -m|--model) need "$@"; model="$2"; shift 2 ;;
+      --label) need "$@"; label="$2"; shift 2 ;;
+      --no-model) no_model=true; shift ;;
+      -h|--help) usage; exit 0 ;;
+      -) file="-"; shift ;;
+      -*) die "summarize: unknown option $1" ;;
+      *) file="$1"; shift ;;
+    esac
+  done
+  local log
+  log=$(co_new_log "${label:-${file:-stdin}}")
+  if [ -n "$file" ] && [ "$file" != "-" ]; then
+    [ -f "$file" ] || die "summarize: no such file: $file"
+    if co_is_secret_path "$file"; then die "summarize: refusing to send $file (matches privacy.secret_globs)" "$CO_E_REFUSED"; fi
+    cp "$file" "$log"
+  else
+    if [ -t 0 ]; then die "summarize: pipe text in or give a FILE"; fi
+    cat > "$log"
+  fi
+  if small_output "$log"; then cat "$log"; rm -f "$log"; exit 0; fi
+  $no_model && export OFFLOAD_NO_MODEL=1
+  OFFLOAD_MODEL_OVERRIDE="$model" co_digest "$log" "${label:-${file:-stdin}}" "" "$focus" summarize
+}
+
+# ----------------------------------------------------------------- write
+
+# Removes one wrapping ``` fence (models add them despite instructions) but
+# leaves fences inside the content alone, so Markdown output survives.
+strip_wrapping_fence() {
+  awk '{ l[NR] = $0 }
+    END {
+      s = 1; e = NR
+      while (s <= e && l[s] ~ /^[ \t]*$/) s++
+      while (e >= s && l[e] ~ /^[ \t]*$/) e--
+      if (s < e && l[s] ~ /^[ \t]*```/ && l[e] ~ /^[ \t]*```[ \t]*$/) { s++; e-- }
+      for (i = s; i <= e; i++) print l[i]
+    }' "$1"
+}
+
+cmd_write() {
+  local spec="" out="" model="" force=false check="" allow_secrets=false check_failed=false
+  local -a refs ctxs
+  refs=(); ctxs=()
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --spec|-s) need "$@"; spec="$2"; shift 2 ;;
+      --ref|--reference|-r) need "$@"; refs+=("$2"); shift 2 ;;
+      --context|-x) need "$@"; ctxs+=("$2"); shift 2 ;;
+      --out|--target|-o) need "$@"; out="$2"; shift 2 ;;
+      -m|--model) need "$@"; model="$2"; shift 2 ;;
+      --force) force=true; shift ;;
+      --check) need "$@"; check="$2"; shift 2 ;;
+      --allow-secrets) allow_secrets=true; shift ;;
+      -h|--help) usage; exit 0 ;;
+      *) die "write: unexpected argument $1 (see offload help)" ;;
+    esac
+  done
+  [ -n "$spec" ] || die 'write: --spec "WHAT TO GENERATE" is required'
+  [ ${#refs[@]} -gt 0 ] || die "write: --ref FILE is required — an existing file whose patterns the output must follow. For a follow-up, reference the file the previous call generated."
+  if [ -n "$out" ] && [ -e "$out" ] && ! $force; then
+    die "write: $out already exists — pick a new --out, or add --force to overwrite it"
+  fi
+
+  local f prompt answer
+  co_tmp prompt; co_tmp answer
+  for f in "${refs[@]}" ${ctxs[@]+"${ctxs[@]}"}; do
+    [ -f "$f" ] || die "write: file not found: $f"
+    if co_is_secret_path "$f" && ! $allow_secrets; then die "write: refusing to send $f (matches privacy.secret_globs)" "$CO_E_REFUSED"; fi
+  done
+  {
+    for f in "${refs[@]}"; do printf '<reference path="%s">\n' "$f"; co_redact < "$f"; printf '</reference>\n\n'; done
+    for f in ${ctxs[@]+"${ctxs[@]}"}; do printf '<context path="%s">\n' "$f"; co_redact < "$f"; printf '</context>\n\n'; done
+    [ -n "$out" ] && printf '<target path="%s"/>\n' "$out"
+    printf '<spec>%s</spec>\n' "$spec"
+  } > "$prompt"
+
+  local t0 rc
+  t0=$(co_now)
+  co_oc_invoke write "$prompt" "$(co_work_dir)" "$answer" "$model"; rc=$?
+  if [ "$rc" != 0 ]; then report_failure "write" "$rc"; exit "$rc"; fi
+  strip_wrapping_fence "$answer" > "$answer.c" && mv "$answer.c" "$answer"
+
+  local n todos
+  n=$(co_file_lines "$answer")
+  todos=$(grep -c 'TODO(offload)' "$answer" 2>/dev/null || true)
+  if [ -z "$out" ]; then
+    cat "$answer"
+    footer "write · $CO_OC_MODEL · $n lines · $(co_elapsed "$t0")s · review before use"
+  else
+    mkdir -p "$(dirname "$out")" 2>/dev/null
+    cp "$answer" "$out" || die "write: could not write $out" "$CO_E_WORKER"
+    echo "offload write: wrote $n lines to $out ($CO_OC_MODEL, $(co_elapsed "$t0")s)."
+    [ "${todos:-0}" -gt 0 ] && echo "  $todos TODO(offload) marker(s) where the worker lacked information — grep -n 'TODO(offload)' $(co_shquote "$out")"
+    echo "  Review it: Read the file (or the parts that need judgment) and fix what the worker got wrong."
+    if [ -n "$check" ]; then
+      local log crc
+      log=$(co_new_log "check-$check")
+      bash -c "$check" > "$log" 2>&1; crc=$?
+      if [ "$crc" = 0 ]; then echo "  check passed: $check"; else echo "  check FAILED (exit $crc): $check"; check_failed=true; fi
+      if small_output "$log"; then sed 's/^/    /' "$log"; rm -f "$log"
+      else OFFLOAD_MODEL_OVERRIDE="" co_digest "$log" "$check" "$crc" "" run | sed 's/^/    /'
+      fi
+    fi
+  fi
+  co_stats_append "$(jq -nc --arg model "$CO_OC_MODEL" --argjson lines "$n" --argjson secs "$(co_elapsed "$t0")" \
+    --argjson bytes "$(co_file_bytes "$answer")" --arg out "$out" \
+    --argjson tin "${CO_OC_TOKENS_IN:-0}" --argjson tout "${CO_OC_TOKENS_OUT:-0}" \
+    '{ts: now | floor, kind: "write", model: $model, lines: $lines, seconds: $secs,
+      saved_tokens: (if $out == "" then 0 else ($bytes / 4 | floor) end), worker_tokens_in: $tin, worker_tokens_out: $tout}')"
+  # The file is written either way; exit 1 tells Claude the check failed.
+  $check_failed && exit 1
+  return 0
+}
+
+# ------------------------------------------------------------------- ask
+
+cmd_ask() {
+  local question="" model="" use_stdin=false file=""
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      -m|--model) need "$@"; model="$2"; shift 2 ;;
+      --stdin) use_stdin=true; shift ;;
+      -f|--file) need "$@"; file="$2"; shift 2 ;;
+      -h|--help) usage; exit 0 ;;
+      --) shift; question="$question${question:+ }$*"; break ;;
+      -*) die "ask: unknown option $1" ;;
+      *) question="$question${question:+ }$1"; shift ;;
+    esac
+  done
+  [ -n "$question" ] || die "ask: give a question"
+  local prompt answer rc t0
+  co_tmp prompt; co_tmp answer
+  {
+    if $use_stdin; then printf '<input>\n'; co_redact; printf '</input>\n\n'; fi
+    if [ -n "$file" ]; then
+      [ -f "$file" ] || die "ask: no such file: $file"
+      co_is_secret_path "$file" && die "ask: refusing to send $file (matches privacy.secret_globs)" "$CO_E_REFUSED"
+      printf '<input path="%s">\n' "$file"; co_redact < "$file"; printf '</input>\n\n'
+    fi
+    printf '%s\n' "$question"
+  } > "$prompt"
+  t0=$(co_now)
+  co_oc_invoke ask "$prompt" "$(co_work_dir)" "$answer" "$model"; rc=$?
+  if [ "$rc" != 0 ]; then report_failure "ask" "$rc"; exit "$rc"; fi
+  cat "$answer"
+  footer "ask · $CO_OC_MODEL · $(co_elapsed "$t0")s"
+  co_stats_append "$(jq -nc --arg model "$CO_OC_MODEL" --argjson secs "$(co_elapsed "$t0")" \
+    --argjson tin "${CO_OC_TOKENS_IN:-0}" --argjson tout "${CO_OC_TOKENS_OUT:-0}" \
+    '{ts: now | floor, kind: "ask", model: $model, seconds: $secs, saved_tokens: 0, worker_tokens_in: $tin, worker_tokens_out: $tout}')"
+}
+
+# ---------------------------------------------------------------- doctor
+
+# Checks that opencode accepts offload's injected agents, without a model
+# call: V1 has `debug agent`; on V2 a run against a non-existent model fails
+# with "Model unavailable" once the agent resolved, "Agent not found" if not.
+DOCTOR_DETAIL=""
+doctor_agents_load() {
+  local bin cfg out sid
+  bin=$(co_opencode_bin)
+  cfg=$(co_oc_config) || { DOCTOR_DETAIL="jq could not build the config"; return 1; }
+  if [ "$(co_oc_major)" -ge 2 ]; then
+    out=$(cd "$(co_work_dir)" && printf 'ping\n' | OPENCODE_CONFIG_CONTENT="$cfg" "$bin" run --standalone --format json \
+            --agent offload-read --title offload:doctor -m offload-doctor/none 2>&1)
+    sid=$(printf '%s' "$out" | grep -o '"sessionID":"ses_[A-Za-z0-9_]*"' | head -1 | sed 's/.*"\(ses_[^"]*\)"/\1/')
+    co_oc_forget_session "$sid"
+    case "$out" in
+      *"Agent not found"*) DOCTOR_DETAIL="agent not found"; return 1 ;;
+      *no-route*|*"Model unavailable"*) return 0 ;;
+      *) DOCTOR_DETAIL=$(printf '%s' "$out" | tail -c 300); return 1 ;;
+    esac
+  fi
+  if OPENCODE_CONFIG_CONTENT="$cfg" "$bin" debug agent offload-read >/dev/null 2>&1; then return 0; fi
+  DOCTOR_DETAIL="try: OPENCODE_CONFIG_CONTENT=… $bin debug agent offload-read"
+  return 1
+}
+
+cmd_doctor() {
+  local ping=false reset=false
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --ping) ping=true; shift ;;
+      --reset) reset=true; shift ;;
+      *) die "doctor: unknown option $1" ;;
+    esac
+  done
+  local ok="✓" bad="✗" warn="!" problems=0
+  echo "offload $CO_VERSION — $CO_ROOT"
+  echo "  $ok bash $BASH_VERSION"
+  if command -v jq >/dev/null 2>&1; then echo "  $ok jq $(jq --version 2>/dev/null)"
+  else echo "  $bad jq missing (brew install jq / apt install jq)"; return 1; fi
+
+  local bin ver
+  bin=$(co_opencode_bin)
+  if co_have_opencode; then
+    ver=$("$bin" --version 2>/dev/null | tail -1)
+    echo "  $ok opencode $ver ($(command -v "$bin" 2>/dev/null || echo "$bin"))"
+  else
+    echo "  $bad opencode not found as '$bin' — install from https://opencode.ai, then: opencode auth login"
+    problems=$((problems + 1))
+  fi
+
+  local u p
+  u=$(co_user_config_path); p=$(co_project_config_path)
+  for f in "$u" "$p"; do
+    if [ -f "$f" ]; then
+      if jq -e . "$f" >/dev/null 2>&1; then echo "  $ok config $f"; else echo "  $bad config $f is not valid JSON (ignored)"; problems=$((problems + 1)); fi
+    else
+      echo "  - config $f (not present)"
+    fi
+  done
+  co_cfg_bool '.enabled' true || echo "  $warn offload is disabled (enabled=false or OFFLOAD_DISABLE=1): hooks pass everything through"
+
+  rm -f "$(co_state_dir)/opencode-version" 2>/dev/null; CO_OC_MAJOR=""   # doctor always re-detects
+  if $reset; then rm -f "$(co_state_dir)"/cooldowns/* 2>/dev/null; echo "  $ok cooldowns cleared"; fi
+
+  local models_list="" task m cool
+  if co_have_opencode; then models_list=$("$bin" models 2>/dev/null); fi
+  echo "  models (task → chain):"
+  for task in read explore summarize write ask; do
+    printf '    %-9s → %s\n' "$task" "$(co_model_chain "$task" | tr '\n' ' ')"
+  done
+  local all_models
+  all_models=$(for task in read explore summarize write ask; do co_model_chain "$task"; done | awk 'NF && !s[$0]++')
+  while IFS= read -r m; do
+    [ -z "$m" ] && continue
+    if [ "$m" = "@default" ]; then
+      echo "  $warn @default = OpenCode's own default model. Pin a cheap one: offload config set models.default PROVIDER/MODEL"
+    elif [ -n "$models_list" ] && ! printf '%s\n' "$models_list" | grep -qxF "$m"; then
+      echo "  $bad $m is not in \`opencode models\` (typo, or provider not logged in: opencode auth login)"
+      problems=$((problems + 1))
+    elif [ -n "$models_list" ]; then
+      echo "  $ok $m available"
+    fi
+    if cool=$(co_model_cooling "$m"); then echo "  $warn $m cooling down: $cool (offload doctor --reset)"; fi
+  done <<EOF
+$all_models
+EOF
+
+  if co_have_opencode; then
+    if doctor_agents_load; then
+      echo "  $ok worker agents load in opencode (v$(co_oc_major))"
+    else
+      echo "  $bad opencode did not load offload's worker agents (OPENCODE_CONFIG_CONTENT): $DOCTOR_DETAIL"
+      problems=$((problems + 1))
+    fi
+  fi
+
+  if $ping && co_have_opencode; then
+    echo "  live ping:"
+    local prompt answer rc
+    co_tmp prompt; co_tmp answer
+    printf 'Reply with exactly the word: pong\n' > "$prompt"
+    while IFS= read -r m; do
+      [ -z "$m" ] && continue
+      : > "$answer"
+      if [ "$m" = "@default" ]; then co_oc_attempt offload-ask "@default" "$prompt" "$(co_work_dir)" "" "$answer"
+      else co_oc_attempt offload-ask "$m" "$prompt" "$(co_work_dir)" "" "$answer"; fi
+      rc=$?
+      if [ "$rc" = 0 ]; then echo "    $ok $m → $(head -c 40 "$answer" | LC_ALL=C tr '\n' ' ') (${CO_OC_SECONDS}s)"
+      else echo "    $bad $m → exit $rc: $(printf '%s' "$CO_OC_ERROR" | head -1 | LC_ALL=C cut -c1-160)"; problems=$((problems + 1)); fi
+    done <<EOF
+$all_models
+EOF
+  fi
+
+  echo "  state: $(co_state_dir)"
+  echo "  hooks: read_guard=$(co_cfg '.hooks.read_guard') (>$(co_cfg '.hooks.read_threshold_lines') lines or >$(co_cfg '.hooks.read_threshold_tokens') tokens) · bash_read_guard=$(co_cfg '.hooks.bash_read_guard') · summarize_bash_output=$(co_cfg '.hooks.summarize_bash_output') · autowrap=$(co_cfg '.hooks.autowrap')"
+  if [ "$problems" -gt 0 ]; then echo "$problems problem(s) found."; return 1; fi
+  echo "All good."
+}
+
+# ----------------------------------------------------------------- stats
+
+cmd_stats() {
+  local days=0
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --days) need "$@"; days="$2"; shift 2 ;;
+      *) die "stats: unknown option $1" ;;
+    esac
+  done
+  local f
+  f="$(co_state_dir)/stats.jsonl"
+  [ -s "$f" ] || { echo "No offload activity recorded yet ($f)."; return 0; }
+  jq -rs --argjson days "$days" '
+    (now - ($days * 86400)) as $since
+    | map(select($days == 0 or .ts >= $since))
+    | . as $all
+    | def fmt: tostring | if length <= 3 then . else (.[:-3] | fmt) + "," + .[-3:] end;
+      def sum(f): map(f // 0) | add // 0;
+      ($all | map(select(.kind != "hook"))) as $del
+    | "offload stats" + (if $days > 0 then " (last \($days) days)" else " (all time)" end),
+      "  delegations: \($del | length)   est. Claude tokens kept out of context: \($del | sum(.saved_tokens) | floor | fmt)",
+      "  worker tokens used: in \($del | sum(.worker_tokens_in) | fmt) / out \($del | sum(.worker_tokens_out) | fmt)",
+      "",
+      "  kind           count   saved≈tok   avg s   model-failures",
+      ($del | group_by(.kind + (if .source then ":" + .source else "" end))[] |
+        "  \((.[0].kind + (if .[0].source then ":" + .[0].source else "" end)) | .[0:13] | . + (" " * (13 - length)))  \(length | tostring | (" " * (6 - length)) + .)   \(sum(.saved_tokens) | floor | fmt | (" " * (9 - length)) + .)   \((sum(.seconds) / length * 10 | floor) / 10 | tostring | (" " * (5 - length)) + .)   \(map(select(.model_ok == false)) | length)"),
+      "",
+      "  hook events: \($all | map(select(.kind == "hook")) | group_by(.event) | map("\(.[0].event)=\(length)") | join("  "))",
+      "  citations: \($del | sum(.cites_ok)) verified, \($del | sum(.cites_bad)) unverified"
+  ' "$f"
+  echo "  (estimates: bytes/4 of what was kept out of context; extra turns and cache effects are not counted)"
+}
+
+# ---------------------------------------------------------------- config
+
+cmd_config() {
+  local sub="${1:-show}"
+  [ $# -gt 0 ] && shift
+  local target
+  target=$(co_user_config_path)
+  local args=() a
+  for a in "$@"; do
+    if [ "$a" = "--project" ]; then target=$(co_project_config_path); else args+=("$a"); fi
+  done
+  case "$sub" in
+    show)
+      co_config_load
+      echo "# defaults: $CO_ROOT/config/defaults.json"
+      echo "# user:     $(co_user_config_path)$([ -f "$(co_user_config_path)" ] || echo ' (absent)')"
+      echo "# project:  $(co_project_config_path)$([ -f "$(co_project_config_path)" ] || echo ' (absent)')"
+      printf '%s\n' "$CO_CONFIG" | jq . ;;
+    path)
+      echo "$target" ;;
+    init)
+      if [ -f "$target" ]; then die "config init: $target already exists (edit it, or use: offload config set KEY VALUE)"; fi
+      mkdir -p "$(dirname "$target")"
+      cat > "$target" <<'EOF'
+{
+  "models": {
+    "default": "",
+    "read": "",
+    "explore": "",
+    "summarize": "",
+    "write": "",
+    "fallback": []
+  },
+  "hooks": {
+    "read_guard": "block",
+    "read_threshold_lines": 600,
+    "read_threshold_tokens": 6000,
+    "summarize_bash_output": true
+  }
+}
+EOF
+      echo "wrote $target — set models with: offload config set models.default PROVIDER/MODEL (see: opencode models)" ;;
+    set)
+      [ ${#args[@]} -ge 2 ] || die "config set KEY VALUE [--project]   e.g. offload config set models.read opencode-go/glm-5.3-flash"
+      local key="${args[0]}" val="${args[1]}" cur
+      mkdir -p "$(dirname "$target")"
+      cur='{}'
+      [ -f "$target" ] && cur=$(cat "$target")
+      printf '%s' "$cur" | jq -e 'type == "object"' >/dev/null 2>&1 || die "config set: $target is not valid JSON; fix it first"
+      printf '%s' "$cur" | jq --arg k "$key" --arg v "$val" '
+        setpath($k | split("."); ($v | try fromjson catch $v))' > "$target.tmp" && mv "$target.tmp" "$target"
+      echo "set $key = $val in $target" ;;
+    *) die "config: unknown subcommand $sub (show|path|init|set)" ;;
+  esac
+}
+
+# ------------------------------------------------------------------ main
+
+main() {
+  local cmd="${1:-help}"
+  [ $# -gt 0 ] && shift
+  case "$cmd" in
+    help|-h|--help) usage; return 0 ;;
+    version|-v|--version) echo "offload $CO_VERSION"; return 0 ;;
+  esac
+  need_jq
+  co_config_load
+  case "$cmd" in
+    read|bulk-read)  cmd_read "$@" ;;
+    explore)         cmd_explore "$@" ;;
+    run)             cmd_run "$@" ;;
+    summarize|digest) cmd_summarize "$@" ;;
+    write|code-write) cmd_write "$@" ;;
+    ask)             cmd_ask "$@" ;;
+    outline)         [ -f "${1:-}" ] || die "outline: give a file"; co_outline "$1" "${2:-80}" ;;
+    doctor)          cmd_doctor "$@" ;;
+    stats)           cmd_stats "$@" ;;
+    config)          cmd_config "$@" ;;
+    *) co_err "unknown command: $cmd"; usage >&2; return "$CO_E_USAGE" ;;
+  esac
+}
+
+main "$@"

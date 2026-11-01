@@ -1,0 +1,71 @@
+{
+  "enabled": true,
+
+  "models": {
+    "default": "",
+    "read": "",
+    "explore": "",
+    "summarize": "",
+    "write": "",
+    "ask": "",
+    "fallback": []
+  },
+  "variants": {
+    "read": "",
+    "explore": "",
+    "summarize": "",
+    "write": "",
+    "ask": ""
+  },
+
+  "opencode": {
+    "bin": "opencode",
+    "timeout_seconds": 180,
+    "max_stream_errors": 2,
+    "keep_sessions": false,
+    "disable_claude_code_compat": true
+  },
+
+  "read": {
+    "max_input_bytes": 1500000,
+    "max_files": 60,
+    "verify_citations": true
+  },
+  "explore": {
+    "max_steps": 40
+  },
+  "digest": {
+    "threshold_lines": 150,
+    "threshold_bytes": 12000,
+    "use_model": true,
+    "max_model_input_bytes": 400000,
+    "key_lines": 30,
+    "tail_lines": 15
+  },
+
+  "hooks": {
+    "read_guard": "block",
+    "read_threshold_lines": 600,
+    "read_threshold_tokens": 6000,
+    "read_max_chunk_lines": 600,
+    "bash_read_guard": true,
+    "summarize_bash_output": true,
+    "bash_output_threshold_lines": 250,
+    "bash_output_threshold_bytes": 20000,
+    "digest_timeout_seconds": 90,
+    "bash_never_summarize": "^[[:space:]]*(sudo[[:space:]]+)?(cat|bat|nl|head|tail|less|more|sed|awk|grep|egrep|fgrep|rg|ag|ack|jq|yq|diff|wc|ls|tree|find|fd|stat|file|echo|printf|offload|git[[:space:]]+(diff|show|blame|status|log))([[:space:]]|$)",
+    "autowrap": false,
+    "autowrap_pattern": "^[[:space:]]*((npm|pnpm|yarn|bun)[[:space:]]+(run[[:space:]]+)?(test|build|lint|install|ci|typecheck)|npx[[:space:]]+(jest|vitest|tsc|eslint|playwright)|(jest|vitest|pytest|tox|tsc|eslint|ruff|mypy)([[:space:]]|$)|go[[:space:]]+(test|build|vet)|cargo[[:space:]]+(test|build|check|clippy)|(mvn|mvnw|\\./mvnw|gradle|\\./gradlew)([[:space:]]|$)|make([[:space:]]|$)|pip[[:space:]]+install|docker[[:space:]]+(build|compose[[:space:]]+build)|terraform[[:space:]]+plan)",
+    "subagents": true,
+    "ignore_globs": []
+  },
+
+  "privacy": {
+    "secret_globs": [".env", ".env.*", "*.pem", "*.key", "*.p12", "*.pfx", "*.jks", "*.keystore", "id_rsa*", "id_ecdsa*", "id_ed25519*", ".npmrc", ".pypirc", ".netrc", "credentials", "credentials.*", "secrets.*", "*.tfvars", "*.tfstate"],
+    "secret_allow_globs": ["*.example", "*.sample", "*.template", "*.dist"],
+    "redact": true
+  },
+
+  "state_dir": "",
+  "log_retention_days": 7
+}

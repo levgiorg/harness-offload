@@ -1,0 +1,69 @@
+#!/usr/bin/env bash
+# Fake `opencode` for fast, offline tests of offload's transport.
+# The model id picks the behaviour: stub/<mode>, e.g. -m stub/ok.
+#   ok         one step, text = $STUB_ANSWER (or the file $STUB_ANSWER_FILE)
+#   multistep  tool-calling chatter, then the final answer in a later step
+#   auth       non-retryable auth error (exit 1)
+#   nomodel    unknown model error (exit 1)
+#   retry      provider retries forever (V1: stderr "stream error"; V2: step_starts)
+#   hang       never answers
+#   empty      finishes without text
+#   echo       answers with the prompt it received
+# STUB_VERSION selects the event dialect (1.x or 2.x). Every run appends the
+# model to $STUB_LOG and the prompt to $STUB_PROMPT when those are set.
+ver="${STUB_VERSION:-1.19.5}"
+case "$1" in
+  --version|-v) echo "$ver"; exit 0 ;;
+  session|debug|agent) exit 0 ;;
+  models) printf 'stub/ok\nstub/multistep\nstub/auth\nstub/retry\nstub/echo\n'; exit 0 ;;
+  run) shift ;;
+  *) exit 0 ;;
+esac
+model="" agent=""
+while [ $# -gt 0 ]; do
+  case "$1" in
+    -m) model="$2"; shift 2 ;;
+    --agent) agent="$2"; shift 2 ;;
+    *) shift ;;
+  esac
+done
+input=$(cat)
+[ -n "${STUB_LOG:-}" ] && printf '%s %s\n' "$model" "$agent" >> "$STUB_LOG"
+[ -n "${STUB_PROMPT:-}" ] && printf '%s' "$input" > "$STUB_PROMPT"
+mode="${model#*/}"; mode="${mode%%#*}"
+v2=false; case "$ver" in 2.*|v2*) v2=true ;; esac
+sid="ses_stub0001"
+
+start() { printf '{"type":"step_start","sessionID":"%s","part":{"type":"step-start"}}\n' "$sid"; }
+finish() { printf '{"type":"step_finish","sessionID":"%s","part":{"type":"step-finish","reason":"stop","cost":0,"tokens":{"input":%s,"output":7,"reasoning":0,"cache":{"read":0,"write":0}}}}\n' "$sid" "${1:-100}"; }
+text() { jq -nc --arg t "$1" --arg s "$sid" '{type: "text", sessionID: $s, part: {type: "text", text: $t}}'; }
+err() {
+  if $v2; then jq -nc --arg ty "$1" --arg m "$2" --arg s "$sid" '{type: "error", sessionID: $s, error: {type: $ty, message: $m}}'
+  else jq -nc --arg n "$3" --arg m "$2" --arg s "$sid" '{type: "error", sessionID: $s, error: {name: $n, data: {message: $m}}}'
+  fi
+}
+answer() {
+  if [ -n "${STUB_ANSWER_FILE:-}" ]; then cat "$STUB_ANSWER_FILE"; else printf '%s' "${STUB_ANSWER:-stub answer}"; fi
+}
+
+case "$mode" in
+  ok) start; text "$(answer)"; finish 1234 ;;
+  echo) start; text "$input"; finish ;;
+  multistep)
+    start; text "Let me look around first."
+    printf '{"type":"tool_use","sessionID":"%s","part":{"type":"tool","tool":"grep","state":{"status":"completed"}}}\n' "$sid"
+    finish 500; start; text "$(answer)"; finish 2000 ;;
+  auth) start; err provider.auth "invalid api key" APIError; exit 1 ;;
+  nomodel) err provider.no-route "Model unavailable: $model" ProviderModelNotFoundError; exit 1 ;;
+  retry)
+    start
+    while :; do
+      if $v2; then sleep 0.4; start
+      else sleep 0.4; echo 'timestamp=x level=ERROR message="stream error" error.error="AI_APICallError: Rate limit exceeded"' >&2
+      fi
+    done ;;
+  hang) start; sleep 600 ;;
+  empty) start; finish ;;
+  *) err unknown "stub: unknown mode $mode" UnknownError; exit 1 ;;
+esac
+exit 0

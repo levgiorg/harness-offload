@@ -1,0 +1,8 @@
+{
+  "name": "code-offload",
+  "displayName": "Code Offload",
+  "version": "0.1.0",
+  "description": "Offloads bulk I/O (large file reads, noisy command output, codebase exploration, boilerplate) to cheap models through the OpenCode CLI and your own subscriptions, so it never fills Claude's context. Hooks guard large reads and digest long Bash output.",
+  "author": { "name": "OWNER" },
+  "keywords": ["token-optimization", "delegation", "opencode", "context", "model-routing"]
+}

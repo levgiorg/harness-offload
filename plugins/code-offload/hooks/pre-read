@@ -1,0 +1,42 @@
+#!/usr/bin/env bash
+# PreToolUse(Read): keep whole large files out of Claude's context.
+# Targeted reads (offset/limit within hooks.read_max_chunk_lines) pass.
+. "$(cd "$(dirname "$0")/.." && pwd)/lib/hook.sh"
+. "$CO_ROOT/lib/outline.sh"
+
+co_available || exit 0
+hk_skip_subagent && exit 0
+[ "$(co_cfg '.hooks.read_guard' block)" = "off" ] && exit 0
+
+file=$(hk_get '.tool_input.file_path')
+offset=$(hk_get '.tool_input.offset')
+limit=$(hk_get '.tool_input.limit')
+[ -n "$file" ] && [ -f "$file" ] || exit 0
+hk_ignored "$file" && exit 0
+hk_not_for_offload "$file" && exit 0
+
+lines=$(co_file_lines "$file")
+bytes=$(co_file_bytes "$file")
+chunk=$(co_cfg_int '.hooks.read_max_chunk_lines' 600)
+max_lines=$(co_cfg_int '.hooks.read_threshold_lines' 600)
+max_tokens=$(co_cfg_int '.hooks.read_threshold_tokens' 6000)
+case "$offset" in ''|*[!0-9]*) offset="" ;; esac
+case "$limit" in ''|*[!0-9]*) limit="" ;; esac
+
+if [ -n "$offset" ] || [ -n "$limit" ]; then
+  # A targeted read: fine as long as the slice itself is not huge.
+  start=${offset:-1}
+  [ "$start" -lt 1 ] && start=1
+  if [ -n "$limit" ]; then span=$limit; else span=$(( lines - start + 1 )); fi
+  remaining=$(( lines - start + 1 ))
+  [ "$span" -gt "$remaining" ] && span=$remaining
+  [ "$span" -le "$chunk" ] && exit 0
+  hk_event read_slice_blocked "$(jq -nc --argjson l "$span" '{lines: $l}')"
+  hk_guard "offload: that Read slice is $(co_fmt_int "$span") lines of $file; keep slices to at most $chunk lines (use offset/limit), or ask: offload read -q \"<question>\" $(co_shquote "$file"):$start-$(( start + span - 1 ))"
+fi
+
+tokens=$(co_est_tokens "$bytes")
+[ "$lines" -le "$max_lines" ] && [ "$tokens" -le "$max_tokens" ] && exit 0
+
+hk_event read_blocked "$(jq -nc --argjson l "$lines" --argjson t "$tokens" '{lines: $l, tokens: $t}')"
+hk_guard "$(hk_big_file_message "$file" "$lines" "$tokens" "A full Read")"

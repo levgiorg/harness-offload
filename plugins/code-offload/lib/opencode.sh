@@ -1,0 +1,390 @@
+# shellcheck shell=bash
+# offload — OpenCode transport (supports OpenCode V1 1.x and V2 2.x).
+#
+# One delegation = one `opencode run --format json` against a offload-owned
+# agent, prompt on stdin, agents injected via OPENCODE_CONFIG_CONTENT (merged
+# over the user's own config, so their providers and logins keep working).
+#
+# Behaviour this file relies on (verified against opencode 1.19.5 and 2.2.5):
+#   * Non-retryable failures (bad key, unknown model/agent) exit 1 and emit a
+#     {"type":"error"} event — V1 {error:{name,data:{message}}},
+#     V2 {error:{type:"provider.auth",message}}.
+#   * Retryable failures (429, quota, overload) are retried with backoff and
+#     print nothing useful: V1 logs "stream error" lines on stderr (with
+#     --print-logs) and never gives up; V2 re-emits step_start events. We
+#     count those and stop early so a quota wall costs seconds, not minutes.
+#   * V2 `run` talks to a shared background service that never sees our env;
+#     --standalone gives the run a private server that does.
+#   * A tool denied with a catch-all deny is removed from the model's tools.
+#
+# Exit codes (also used by bin/offload):
+#   0 ok · 2 usage · 10 rate limit/quota · 11 auth · 12 timeout
+#   13 unknown model/provider · 14 other worker error · 15 opencode missing
+#   16 nothing to send (refused by a guard)
+
+CO_E_USAGE=2 CO_E_QUOTA=10 CO_E_AUTH=11 CO_E_TIMEOUT=12 CO_E_MODEL=13
+CO_E_WORKER=14 CO_E_NOOC=15 CO_E_REFUSED=16
+
+# Outputs of the last co_oc_invoke / co_oc_attempt call.
+CO_OC_MODEL="" CO_OC_TOKENS_IN=0 CO_OC_TOKENS_OUT=0 CO_OC_CTX_IN=0 CO_OC_COST=0 CO_OC_SECONDS=0 CO_OC_ERROR=""
+
+# ------------------------------------------------------------ version
+
+CO_OC_MAJOR="${CO_OC_MAJOR:-}"
+# Major version of the configured opencode binary (1 or 2). `opencode
+# --version` costs up to ~0.5s, so the answer is cached in the state dir for
+# an hour per binary path (and per process); a CLI flag error clears it.
+co_oc_major() {
+  if [ -z "$CO_OC_MAJOR" ]; then
+    local bin cache v="" cbin cmaj
+    bin=$(co_opencode_bin)
+    cache="$(co_state_dir)/opencode-version"
+    if [ -f "$cache" ] && [ -n "$(find "$cache" -mmin -60 2>/dev/null)" ]; then
+      read -r cmaj cbin < "$cache" 2>/dev/null
+      [ "$cbin" = "$bin" ] && v="$cmaj"
+    fi
+    if [ -z "$v" ]; then
+      v=$("$bin" --version 2>/dev/null | tail -1 | sed -n 's/[^0-9]*\([0-9][0-9]*\)\..*/\1/p')
+      case "$v" in ''|*[!0-9]*) v=1 ;; *) printf '%s %s\n' "$v" "$bin" > "$cache" 2>/dev/null ;; esac
+    fi
+    CO_OC_MAJOR="$v"
+  fi
+  printf '%s' "$CO_OC_MAJOR"
+}
+
+# ------------------------------------------------------------ model chain
+
+co_model_for() {
+  local task="$1" m
+  m=$(co_cfg ".models.$task")
+  [ -z "$m" ] && m=$(co_cfg '.models.default')
+  printf '%s' "$m"
+}
+
+# Primary model for the task, then models.fallback, de-duplicated. An empty
+# primary means "OpenCode's own default model" and is spelled "@default".
+co_model_chain() {
+  local task="$1" override="${2:-}" first
+  first="${override:-$(co_model_for "$task")}"
+  {
+    printf '%s\n' "${first:-@default}"
+    co_cfg_list '.models.fallback'
+  } | awk 'NF && !seen[$0]++'
+}
+
+co_cooldown_file() {
+  printf '%s/cooldowns/%s' "$(co_state_dir)" "$(printf '%s' "$1" | LC_ALL=C tr -c 'A-Za-z0-9._-' '_')"
+}
+
+# Prints the cooldown reason (and time left) when the model is cooling down.
+co_model_cooling() {
+  local f until reason
+  f=$(co_cooldown_file "$1")
+  [ -f "$f" ] || return 1
+  read -r until reason < "$f" 2>/dev/null || return 1
+  case "$until" in ''|*[!0-9]*) rm -f "$f"; return 1 ;; esac
+  if [ "$until" -le "$(co_now)" ]; then rm -f "$f"; return 1; fi
+  printf '%s, %ss left' "${reason:-error}" $(( until - $(co_now) ))
+  return 0
+}
+
+co_model_cooldown() {
+  printf '%s %s\n' $(( $(co_now) + $2 )) "$3" > "$(co_cooldown_file "$1")" 2>/dev/null || true
+}
+
+co_any_model_ready() {
+  local m task
+  for task in read summarize; do
+    while IFS= read -r m; do
+      [ -z "$m" ] && continue
+      co_model_cooling "$m" >/dev/null || return 0
+    done <<EOF
+$(co_model_chain "$task")
+EOF
+  done
+  return 1
+}
+
+# ------------------------------------------------------------ agent config
+
+# OPENCODE_CONFIG_CONTENT defining offload's worker agents, in the schema of
+# the installed major version. Prompts live in prompts/*.md. Every agent is
+# deny-by-default; only the explorer may read/grep/glob, and never files that
+# match privacy.secret_globs.
+co_oc_config() {
+  local major steps user_cfg="${OPENCODE_CONFIG_CONTENT:-}" secrets
+  major=$(co_oc_major)
+  steps=$(co_cfg_int '.explore.max_steps' 40)
+  secrets=$(co_config_load; printf '%s' "$CO_CONFIG" | jq -c '.privacy.secret_globs // []')
+  if [ -z "$user_cfg" ] || ! printf '%s' "$user_cfg" | jq -e 'type == "object"' >/dev/null 2>&1; then
+    user_cfg='{}'
+  fi
+  jq -n \
+    --rawfile read "$CO_ROOT/prompts/read.md" \
+    --rawfile summarize "$CO_ROOT/prompts/summarize.md" \
+    --rawfile explore "$CO_ROOT/prompts/explore.md" \
+    --rawfile write "$CO_ROOT/prompts/write.md" \
+    --rawfile ask "$CO_ROOT/prompts/ask.md" \
+    --argjson steps "$steps" \
+    --argjson secrets "$secrets" \
+    --argjson user "$user_cfg" \
+    --argjson major "$major" '
+    def secretGlobs: ($secrets | map(., "**/" + .));
+    def v1(name; prompt; temp):
+      {mode: "primary", description: name, prompt: prompt, temperature: temp, permission: {"*": "deny"}};
+    def v2(name; prompt):
+      {mode: "primary", hidden: true, description: name, system: prompt,
+       permissions: [{action: "*", resource: "*", effect: "deny"}]};
+    if $major >= 2 then
+      $user * {
+        snapshots: false,
+        agents: {
+          "offload-read":      v2("offload bulk reader"; $read),
+          "offload-summarize": v2("offload output digester"; $summarize),
+          "offload-write":     v2("offload code writer"; $write),
+          "offload-ask":       v2("offload one-shot helper"; $ask),
+          "offload-explore":   (v2("offload read-only explorer"; $explore) + {steps: $steps}
+            | .permissions += ([ "read", "grep", "glob" ] | map({action: ., resource: "*", effect: "allow"}))
+            | .permissions += (secretGlobs | map({action: "read", resource: ., effect: "deny"})))
+        }
+      }
+    else
+      $user * {
+        snapshot: false,
+        agent: {
+          "offload-read":      v1("offload bulk reader"; $read; 0.1),
+          "offload-summarize": v1("offload output digester"; $summarize; 0.1),
+          "offload-write":     v1("offload code writer"; $write; 0.2),
+          "offload-ask":       v1("offload one-shot helper"; $ask; 0.3),
+          "offload-explore":   (v1("offload read-only explorer"; $explore; 0.1) + {steps: $steps}
+            | .permission = ({"*": "deny",
+                              read: ({"*": "allow"} + (secretGlobs | map({key: ., value: "deny"}) | from_entries)),
+                              grep: "allow", glob: "allow", list: "allow"}))
+        }
+      }
+    end'
+}
+
+# --------------------------------------------------------------- invoke
+
+# Maps an error type/message to one of the exit codes above.
+co_oc_classify() {
+  local msg
+  msg=$(printf '%s' "$1" | LC_ALL=C tr '[:upper:]' '[:lower:]')
+  case "$msg" in
+    *provider.rate-limit*|*provider.quota*|*provider.free-limit*|*provider.go-limit*|*provider.overloaded*|\
+    *"usage limit"*|*"rate limit"*|*rate_limit*|*quota*|*"too many requests"*|*429*|*overloaded*|*"limit reached"*|*"insufficient"*|*credit*)
+      return $CO_E_QUOTA ;;
+    *provider.auth*|*"api key"*|*api_key*|*unauthorized*|*401*|*403*|*forbidden*|*"not authenticated"*|*"log in"*|*login*)
+      return $CO_E_AUTH ;;
+    *provider.no-route*|*"model unavailable"*|*"model not found"*|*"unknown model"*|*"provider not found"*|*providermodelnotfound*|*model_not_found*)
+      return $CO_E_MODEL ;;
+    *provider.timeout*|*"timed out"*)
+      return $CO_E_TIMEOUT ;;
+  esac
+  return $CO_E_WORKER
+}
+
+# Final assistant text from a --format json event stream: the text of the
+# last step that produced any (earlier steps are tool-calling chatter).
+co_oc_extract_text() {
+  jq -rRs '
+    split("\n") | map(fromjson? // empty)
+    | reduce .[] as $e ({done: [], cur: ""};
+        if $e.type == "step_start" then .done += [.cur] | .cur = ""
+        elif $e.type == "text" then .cur += ($e.part.text // "")
+        else . end)
+    | (.done + [.cur]) | map(select(explode - [32, 9, 10, 13] | length > 0)) | last // ""' "$1" 2>/dev/null
+}
+
+# "<type-or-name>: <message>" of the last error event, empty if none.
+co_oc_error_message() {
+  jq -rRs 'split("\n") | map(fromjson? // empty) | map(select(.type == "error")) | last
+           | if . == null then "" else
+               ((.error.type // .error.name // "error") + ": " + (.error.message // .error.data.message // (.error | tostring)))
+             end' "$1" 2>/dev/null
+}
+
+# Number of provider retries so far. V1: "stream error" log lines. V2: a
+# step_start that follows another step_start with no step_finish between.
+co_oc_retry_count() {
+  local out="$1" errf="$2" n
+  n=$(LC_ALL=C grep -c 'stream error' "$errf" 2>/dev/null || true)
+  if [ "${n:-0}" -gt 0 ]; then printf '%s' "$n"; return; fi
+  grep -oE '^\{"type":"(step_start|step_finish)"' "$out" 2>/dev/null |
+    awk '/step_start/ { if (open) r++; open = 1; next } { open = 0 } END { print r + 0 }'
+}
+
+# Deletes a worker session in the background so OpenCode's session list does
+# not fill up with offload runs. Fully detached: hooks must not wait on it.
+co_oc_forget_session() {
+  local sid="$1" bin
+  [ -z "$sid" ] && return 0
+  co_cfg_bool '.opencode.keep_sessions' false && return 0
+  bin=$(co_opencode_bin)
+  # On V2, --standalone keeps us from starting the user's background service.
+  if [ "$(co_oc_major)" -ge 2 ]; then
+    ( cd "$(co_state_dir)" && nohup "$bin" session delete --standalone "$sid" >/dev/null 2>&1 </dev/null & ) >/dev/null 2>&1
+  else
+    ( cd "$(co_state_dir)" && nohup "$bin" session delete "$sid" >/dev/null 2>&1 </dev/null & ) >/dev/null 2>&1
+  fi
+}
+
+# One attempt against one model; writes the answer to answer_file.
+# Args: agent model(or @default) prompt_file workdir variant answer_file
+co_oc_attempt() {
+  local agent="$1" model="$2" prompt_file="$3" workdir="$4" variant="$5" answer_file="$6"
+  local bin major timeout max_err out errf pid start rc n sid msg text cfg
+  bin=$(co_opencode_bin)
+  major=$(co_oc_major)
+  timeout=$(co_cfg_int '.opencode.timeout_seconds' 180)
+  max_err=$(co_cfg_int '.opencode.max_stream_errors' 2)
+  co_tmp out; co_tmp errf
+  CO_OC_TOKENS_IN=0 CO_OC_TOKENS_OUT=0 CO_OC_CTX_IN=0 CO_OC_COST=0 CO_OC_ERROR=""
+
+  local -a args
+  args=(run --format json --agent "$agent" --title "offload:${agent#offload-}")
+  if [ "$major" -ge 2 ]; then
+    args+=(--standalone)
+    if [ "$model" != "@default" ]; then
+      if [ -n "$variant" ]; then args+=(-m "$model#$variant"); else args+=(-m "$model"); fi
+    fi
+  else
+    args+=(--print-logs --log-level ERROR)
+    [ "$model" != "@default" ] && args+=(-m "$model")
+    [ -n "$variant" ] && args+=(--variant "$variant")
+  fi
+
+  cfg=$(co_oc_config) || { CO_OC_ERROR="could not build the worker config (jq failed)"; return $CO_E_WORKER; }
+
+  start=$(co_now)
+  (
+    cd "$workdir" 2>/dev/null || exit 1
+    PWD="$workdir"; export PWD
+    if co_cfg_bool '.opencode.disable_claude_code_compat' true; then export OPENCODE_DISABLE_CLAUDE_CODE=1; fi
+    OPENCODE_CONFIG_CONTENT="$cfg" OPENCODE_DISABLE_AUTOUPDATE=1 \
+      exec "$bin" "${args[@]}" < "$prompt_file" > "$out" 2> "$errf"
+  ) &
+  pid=$!
+
+  rc=""
+  while :; do
+    if ! kill -0 "$pid" 2>/dev/null; then
+      wait "$pid"; rc=$?
+      break
+    fi
+    if [ "$(co_elapsed "$start")" -ge "$timeout" ]; then
+      kill "$pid" 2>/dev/null; sleep 1; kill -9 "$pid" 2>/dev/null; wait "$pid" 2>/dev/null
+      CO_OC_ERROR="timed out after ${timeout}s"
+      rc=$CO_E_TIMEOUT
+      break
+    fi
+    n=$(co_oc_retry_count "$out" "$errf")
+    if [ "${n:-0}" -ge "$max_err" ]; then
+      kill "$pid" 2>/dev/null; sleep 1; kill -9 "$pid" 2>/dev/null; wait "$pid" 2>/dev/null
+      msg=$(LC_ALL=C grep 'stream error' "$errf" 2>/dev/null | tail -1 | LC_ALL=C sed -n 's/.*error\.error="\([^"]*\).*/\1/p')
+      CO_OC_ERROR="provider kept failing and retrying (${n} retries): ${msg:-likely rate limit, quota or overload}"
+      co_oc_classify "${msg:-rate limit}"; rc=$?
+      break
+    fi
+    sleep 0.3
+  done
+  CO_OC_SECONDS=$(co_elapsed "$start")
+
+  sid=$(grep -o '"sessionID":"ses_[A-Za-z0-9_]*"' "$out" 2>/dev/null | head -1 | sed 's/.*"\(ses_[^"]*\)"/\1/')
+  [ -z "$sid" ] && sid=$(sed -n 's/.*session\.id=\(ses_[A-Za-z0-9]*\).*/\1/p' "$errf" 2>/dev/null | head -1)
+  co_oc_forget_session "$sid"
+
+  case "$rc" in "$CO_E_TIMEOUT"|"$CO_E_QUOTA"|"$CO_E_AUTH"|"$CO_E_MODEL") return "$rc" ;; esac
+
+  msg=$(co_oc_error_message "$out")
+  if [ -n "$msg" ] || [ "$rc" != 0 ]; then
+    [ -z "$msg" ] && msg=$(LC_ALL=C grep -E 'level=ERROR' "$errf" 2>/dev/null | tail -1 | LC_ALL=C sed -n 's/.*error="\([^"]*\).*/\1/p')
+    [ -z "$msg" ] && msg=$(grep -v '^timestamp=' "$errf" 2>/dev/null | tail -c 400)
+    case "$msg" in
+      *"nknown argument"*|*"nknown option"*|*"nknown flag"*|*"nrecognized"*)
+        # Probably an opencode upgrade/downgrade behind a cached version.
+        rm -f "$(co_state_dir)/opencode-version" 2>/dev/null; CO_OC_MAJOR=""
+        msg="$msg (opencode version changed? cleared the cache — run again)" ;;
+    esac
+    CO_OC_ERROR="${msg:-opencode exited with status $rc}"
+    case "$CO_OC_ERROR" in
+      *"Unexpected server error"*)
+        CO_OC_ERROR="$CO_OC_ERROR (V1 reports unknown model ids this way — check \`opencode models\`)"
+        return $CO_E_MODEL ;;
+      *"Agent not found"*)
+        CO_OC_ERROR="$CO_OC_ERROR (opencode ignored offload's agent config — run \`offload doctor\`)"
+        return $CO_E_WORKER ;;
+    esac
+    co_oc_classify "$CO_OC_ERROR"
+    return $?
+  fi
+
+  text=$(co_oc_extract_text "$out")
+  if [ -z "$text" ]; then
+    CO_OC_ERROR="worker returned an empty answer"
+    return $CO_E_WORKER
+  fi
+  # Totals across steps, plus the last step's prompt size (≈ how much context
+  # the worker had to hold — what Claude would otherwise have read).
+  read -r CO_OC_TOKENS_IN CO_OC_TOKENS_OUT CO_OC_CTX_IN CO_OC_COST <<EOF
+$(jq -rRs 'split("\n") | map(fromjson? // empty) | map(select(.type == "step_finish") | .part) as $s
+  | [ ($s | map(.tokens.input // 0) | add // 0),
+      ($s | map(.tokens.output // 0) | add // 0),
+      (($s | last // {}) | ((.tokens.input // 0) + (.tokens.cache.read // 0))),
+      ($s | map(.cost // 0) | add // 0) ] | map(tostring) | join(" ")' "$out" 2>/dev/null)
+EOF
+  printf '%s\n' "$text" > "$answer_file"
+  return 0
+}
+
+# co_oc_invoke <task> <prompt_file> <workdir> <answer_file> [model_override]
+# Walks the model chain, skipping models in cooldown and cooling down models
+# that fail for quota/auth/model reasons. Writes the answer to answer_file and
+# sets CO_OC_* (call it directly, not in $(...), or those are lost).
+co_oc_invoke() {
+  local task="$1" prompt_file="$2" workdir="$3" answer_file="$4" override="${5:-}"
+  local agent="offload-$task" variant model rc=$CO_E_WORKER cool tried="" errors=""
+  CO_OC_MODEL="" CO_OC_ERROR=""
+
+  if ! co_have_opencode; then
+    CO_OC_ERROR="opencode CLI not found ($(co_opencode_bin)). Install it from https://opencode.ai, or set opencode.bin in the offload config."
+    return $CO_E_NOOC
+  fi
+  variant=$(co_cfg ".variants.$task")
+
+  while IFS= read -r model; do
+    [ -z "$model" ] && continue
+    if [ -z "$override" ] && cool=$(co_model_cooling "$model"); then
+      errors="${errors}  - $model: skipped, cooling down ($cool)
+"
+      continue
+    fi
+    tried="$tried $model"
+    co_oc_attempt "$agent" "$model" "$prompt_file" "$workdir" "$variant" "$answer_file"
+    rc=$?
+    if [ "$rc" = 0 ]; then
+      CO_OC_MODEL="$model"
+      [ "$model" = "@default" ] && CO_OC_MODEL="opencode-default-model"
+      return 0
+    fi
+    errors="${errors}  - $model: $CO_OC_ERROR
+"
+    case "$rc" in
+      "$CO_E_QUOTA") co_model_cooldown "$model" 300  "rate-limit/quota" ;;
+      "$CO_E_AUTH")  co_model_cooldown "$model" 1800 "auth" ;;
+      "$CO_E_MODEL") co_model_cooldown "$model" 3600 "unknown-model" ;;
+    esac
+  done <<EOF
+$(co_model_chain "$task" "$override")
+EOF
+
+  if [ -z "$tried" ]; then
+    CO_OC_ERROR="every configured model is cooling down after errors:
+${errors}(\`offload doctor --reset\` clears cooldowns)"
+    return $CO_E_QUOTA
+  fi
+  CO_OC_ERROR="no model succeeded:
+$errors"
+  return "$rc"
+}

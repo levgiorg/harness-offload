@@ -1,0 +1,62 @@
+#!/usr/bin/env bash
+# PostToolUse(Bash): when a successful command printed a lot, replace what
+# Claude sees with a digest (cheap-model summary + verbatim key lines + tail)
+# and keep the full output in a log file Claude can grep.
+#
+# Failed commands (non-zero exit) go to PostToolUseFailure, whose output
+# cannot be replaced; Claude Code already trims those to ~10K chars. Use
+# `offload run` for noisy commands that are expected to fail.
+. "$(cd "$(dirname "$0")/.." && pwd)/lib/hook.sh"
+. "$CO_ROOT/lib/digest.sh"
+
+co_cfg_bool '.enabled' true || exit 0
+co_cfg_bool '.hooks.summarize_bash_output' true || exit 0
+hk_skip_subagent && exit 0
+
+cmd=$(hk_get '.tool_input.command')
+[ -z "$cmd" ] && exit 0
+case "$cmd" in OFFLOAD_RAW=1*) exit 0 ;; esac
+[ "$(hk_get '.tool_input.run_in_background')" = "true" ] && exit 0
+[ "$(hk_get '.tool_response.interrupted')" = "true" ] && exit 0
+[ "$(hk_get '.tool_response.isImage')" = "true" ] && exit 0
+
+# Commands whose output Claude needs verbatim: judge by the last pipeline
+# segment, since that is what produced the output.
+last=$(printf '%s\n' "$cmd" | tail -n 1 | awk '{ n = split($0, p, /\|\||&&|;|\|/); print p[n] }')
+never=$(co_cfg '.hooks.bash_never_summarize')
+if [ -n "$never" ] && printf '%s\n' "$last" | grep -qE -- "$never"; then exit 0; fi
+
+# Claude Code caps tool_response.stdout at ~30K chars and keeps the whole
+# output in persistedOutputPath — prefer that, or the tail (where errors
+# and summaries live) would be lost. It also shows Claude only a 2KB
+# preview of what we return in that case, so the digest goes compact.
+persisted=$(hk_get '.tool_response.persistedOutputPath')
+co_tmp outf
+if [ -n "$persisted" ] && [ -r "$persisted" ]; then
+  cp "$persisted" "$outf" 2>/dev/null || exit 0
+  export OFFLOAD_DIGEST_COMPACT=1
+else
+printf '%s' "$HK_INPUT" | jq -r '
+  (.tool_response.stdout // "") as $o | (.tool_response.stderr // "") as $e
+  | if ($e | length) > 0 then $o + (if ($o | length) > 0 then "\n" else "" end) + "[stderr]\n" + $e else $o end' > "$outf" 2>/dev/null || exit 0
+fi
+
+lines=$(co_file_lines "$outf"); bytes=$(co_file_bytes "$outf")
+[ "$lines" -le "$(co_cfg_int '.hooks.bash_output_threshold_lines' 250)" ] &&
+  [ "$bytes" -le "$(co_cfg_int '.hooks.bash_output_threshold_bytes' 20000)" ] && exit 0
+
+# The model is optional here: without opencode (or within cooldown) the
+# digest is purely deterministic, which still beats a 30K-char dump.
+co_available || export OFFLOAD_NO_MODEL=1
+export OFFLOAD_TIMEOUT="${OFFLOAD_TIMEOUT:-$(co_cfg_int '.hooks.digest_timeout_seconds' 90)}"
+CO_CONFIG=""; co_config_load   # reload so the timeout override applies
+
+log=$(co_new_log "$cmd")
+cp "$outf" "$log" 2>/dev/null || exit 0
+focus=$(hk_get '.tool_input.description')
+digest=$(co_digest "$log" "$cmd" "0" "$focus" hook) || exit 0
+[ -z "$digest" ] && exit 0
+
+printf '%s' "$HK_INPUT" | jq -c --arg d "$digest" '
+  {hookSpecificOutput: {hookEventName: "PostToolUse",
+    updatedToolOutput: ((.tool_response // {}) + {stdout: $d, stderr: ""})}}'

@@ -1,0 +1,100 @@
+#!/usr/bin/env bash
+# PreToolUse(Bash):
+#  1. catches cat/nl/bat/less/more/head/tail/sed -n that would dump a large
+#     file into context (the Bash side door around the Read guard);
+#  2. optionally (hooks.autowrap) routes noisy commands through `offload run`.
+. "$(cd "$(dirname "$0")/.." && pwd)/lib/hook.sh"
+. "$CO_ROOT/lib/outline.sh"
+
+co_available || exit 0
+hk_skip_subagent && exit 0
+
+cmd=$(hk_get '.tool_input.command')
+[ -z "$cmd" ] && exit 0
+case "$cmd" in OFFLOAD_RAW=1*|*offload\ *) exit 0 ;; esac
+
+chunk=$(co_cfg_int '.hooks.read_max_chunk_lines' 600)
+max_lines=$(co_cfg_int '.hooks.read_threshold_lines' 600)
+max_tokens=$(co_cfg_int '.hooks.read_threshold_tokens' 6000)
+
+# ---- 1. large-file dumps (only simple commands: pipes/redirects/chains are
+# assumed to be deliberate and are left alone)
+check_dump() {
+  co_cfg_bool '.hooks.bash_read_guard' true || return 0
+  [ "$(co_cfg '.hooks.read_guard' block)" = "off" ] && return 0
+  case "$cmd" in *'|'*|*'>'*|*'<'*|*';'*|*'&&'*|*'||'*|*'$('*|*'`'*) return 0 ;; esac
+
+  # shellcheck disable=SC2086
+  set -f; set -- $cmd; set +f
+  local prog="$1" n="" range="" a b f lines bytes tokens span
+  shift
+  case "$prog" in cat|nl|bat|batcat|less|more|head|tail|sed) ;; *) return 0 ;; esac
+
+  local -a files
+  files=()
+  while [ $# -gt 0 ]; do
+    if [ "$prog" = head ] || [ "$prog" = tail ]; then
+      case "$1" in
+        -n|--lines) [ $# -ge 2 ] || return 0; n="$2"; shift 2; continue ;;
+        -n[0-9]*|-n+[0-9]*) n="${1#-n}" ;;
+        --lines=*) n="${1#--lines=}" ;;
+        -[0-9]*) n="${1#-}" ;;
+        -f|-F|--follow*) return 0 ;;
+        -c|--bytes|-c*|--bytes=*) return 0 ;;
+      esac
+    fi
+    case "$1" in
+      -*) ;;
+      *)
+        if [ "$prog" = "sed" ] && [ -z "$range" ] && ! [ -f "$1" ]; then range="$1"
+        else files+=("$(printf '%s' "$1" | LC_ALL=C tr -d "\"'")")
+        fi ;;
+    esac
+    shift
+  done
+  [ ${#files[@]} -gt 0 ] || return 0
+
+  for f in "${files[@]}"; do
+    [ -f "$f" ] || continue
+    hk_ignored "$f" && continue
+    hk_not_for_offload "$f" && continue
+    lines=$(co_file_lines "$f"); bytes=$(co_file_bytes "$f"); tokens=$(co_est_tokens "$bytes")
+    case "$prog" in
+      head|tail)
+        n=$(printf '%s' "$n" | LC_ALL=C tr -cd '0-9'); [ -z "$n" ] && n=10
+        span=$n; [ "$span" -gt "$lines" ] && span=$lines
+        [ "$span" -le "$chunk" ] && continue ;;
+      sed)
+        # only `sed -n 'A,Bp'` style prints are reads
+        range=$(printf '%s' "$range" | LC_ALL=C tr -d "\"'")
+        a=$(printf '%s' "$range" | sed -n 's/^\([0-9][0-9]*\),\([0-9$][0-9]*\)p$/\1/p')
+        b=$(printf '%s' "$range" | sed -n 's/^\([0-9][0-9]*\),\([0-9$][0-9]*\)p$/\2/p')
+        [ -z "$a" ] && continue
+        [ "$b" = '$' ] && b=$lines
+        span=$(( b - a + 1 ))
+        [ "$span" -le "$chunk" ] && continue ;;
+      *)
+        [ "$lines" -le "$max_lines" ] && [ "$tokens" -le "$max_tokens" ] && continue
+        span=$lines ;;
+    esac
+    [ "$span" -le "$max_lines" ] && [ "$lines" -le "$max_lines" ] && [ "$tokens" -le "$max_tokens" ] && continue
+    hk_event bash_read_blocked "$(jq -nc --argjson l "$lines" --argjson t "$tokens" --arg p "$prog" '{lines: $l, tokens: $t, prog: $p}')"
+    hk_guard "$(hk_big_file_message "$f" "$lines" "$tokens" "\`$prog\`")"
+  done
+  return 0
+}
+check_dump
+
+# ---- 2. autowrap noisy commands (opt-in)
+if co_cfg_bool '.hooks.autowrap' false; then
+  pat=$(co_cfg '.hooks.autowrap_pattern')
+  if [ -n "$pat" ] && printf '%s\n' "$cmd" | grep -qE -- "$pat"; then
+    [ "$(hk_get '.tool_input.run_in_background')" = "true" ] && exit 0
+    wrapped="offload run -c $(co_shquote "$cmd")"
+    hk_event autowrap
+    printf '%s' "$HK_INPUT" | jq -c --arg c "$wrapped" '
+      {hookSpecificOutput: {hookEventName: "PreToolUse", updatedInput: (.tool_input + {command: $c})}}'
+    exit 0
+  fi
+fi
+exit 0
