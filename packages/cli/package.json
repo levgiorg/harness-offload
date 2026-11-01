@@ -13,16 +13,17 @@
   "bugs": "https://github.com/OWNER/code-offload/issues",
   "keywords": [
     "ai",
-    "coding-agent",
     "claude-code",
     "codex",
+    "coding-agent",
+    "context",
     "cursor",
-    "opencode",
-    "pi",
     "gemini-cli",
     "mcp",
-    "token-optimization",
-    "context"
+    "opencode",
+    "pi",
+    "pi-package",
+    "token-optimization"
   ],
   "type": "module",
   "bin": {
@@ -59,5 +60,18 @@
     "@types/node": "^26.6.6",
     "typebox": "^1.4.3",
     "typescript": "^7.0.2"
+  },
+  "pi": {
+    "extensions": [
+      "./dist/pi.js"
+    ]
+  },
+  "peerDependencies": {
+    "typebox": "*"
+  },
+  "peerDependenciesMeta": {
+    "typebox": {
+      "optional": true
+    }
   }
 }

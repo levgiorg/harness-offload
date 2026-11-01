@@ -238,8 +238,12 @@ co_oc_forget_session() {
 co_ts_cli() {
   if [ -n "${OFFLOAD_TS_CLI:-}" ]; then printf '%s' "$OFFLOAD_TS_CLI"; return 0; fi
   if command -v code-offload >/dev/null 2>&1; then printf 'code-offload'; return 0; fi
-  local js="$CO_ROOT/../../packages/cli/dist/cli.js"
-  if [ -f "$js" ] && command -v node >/dev/null 2>&1; then printf 'node %s' "$js"; return 0; fi
+  local js
+  # repo checkout (plugins/code-offload → packages/cli) or the npm package's
+  # bundled marketplace (assets/marketplace/plugins/code-offload → dist/)
+  for js in "$CO_ROOT/../../packages/cli/dist/cli.js" "$CO_ROOT/../../../../dist/cli.js"; do
+    if [ -f "$js" ] && command -v node >/dev/null 2>&1; then printf 'node %s' "$js"; return 0; fi
+  done
   if command -v npx >/dev/null 2>&1; then printf 'npx --yes code-offload@%s' "$CO_VERSION"; return 0; fi
   return 1
 }

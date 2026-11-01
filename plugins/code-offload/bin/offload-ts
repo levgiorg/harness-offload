@@ -18,6 +18,8 @@ elif command -v code-offload >/dev/null 2>&1; then
   exec code-offload "$@"
 elif [ -f "$root/../../packages/cli/dist/cli.js" ] && command -v node >/dev/null 2>&1; then
   exec node "$root/../../packages/cli/dist/cli.js" "$@"
+elif [ -f "$root/../../../../dist/cli.js" ] && command -v node >/dev/null 2>&1; then
+  exec node "$root/../../../../dist/cli.js" "$@"
 elif [ "${1:-}" != "hook" ] && command -v npx >/dev/null 2>&1; then
   exec npx --yes "code-offload@$version" "$@"
 fi
