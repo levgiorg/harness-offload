@@ -1,0 +1,11 @@
+name: New host or backend
+description: Ask for support of another agent harness or worker backend
+labels: [enhancement]
+body:
+  - type: input
+    id: name
+    attributes: { label: Harness or backend }
+    validations: { required: true }
+  - type: textarea
+    id: mechanism
+    attributes: { label: Extension mechanism, description: "Hooks? MCP? Plugin API? Headless CLI flags? Links to docs." }
