@@ -69,6 +69,15 @@ CLI, OpenCode, Windsurf, and anything that speaks MCP.
 - [~] More hosts: Kilo Code ✓ (OpenCode v1 plugin API); GitHub Copilot CLI hooks, Crush hooks, Qwen Code hooks (formats unverified).
 - [ ] Per-host e2e with real binaries where available (codex exec worker, gemini CLI) behind `--integration`.
 
+### M8 Owner requests (2026-11-02, before sleeping) — TOP PRIORITY
+- [ ] **Rename to "Harness Offload"** everywhere (plugin/package/config dirs/docs). CLI stays `offload` (+ alias `harness-offload`); npm `harness-offload` (free on 2026-11-02).
+- [ ] **"Use my agent's own subscription" option, for every plugin/host**: model ref `@host` resolves to the calling harness's cheap model (Claude Code → `claude:haiku`, Codex → `codex:gpt-6-luna`, Gemini CLI → `gemini:flash-lite`, Cursor → `cursor:` default, Pi → `pi:` default, OpenCode/Kilo → OpenCode default). Host known from hooks/MCP launchers (`OFFLOAD_HOST`) or env detection (`CLAUDECODE`, `CODEX_*`, `CURSOR_AGENT`, `GEMINI_CLI`, …). Wizard offers it first; doctor explains it.
+- [ ] Claude worker hardened for subscription use: `claude -p --setting-sources … --strict-mcp-config --disable-slash-commands --no-session-persistence --system-prompt … --tools ""`, `OFFLOAD_DISABLE=1` (no recursion). (`--bare` can't use OAuth subscriptions — don't use it.)
+- [ ] **Bash engine native CLI-agent connectors** (claude, codex, gemini, cursor, pi) and HTTP (curl, non-explore), so the Claude Code plugin works with the same subscription WITHOUT Node/npm (the owner's zip install failed exactly here).
+- [ ] **Self-contained plugin**: commit a built `plugins/harness-offload/dist/cli.js` (+ pi.js, opencode.js) so marketplace installs (GitHub clone, Codex cache copy, Cursor local copy) never need a build; CI fails if it is stale.
+- [ ] **All known harnesses**: add Copilot CLI, Crush, Qwen Code (await research), Amp, Cline, Goose/Zed/Continue (MCP recipes), Kiro (hooks?), Aider (conventions file) — each with install + doc row.
+- [ ] Any UI (landing page/docs site, stats dashboard) must use the **impeccable** skill (github: pbakaus/impeccable) and Claude Code's design skills (artifact-design etc.). Plan: `offload dashboard` local stats page + a landing page in `site/`.
+
 ## Loop protocol (every iteration, including the 30-minute /loop wake-ups)
 1. Read GOALS.md, the tail of PROGRESS.md and DECISIONS.md; `git log --oneline | head`.
 2. Run the fast checks (bash suite; TS tests once they exist). Fix red before anything else.
