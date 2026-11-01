@@ -366,7 +366,7 @@ expect_has "post-bash: without opencode still digests deterministically" "$(prin
 r=$(hook session-start '{"source":"startup"}')
 expect_has "session-start: injects guide" "$(printf '%s' "$r" | jq -r '.hookSpecificOutput.additionalContext')" "offload read -q"
 r=$(OFFLOAD_OPENCODE_BIN=/nonexistent hook session-start '{"source":"startup"}')
-expect_has "session-start: warns user when opencode is missing" "$(printf '%s' "$r" | jq -r '.systemMessage')" "opencode CLI not found"
+expect_has "session-start: warns user when no backend is available" "$(printf '%s' "$r" | jq -r '.systemMessage')" "no worker backend available"
 
 # ------------------------------------------------------------------ integration
 if $INTEGRATION; then

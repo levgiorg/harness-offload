@@ -3,16 +3,16 @@
 . "$(cd "$(dirname "$0")/.." && pwd)/lib/hook.sh"
 
 co_cfg_bool '.enabled' true || exit 0
-if ! co_have_opencode; then
+if ! co_backend_present; then
   [ "$(hk_get '.source')" = "startup" ] || exit 0
-  jq -nc --arg m "offload: opencode CLI not found ($(co_opencode_bin)) — delegation is off and offload hooks pass everything through. Install https://opencode.ai, then run: offload doctor" \
+  jq -nc --arg m "offload: no worker backend available (opencode not found and no other backend configured) — delegation is off and offload hooks pass everything through. Run: offload setup   (or: offload doctor)" \
     '{systemMessage: $m}'
   exit 0
 fi
 
 lines=$(co_cfg '.hooks.read_threshold_lines' 600)
 read -r -d '' guide <<EOF2
-offload is installed: cheap OpenCode models do bulk reading/digesting so it stays out of your context. Use these Bash commands (on PATH):
+offload is installed: cheap worker models do bulk reading/digesting so it stays out of your context. Use these Bash commands (on PATH):
 - offload read -q "QUESTION" PATH... — questions about big files or dirs (PATH may be file:START-END). Answers cite path:Lx-Ly with machine-checked quotes; Read just those lines before editing.
 - offload explore "QUESTION" — read-only cheap agent searches the repo itself ("where/how is X done?" across many files).
 - offload run -- CMD... — for noisy commands (tests, builds, installs, linters, long logs): prints a digest + verbatim error lines + full-log path, keeps the exit code.

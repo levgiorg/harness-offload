@@ -254,6 +254,18 @@ co_have_opencode() {
 co_available() {
   co_cfg_bool '.enabled' true || return 1
   command -v jq >/dev/null 2>&1 || return 1
-  co_have_opencode || return 1
+  co_backend_present || return 1
   co_any_model_ready
+}
+
+# True when the backend of the first read/summarize model can run here:
+# opencode on PATH for OpenCode refs, the TypeScript CLI for BACKEND:MODEL refs.
+co_backend_present() {
+  local m
+  for m in "$(co_model_chain read | head -n 1)" "$(co_model_chain summarize | head -n 1)"; do
+    if co_is_ts_ref "$m"; then co_ts_cli >/dev/null && return 0
+    else co_have_opencode && return 0
+    fi
+  done
+  return 1
 }
