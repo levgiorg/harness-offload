@@ -19,7 +19,8 @@ const HELP = () => `${banner()}
   ${color.bold("Set up")}
     offload setup                           interactive wizard: backends, keys, models, hosts
     offload demo                            10-second tour, no model calls
-    offload install <host> | uninstall <host>   claude · codex · cursor · pi · gemini · opencode · windsurf
+    offload install <host> | uninstall <host>   claude · codex · cursor · gemini · pi · opencode · kilo · devin · mcp
+    offload sync                            refresh every installed integration (after an upgrade)
     offload doctor [--ping] [--reset]       check everything; --ping makes one tiny call per model
     offload models [BACKEND...]             list models your backends offer
     offload config [show|path|init|set KEY VALUE|get] [--project]
@@ -91,6 +92,8 @@ async function main(argv: string[]): Promise<number> {
     case "install":
     case "uninstall":
       return (await import("./commands/install.ts")).cmdInstall(cmd, rest);
+    case "sync":
+      return (await import("./commands/install.ts")).cmdSync(rest);
     case "mcp":
       return (await import("./commands/mcp.ts")).cmdMcp(rest);
     case "hook":

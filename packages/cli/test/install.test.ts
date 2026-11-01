@@ -60,6 +60,11 @@ describe("offload install", () => {
     expect(calls()).toMatch(/pi install .*packages\/cli/);
     expect(calls()).toMatch(/devin plugins install --local .*plugins\/code-offload/);
   });
+  test("sync refreshes recorded installs and lists unwired hosts", () => {
+    const r = cli(["sync", "--dry-run"], { env: s.env });
+    expect(r.stdout).toContain("(refresh)");
+    expect(r.stdout).toContain("Cursor");
+  });
   test("unknown host → usage error", () => {
     expect(cli(["install", "notepad"], { env: s.env }).code).toBe(2);
   });

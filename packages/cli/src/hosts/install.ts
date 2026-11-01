@@ -211,3 +211,12 @@ export async function uninstall(host: HostName): Promise<Step[]> {
   record(host, undefined);
   return steps;
 }
+
+export function installedHosts(): HostName[] {
+  try {
+    const all = JSON.parse(readFileSync(join(stateDir(), "installs.json"), "utf8"));
+    return Object.keys(all).filter((h): h is HostName => (HOSTS as readonly string[]).includes(h));
+  } catch {
+    return [];
+  }
+}

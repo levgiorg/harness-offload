@@ -110,7 +110,7 @@ offload explore QUESTION                offload doctor [--ping]     offload unin
 offload run [-q FOCUS] -- CMD...        offload models [BACKEND]    offload stats [--days N]
 offload summarize [-q FOCUS] [FILE]     offload config show|set     offload mcp
 offload write --spec S --ref F [--out P] [--check CMD]
-offload ask [--stdin|-f FILE] QUESTION  offload outline FILE           offload statusline
+offload ask [--stdin|-f FILE] QUESTION  offload outline FILE           offload statusline · offload sync
 ```
 
 Status line: add `"statusLine": {"type": "command", "command": "offload statusline"}` to your Claude Code
