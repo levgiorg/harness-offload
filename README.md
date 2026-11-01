@@ -72,6 +72,7 @@ Prefer a plugin marketplace? In Claude Code: `/plugin marketplace add OWNER/code
 | **Gemini CLI** | extension (`offload install gemini`) | ✓ `read_file` + shell | ✓ | GEMINI.md + SessionStart | MCP tools |
 | **Pi** | package (`offload install pi`) | ✓ read + bash | ✓ | system prompt | native `offload_*` tools |
 | **OpenCode** (v1 & v2) | plugin (`offload install opencode`) | ✓ read + shell | ✓ | system prompt | `offload` CLI |
+| **Kilo Code CLI** | plugin (`offload install kilo`) | ✓ read + bash | ✓ | system prompt | `offload` CLI |
 | **Devin Desktop / Windsurf** | Claude plugin (`offload install devin`) | ✓ (Claude hooks) | — | — | `offload` CLI |
 | **Any MCP client** (Zed, VS Code, Goose, Claude Desktop…) | `offload install mcp` prints the config | — | — | server instructions | MCP tools |
 
@@ -108,8 +109,11 @@ offload explore QUESTION                offload doctor [--ping]     offload unin
 offload run [-q FOCUS] -- CMD...        offload models [BACKEND]    offload stats [--days N]
 offload summarize [-q FOCUS] [FILE]     offload config show|set     offload mcp
 offload write --spec S --ref F [--out P] [--check CMD]
-offload ask [--stdin|-f FILE] QUESTION  offload outline FILE
+offload ask [--stdin|-f FILE] QUESTION  offload outline FILE           offload statusline
 ```
+
+Status line: add `"statusLine": {"type": "command", "command": "offload statusline"}` to your Claude Code
+settings to see `▌offload 12 · ~48.2k saved today`.
 
 Exit codes: `0` ok · `2` usage · `10` quota · `11` auth · `12` timeout · `13` unknown model ·
 `14` worker error · `15` backend missing · `16` refused (secrets/size). `offload run` returns the

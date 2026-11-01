@@ -7,7 +7,7 @@ function withStubs() {
   const s = sandbox();
   const bin = join(s.dir, "bin");
   mkdirSync(bin);
-  for (const name of ["claude", "codex", "pi", "gemini", "devin"]) {
+  for (const name of ["claude", "codex", "pi", "gemini", "devin", "kilo"]) {
     const f = join(bin, name);
     writeFileSync(f, `#!/bin/sh\necho "${name} $*" >> "${join(s.dir, "calls.log")}"\n`);
     chmodSync(f, 0o755);
@@ -50,6 +50,10 @@ describe("offload install", () => {
     expect(cli(["install", "opencode"], { env: s.env }).code).toBe(0);
     const f = join(s.dir, "home", ".config", "opencode", "plugin", "code-offload.js");
     expect(readFileSync(f, "utf8")).toMatch(/export \{ default \} from "file:\/\/.*\/dist\/opencode\.js";/);
+  });
+  test("kilo: OpenCode-v1-style plugin file", () => {
+    expect(cli(["install", "kilo"], { env: s.env }).code).toBe(0);
+    expect(readFileSync(join(s.dir, "home", ".config", "kilo", "plugin", "code-offload.js"), "utf8")).toContain("dist/opencode.js");
   });
   test("pi and devin call their CLIs", () => {
     cli(["install", "pi", "devin"], { env: s.env });

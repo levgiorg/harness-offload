@@ -12,7 +12,7 @@ import { outline } from "../outline.ts";
 import { estTokens, fileBytes, fileLines, fmtInt, isText, shquote } from "../text.ts";
 import { writeFileSync } from "node:fs";
 
-export type Host = "claude" | "codex" | "cursor" | "gemini" | "pi" | "opencode" | "devin";
+export type Host = "claude" | "codex" | "cursor" | "gemini" | "pi" | "opencode" | "kilo" | "devin";
 
 export interface Verdict {
   action: "deny" | "ask" | "note";

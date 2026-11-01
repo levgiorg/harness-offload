@@ -2,7 +2,7 @@
 import { VERSION } from "./assets.ts";
 import { UsageError } from "./args.ts";
 import { ExitError, cmdAsk, cmdExplore, cmdOutline, cmdRead, cmdRun, cmdSummarize, cmdWrite } from "./commands/core.ts";
-import { cmdConfig, cmdDoctor, cmdModels, cmdStats } from "./commands/admin.ts";
+import { cmdConfig, cmdDoctor, cmdModels, cmdStats, cmdStatusline } from "./commands/admin.ts";
 import { banner, color } from "./ui.ts";
 
 const HELP = () => `${banner()}
@@ -23,6 +23,7 @@ const HELP = () => `${banner()}
     offload models [BACKEND...]             list models your backends offer
     offload config [show|path|init|set KEY VALUE|get] [--project]
     offload stats [--days N] [--json]       delegations and estimated tokens saved
+    offload statusline                      one short line for status bars
     offload mcp                             run as an MCP server (stdio)
 
   ${color.bold("Models")} are written BACKEND:MODEL — e.g. ${color.cyan("openrouter:qwen/qwen3-coder")}, ${color.cyan("ollama:qwen3:8b")},
@@ -72,6 +73,9 @@ async function main(argv: string[]): Promise<number> {
       return cmdDoctor(rest);
     case "stats":
       cmdStats(rest);
+      return 0;
+    case "statusline":
+      cmdStatusline();
       return 0;
     case "config":
       cmdConfig(rest);

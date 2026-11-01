@@ -130,6 +130,13 @@ export function cmdStats(argv: string[]): void {
     [...groups].sort().map(([k, v]) => [k, String(v.length), fmtInt(sum(v, "saved_tokens")), String(Math.round((sum(v, "seconds") / v.length) * 10) / 10), String(v.filter((r) => r.model_ok === false).length)]),
     ["kind", "count", "saved≈tok", "avg s", "model-failures"],
   );
+  // last 14 days of saved tokens as a sparkline
+  const dayOf = (ts: number) => Math.floor(ts / 86400);
+  const today = dayOf(Date.now() / 1000);
+  const perDay = Array.from({ length: 14 }, (_, i) => sum(del.filter((r) => dayOf(r.ts) === today - 13 + i), "saved_tokens"));
+  const max = Math.max(...perDay, 1);
+  const bars = "▁▂▃▄▅▆▇█";
+  s += `\n  last 14 days  ${color.cyan(perDay.map((v) => (v === 0 ? "·" : bars[Math.min(7, Math.floor((v / max) * 7.999))])).join(""))}  (today ${fmtInt(perDay[13])} tok)\n`;
   s += `\n  hook events: ${[...hooks].map(([k, v]) => `${k}=${v}`).join("  ")}\n`;
   s += `  citations: ${sum(del, "cites_ok")} verified, ${sum(del, "cites_bad")} unverified\n`;
   s += "  (estimates: bytes/4 of what was kept out of context; extra turns and cache effects are not counted)\n";
@@ -197,4 +204,19 @@ export async function cmdModels(argv: string[]): Promise<void> {
 
 export async function which_(cmd: string) {
   return which(cmd);
+}
+
+/** One short line for status bars (Claude Code statusLine, tmux, starship…). */
+export function cmdStatusline(): void {
+  const now = Math.floor(Date.now() / 1000);
+  const since = now - (now % 86400); // UTC day, same as the bash engine
+  let rows: Record<string, any>[] = [];
+  try {
+    rows = readStats().filter((r) => r.kind !== "hook" && r.ts >= since);
+  } catch {
+    /* no state yet */
+  }
+  const saved = rows.reduce((s, r) => s + (Number(r.saved_tokens) || 0), 0);
+  const k = saved >= 1000 ? `${Math.floor(saved / 100) / 10}k` : String(saved);
+  process.stdout.write(`${color.cyan("▌")}offload ${rows.length} · ~${k} saved today\n`);
 }

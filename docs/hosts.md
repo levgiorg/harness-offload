@@ -34,6 +34,9 @@ What each integration installs, how it talks to the host, and what to know.
 - One default export serves both: v2 uses `{id, setup}` (`tool.hook("execute.before"/"execute.after")`, `session.hook("context")`), v1 calls `server()` (`tool.execute.before/after`, `experimental.chat.system.transform`).
 - When OpenCode itself is the *worker*, offload sets `OFFLOAD_DISABLE=1`, so the plugin stays out of the way.
 
+## Kilo Code CLI
+- Kilo is an OpenCode v1 fork with the same plugin API; `offload install kilo` writes `~/.config/kilo/plugin/code-offload.js` (the same bundle as OpenCode).
+
 ## Devin Desktop / Windsurf
 - Cascade was replaced by Devin Local, which reads Claude Code plugins and hooks. `offload install devin` runs `devin plugins install --local <plugin>`.
 
