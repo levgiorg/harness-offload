@@ -9,9 +9,20 @@ const res = await Bun.build({
   naming: "cli.js",
   banner: "#!/usr/bin/env node",
 });
-if (!res.success) {
-  for (const l of res.logs) console.error(l);
-  process.exit(1);
+// Host integrations loaded in-process by pi (Node) and OpenCode (Bun).
+const res2 = await Bun.build({
+  entrypoints: ["src/integrations/pi.ts", "src/integrations/opencode.ts"],
+  outdir: "dist",
+  target: "node",
+  format: "esm",
+  naming: "[name].js",
+  external: ["typebox", "@earendil-works/*"],
+});
+for (const r of [res, res2]) {
+  if (!r.success) {
+    for (const l of r.logs) console.error(l);
+    process.exit(1);
+  }
 }
 const { chmodSync, readFileSync, writeFileSync } = await import("node:fs");
 // Bun keeps the source shebang too; make sure there is exactly one.

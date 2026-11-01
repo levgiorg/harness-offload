@@ -31,7 +31,7 @@ describe("codex adapter", () => {
   test("blocks `cat` of a big file and points at the MCP tool", () => {
     const o = hook("codex", "pre-tool", { hook_event_name: "PreToolUse", tool_name: "Bash", turn_id: "t", tool_input: { command: `cat ${join(s.dir, "big.ts")}` } }, s);
     expect(o.hookSpecificOutput.permissionDecision).toBe("deny");
-    expect(o.hookSpecificOutput.permissionDecisionReason).toContain("offload_read MCP tool");
+    expect(o.hookSpecificOutput.permissionDecisionReason).toContain("offload_read tool");
     expect(Object.keys(o)).toEqual(["hookSpecificOutput"]);
   });
   test("replaces long output with continue:false + reason (non-error)", () => {
@@ -51,7 +51,7 @@ describe("cursor adapter", () => {
   test("Read deny uses agent_message", () => {
     const o = hook("cursor", "pre-tool", { hook_event_name: "preToolUse", tool_name: "Read", tool_input: { file_path: join(s.dir, "big.ts") } }, s);
     expect(o.permission).toBe("deny");
-    expect(o.agent_message).toContain("offload_read MCP tool");
+    expect(o.agent_message).toContain("offload_read tool");
   });
   test("Shell guard", () => {
     const o = hook("cursor", "pre-tool", { tool_name: "Shell", tool_input: { command: `nl ${join(s.dir, "big.ts")}`, working_directory: s.dir } }, s);

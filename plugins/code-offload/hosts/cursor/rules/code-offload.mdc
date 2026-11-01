@@ -1,0 +1,11 @@
+---
+description: Delegate bulk reading, exploration and noisy command output to Code Offload's MCP tools
+alwaysApply: true
+---
+
+Code Offload is installed. Keep bulk I/O out of your context:
+
+- Files over ~600 lines or questions about many files: call the `offload_read` MCP tool (`question`, `paths`) or `offload_explore` (`question`). Answers cite `path:Lx-Ly` with verified quotes — read only those lines before editing.
+- Noisy commands (tests, builds, installs, linters): call `offload_run` (`command`, optional `focus`) instead of running them in the terminal; it returns a digest, the verbatim error lines and the full-log path.
+- Boilerplate that follows an existing file: `offload_write` (`spec`, `reference`, `out`), then review it.
+- Keep debugging, design decisions and edits for yourself; read slices for exact text.

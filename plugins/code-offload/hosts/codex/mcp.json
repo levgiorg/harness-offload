@@ -1,0 +1,5 @@
+{
+  "mcpServers": {
+    "offload": { "command": "sh", "args": ["-c", "exec ./bin/offload-ts mcp"], "cwd": "." }
+  }
+}

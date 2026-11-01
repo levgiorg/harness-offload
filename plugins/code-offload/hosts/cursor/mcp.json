@@ -1,0 +1,5 @@
+{
+  "mcpServers": {
+    "offload": { "type": "stdio", "command": "${CURSOR_PLUGIN_ROOT}/bin/offload-ts", "args": ["mcp"] }
+  }
+}

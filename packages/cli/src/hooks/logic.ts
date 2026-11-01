@@ -21,6 +21,7 @@ export interface Verdict {
 
 /** How the agent on this host should call offload (shell vs MCP tools). */
 export function callStyle(host: Host): "shell" | "mcp" {
+  if (host === "pi") return "mcp"; // pi gets native offload_* tools
   // Codex and Cursor sandbox agent shell commands without network access.
   if (host === "codex" || host === "cursor") return cfgStr(`hosts.${host}.call`, "mcp") === "shell" ? "shell" : "mcp";
   return "shell";
@@ -68,10 +69,10 @@ function guard(message: string): Verdict | undefined {
 }
 
 function readCmd(host: Host, file: string): string {
-  return callStyle(host) === "mcp" ? `the offload_read MCP tool (question + paths: ["${file}"])` : `Bash: offload read -q "<specific question>" ${shquote(file)}`;
+  return callStyle(host) === "mcp" ? `the offload_read tool (question + paths: ["${file}"])` : `Bash: offload read -q "<specific question>" ${shquote(file)}`;
 }
 function exploreCmd(host: Host): string {
-  return callStyle(host) === "mcp" ? "the offload_explore MCP tool" : 'Bash: offload explore "<question>"';
+  return callStyle(host) === "mcp" ? "the offload_explore tool" : 'Bash: offload explore "<question>"';
 }
 
 export function bigFileMessage(host: Host, file: string, lines: number, tokens: number, how: string): string {
@@ -204,7 +205,7 @@ export async function postBash(opts: { command?: string; output: string; persist
 export function sessionGuide(host: Host, cliPath = "offload"): string {
   const lines = cfgStr("hooks.read_threshold_lines", "600");
   if (callStyle(host) === "mcp") {
-    return `offload is installed: cheap worker models do bulk reading/digesting so it stays out of your context. Use its MCP tools:
+    return `offload is installed: cheap worker models do bulk reading/digesting so it stays out of your context. Use its tools:
 - offload_read(question, paths[]) — questions about big files or dirs (paths may be file:START-END). Answers cite path:Lx-Ly with machine-checked quotes; read just those lines before editing.
 - offload_explore(question) — read-only cheap agent searches the repo itself ("where/how is X done?" across many files).
 - offload_run(command, focus?) — run noisy commands (tests, builds, installs, linters): digest + verbatim error lines + full-log path.

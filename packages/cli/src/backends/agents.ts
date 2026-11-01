@@ -146,7 +146,7 @@ export const CLI_AGENTS: Record<string, AgentSpec> = {
       if (req.task === "explore") a.push("--tools", "read,grep,find,ls");
       else a.push("--no-tools");
       if (req.model) a.push("--model", req.variant ? `${req.model}:${req.variant}` : req.model);
-      a.push("Answer as instructed above.");
+      a.push("\n\nAnswer as instructed above.");
       return { args: a, input: req.prompt };
     },
     parse: (out) => {

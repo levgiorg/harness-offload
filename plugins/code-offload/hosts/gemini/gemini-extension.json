@@ -1,0 +1,9 @@
+{
+  "name": "code-offload",
+  "version": "0.2.0",
+  "description": "Keep bulk I/O out of Gemini CLI's context: large reads, noisy command output and codebase exploration go to cheap worker models.",
+  "contextFileName": "GEMINI.md",
+  "mcpServers": {
+    "offload": { "command": "${extensionPath}${/}..${/}..${/}bin${/}offload-ts", "args": ["mcp"], "cwd": "${workspacePath}" }
+  }
+}

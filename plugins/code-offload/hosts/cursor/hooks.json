@@ -1,0 +1,7 @@
+{
+  "version": 1,
+  "hooks": {
+    "sessionStart": [ { "command": "\"${CURSOR_PLUGIN_ROOT}/bin/offload-ts\" hook cursor session-start", "timeout": 20 } ],
+    "preToolUse": [ { "matcher": "Read|Shell", "command": "\"${CURSOR_PLUGIN_ROOT}/bin/offload-ts\" hook cursor pre-tool", "timeout": 20 } ]
+  }
+}
