@@ -55,10 +55,15 @@ class H(BaseHTTPRequestHandler):
             name = os.environ.get("MOCK_TOOL", "edit")
             args = json.loads(os.environ.get("MOCK_TOOL_ARGS", '{"filePath":"pwned.txt","oldString":"","newString":"x"}'))
             return self.stream(tool_call=(name, args), stream=body.get("stream", False))
+        import re as _re
+        want = _re.search(r"READ:(\S+?)[<\s]", last + " ")
+        read_path = want.group(1) if want else os.environ.get("MOCK_READ_PATH", ".env")
+        if mode == "readenv" and not tool_results and "read_file" in tools:
+            return self.stream(tool_call=("read_file", {"path": read_path}), stream=body.get("stream", False))
         if mode == "readenv" and not tool_results and "read" in tools:
             spec = [t for t in body["tools"] if t["function"]["name"] == "read"][0]["function"].get("parameters", {})
             key = next((k for k in spec.get("properties", {}) if "path" in k.lower()), "filePath")
-            return self.stream(tool_call=("read", {key: os.environ.get("MOCK_READ_PATH", ".env")}), stream=body.get("stream", False))
+            return self.stream(tool_call=("read", {key: read_path}), stream=body.get("stream", False))
         text = (f"MOCK-REPLY chars={len(last)} system_chars={len(system)} tools={','.join(sorted(tools)) or 'none'} "
                 f"tool_results={len(tool_results)}\nFIRST_LINE: {last.splitlines()[0] if last else ''}\nLAST_LINE: {last.splitlines()[-1] if last else ''}")
         if tool_results:

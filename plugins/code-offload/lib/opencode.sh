@@ -230,10 +230,71 @@ co_oc_forget_session() {
   fi
 }
 
+# ------------------------------------------------------------ other backends
+
+# The TypeScript CLI, used as the transport for every backend that is not
+# OpenCode (HTTP APIs, pi, codex, gemini, claude, cursor). Resolution order:
+# $OFFLOAD_TS_CLI, `code-offload` on PATH, a built repo checkout, npx.
+co_ts_cli() {
+  if [ -n "${OFFLOAD_TS_CLI:-}" ]; then printf '%s' "$OFFLOAD_TS_CLI"; return 0; fi
+  if command -v code-offload >/dev/null 2>&1; then printf 'code-offload'; return 0; fi
+  local js="$CO_ROOT/../../packages/cli/dist/cli.js"
+  if [ -f "$js" ] && command -v node >/dev/null 2>&1; then printf 'node %s' "$js"; return 0; fi
+  if command -v npx >/dev/null 2>&1; then printf 'npx --yes code-offload@%s' "$CO_VERSION"; return 0; fi
+  return 1
+}
+
+# True for BACKEND:MODEL references (the prefix has no slash); OpenCode ids
+# are provider/model and keep going to opencode directly.
+co_is_ts_ref() {
+  case "$1" in
+    @default) return 1 ;;
+    */*:*) return 1 ;;
+    [A-Za-z0-9_-]*:*) return 0 ;;
+  esac
+  return 1
+}
+
+# Same contract as co_oc_attempt, through `offload worker`.
+co_ts_attempt() {
+  local agent="$1" model="$2" prompt_file="$3" workdir="$4" variant="$5" answer_file="$6"
+  local cli errf rc line start
+  CO_OC_TOKENS_IN=0 CO_OC_TOKENS_OUT=0 CO_OC_CTX_IN=0 CO_OC_COST=0 CO_OC_ERROR=""
+  if ! cli=$(co_ts_cli); then
+    CO_OC_ERROR="backend for $model needs the code-offload CLI (npm i -g code-offload) or node"
+    return $CO_E_NOOC
+  fi
+  co_tmp errf
+  start=$(co_now)
+  # shellcheck disable=SC2086
+  $cli worker --task "${agent#offload-}" --cwd "$workdir" --model "$model" ${variant:+--variant "$variant"} \
+    --timeout "$(co_cfg_int '.opencode.timeout_seconds' 180)" < "$prompt_file" > "$answer_file" 2> "$errf"
+  rc=$?
+  CO_OC_SECONDS=$(co_elapsed "$start")
+  if [ "$rc" = 0 ]; then
+    line=$(grep '^OFFLOAD_WORKER ' "$errf" | tail -1 | sed 's/^OFFLOAD_WORKER //')
+    read -r CO_OC_TOKENS_IN CO_OC_TOKENS_OUT CO_OC_CTX_IN CO_OC_COST <<EOF2
+$(printf '%s' "$line" | jq -r '[.tokens_in // 0, .tokens_out // 0, .ctx_in // 0, .cost // 0] | map(tostring) | join(" ")' 2>/dev/null)
+EOF2
+    [ -s "$answer_file" ] && return 0
+    CO_OC_ERROR="worker returned an empty answer"
+    return $CO_E_WORKER
+  fi
+  line=$(grep '^OFFLOAD_WORKER_ERROR ' "$errf" | tail -1 | sed 's/^OFFLOAD_WORKER_ERROR //')
+  CO_OC_ERROR=$(printf '%s' "$line" | jq -r '.message // empty' 2>/dev/null)
+  [ -z "$CO_OC_ERROR" ] && CO_OC_ERROR=$(tail -c 300 "$errf")
+  case "$rc" in 2|10|11|12|13|14|15|16) return "$rc" ;; esac
+  return $CO_E_WORKER
+}
+
 # One attempt against one model; writes the answer to answer_file.
 # Args: agent model(or @default) prompt_file workdir variant answer_file
 co_oc_attempt() {
   local agent="$1" model="$2" prompt_file="$3" workdir="$4" variant="$5" answer_file="$6"
+  if co_is_ts_ref "$model"; then
+    co_ts_attempt "$@"
+    return $?
+  fi
   local bin major timeout max_err out errf pid start rc n sid msg text cfg
   bin=$(co_opencode_bin)
   major=$(co_oc_major)

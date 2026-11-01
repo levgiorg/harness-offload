@@ -88,6 +88,8 @@ async function main(argv: string[]): Promise<number> {
       return (await import("./commands/mcp.ts")).cmdMcp(rest);
     case "hook":
       return (await import("./commands/hook.ts")).cmdHook(rest);
+    case "worker":
+      return (await import("./commands/worker.ts")).cmdWorker(rest);
   }
   process.stderr.write(`offload: unknown command: ${cmd}\n`);
   process.stderr.write(HELP());

@@ -8,7 +8,7 @@ CO_ROOT="${CO_ROOT:-${CLAUDE_PLUGIN_ROOT:-}}"
 if [ -z "$CO_ROOT" ]; then
   CO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 fi
-CO_VERSION="0.1.0"
+CO_VERSION="0.2.0"
 
 # ---------------------------------------------------------------- utilities
 

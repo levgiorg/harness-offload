@@ -504,7 +504,7 @@ cmd_doctor() {
   rm -f "$(co_state_dir)/opencode-version" 2>/dev/null; CO_OC_MAJOR=""   # doctor always re-detects
   if $reset; then rm -f "$(co_state_dir)"/cooldowns/* 2>/dev/null; echo "  $ok cooldowns cleared"; fi
 
-  local models_list="" task m cool
+  local models_list="" task m cool cli
   if co_have_opencode; then models_list=$("$bin" models 2>/dev/null); fi
   echo "  models (task → chain):"
   for task in read explore summarize write ask; do
@@ -514,7 +514,9 @@ cmd_doctor() {
   all_models=$(for task in read explore summarize write ask; do co_model_chain "$task"; done | awk 'NF && !s[$0]++')
   while IFS= read -r m; do
     [ -z "$m" ] && continue
-    if [ "$m" = "@default" ]; then
+    if co_is_ts_ref "$m"; then
+      if cli=$(co_ts_cli); then echo "  $ok $m (via $cli)"; else echo "  $bad $m needs the code-offload CLI: npm i -g code-offload"; problems=$((problems + 1)); fi
+    elif [ "$m" = "@default" ]; then
       echo "  $warn @default = OpenCode's own default model. Pin a cheap one: offload config set models.default PROVIDER/MODEL"
     elif [ -n "$models_list" ] && ! printf '%s\n' "$models_list" | grep -qxF "$m"; then
       echo "  $bad $m is not in \`opencode models\` (typo, or provider not logged in: opencode auth login)"

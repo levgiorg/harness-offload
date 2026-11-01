@@ -255,6 +255,39 @@ expect_has "stats: aggregates" "$out" "delegations:"
 out=$("$OFFLOAD" doctor 2>&1)
 expect_has "doctor runs" "$out" "worker agents load"
 
+# ------------------------------------------------------------ http connector
+section "http connector (mock OpenAI-compatible endpoint)"
+if command -v python3 >/dev/null 2>&1 && { [ -n "${OFFLOAD_TS_CLI:-}" ] || [ -f "$PLUGIN/../../packages/cli/dist/cli.js" ] || command -v code-offload >/dev/null 2>&1; }; then
+  HPORT=$(( 20000 + $$ % 20000 ))
+  MOCK_PORT=$HPORT MOCK_LOG="$T/http-mock.log" python3 "$HERE/mock_openai.py" > "$T/http-mock.out" 2>&1 &
+  HPID=$!
+  for _ in 1 2 3 4 5 6 7 8 9 10; do curl -s --noproxy '*' -m 1 "http://127.0.0.1:$HPORT/v1/models" >/dev/null 2>&1 && break; sleep 0.3; done
+  jq -n --arg u "http://127.0.0.1:$HPORT/v1" '{endpoints: {mock: {type: "openai", base_url: $u}}}' > "$OFFLOAD_CONFIG"
+  out=$(NO_PROXY='127.0.0.1,localhost' "$OFFLOAD" ask -m mock:echo "hello http" 2>&1); rc=$?
+  expect_eq "http: ask exit 0" "$rc" 0
+  expect_has "http: answer comes from the endpoint" "$out" "MOCK-REPLY"
+  expect_has "http: footer names the model ref" "$out" "[offload ask · mock:echo"
+  out=$(NO_PROXY='127.0.0.1,localhost' "$OFFLOAD" read -m mock:echo -q "what?" small.txt 2>&1)
+  expect_has "http: read sends no tools" "$out" "tools=none"
+  out=$(NO_PROXY='127.0.0.1,localhost' "$OFFLOAD" explore -m mock:echo "where?" 2>&1)
+  expect_has "http: explore gets the read-only tool set" "$out" "tools=glob,grep,list_dir,read_file"
+  out=$(NO_PROXY='127.0.0.1,localhost' "$OFFLOAD" explore -m mock:m-readenv "what is in READ:small.txt ?" 2>&1)
+  expect_has "http: explore tool loop reads files" "$out" "small.txt (lines 1-40 of 40)"
+  out=$(NO_PROXY='127.0.0.1,localhost' "$OFFLOAD" explore -m mock:m-readenv "READ:.env ?" 2>&1)
+  expect_has "http: explore refuses secrets" "$out" "secret-file rules"
+  expect_not "http: secret content never sent" "$(cat "$T/http-mock.log")" "SECRET=abc"
+  out=$(NO_PROXY='127.0.0.1,localhost' "$OFFLOAD" explore -m mock:m-readenv "READ:../../etc/passwd ?" 2>&1)
+  expect_has "http: explore stays inside the project" "$out" "outside the project"
+  NO_PROXY='127.0.0.1,localhost' "$OFFLOAD" ask -m mock:m-auth "hi" >/dev/null 2>&1; expect_eq "http: 401 → exit 11" "$?" 11
+  NO_PROXY='127.0.0.1,localhost' "$OFFLOAD" ask -m mock:m-error "hi" >/dev/null 2>&1; expect_eq "http: 429 → exit 10" "$?" 10
+  "$OFFLOAD" ask -m nokey:whatever "hi" >/dev/null 2>&1; rc=$?
+  [ "$rc" != 0 ] && ok "http: unknown backend prefix fails cleanly (exit $rc)" || bad "http: unknown backend prefix fails cleanly"
+  rm -f "$OFFLOAD_CONFIG"
+  kill "$HPID" 2>/dev/null
+else
+  printf '  skip  (needs python3 and a built TypeScript CLI)\n'
+fi
+
 # ------------------------------------------------------------------ hooks
 section "hooks"
 r=$(pre_read '{"file_path":"big.ts"}')

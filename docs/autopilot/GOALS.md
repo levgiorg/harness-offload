@@ -30,10 +30,10 @@ CLI, OpenCode, Windsurf, and anything that speaks MCP.
 
 ## Milestones & acceptance criteria
 ### M0 Identity & legal
-- [ ] Renamed everywhere (no "sidecar"/"shunt"/"spotify" in source); CLI `offload`, package `code-offload`.
-- [ ] MIT `LICENSE`; README "Acknowledgements" crediting ideas (Spotify shunt, OpenCode, survey sources).
-- [ ] Original eval cases + fixtures (written from scratch) replace third-party ones.
-- [ ] `scripts/set-owner.sh OWNER` rewrites placeholders.
+- [x] Renamed everywhere (no "sidecar"/"shunt"/"spotify" in source); CLI `offload`, package `code-offload`.
+- [x] MIT `LICENSE`; README "Acknowledgements" crediting ideas (Spotify shunt, OpenCode, survey sources).
+- [x] Original eval cases + fixtures (written from scratch) replace third-party ones.
+- [x] `scripts/set-owner.sh OWNER` rewrites placeholders.
 
 ### M1 Repo & CI
 - [ ] Monorepo layout: `plugins/code-offload` (Claude Code), `packages/cli` (TS), `integrations/*`, `docs/`, `scripts/`.
@@ -42,8 +42,8 @@ CLI, OpenCode, Windsurf, and anything that speaks MCP.
 - [ ] `install.sh` / `install.ps1` one-liners (placeholder URLs).
 
 ### M2 TypeScript engine (parity)
-- [ ] `offload read|explore|run|summarize|write|ask|outline|doctor|stats|config` with the same flags, outputs and exit codes as bash.
-- [ ] Conformance suite passes against both engines.
+- [x] `offload read|explore|run|summarize|write|ask|outline|doctor|stats|config` with the same flags, outputs and exit codes as bash.
+- [x] Conformance suite passes against both engines.
 
 ### M3 Connectors (worker backends)
 - [ ] opencode (v1/v2), openai-compatible HTTP (OpenRouter, Ollama, LM Studio, vLLM, Groq, DeepSeek, Together, Mistral, Gemini-OpenAI, …), anthropic API, pi, codex exec, gemini CLI, claude -p. Per-task backend+model, fallback chain across backends, cooldowns.
