@@ -1076,15 +1076,16 @@ async function post(url, body, headers, timeoutMs) {
   const ac = new AbortController;
   const t = setTimeout(() => ac.abort(), timeoutMs);
   let res;
+  let text;
   try {
     res = await fetch(url, { method: "POST", headers: { "content-type": "application/json", ...headers }, body: JSON.stringify(body), signal: ac.signal });
+    text = await res.text();
   } catch (e) {
     clearTimeout(t);
-    if (e.name === "AbortError")
+    if (e.name === "AbortError" || ac.signal.aborted)
       throw new WorkerError(E.TIMEOUT, `timed out after ${Math.round(timeoutMs / 1000)}s`);
     throw new WorkerError(E.WORKER, `cannot reach ${url}: ${e.message}`);
   }
-  const text = await res.text();
   clearTimeout(t);
   let json;
   try {
@@ -1617,7 +1618,19 @@ var jsonLines = (s) => s.split(`
     return JSON.parse(t);
   } catch {
     const lines = jsonLines(t);
-    return lines[lines.length - 1];
+    if (lines.length)
+      return lines[lines.length - 1];
+    const ls = t.split(`
+`);
+    for (let i = ls.length - 1;i >= 0; i--) {
+      if (!ls[i].startsWith("{"))
+        continue;
+      try {
+        return JSON.parse(ls.slice(i).join(`
+`));
+      } catch {}
+    }
+    return;
   }
 }, empty = (text, extra = {}) => ({ text, tokensIn: 0, tokensOut: 0, ctxIn: 0, cost: 0, ...extra }), merged = (req) => `<instructions>
 ${req.system}
@@ -1639,9 +1652,12 @@ var init_agents = __esm(() => {
         const a = ["-p", "--output-format", "json", "--no-session-persistence", "--setting-sources", "", "--strict-mcp-config", "--disable-slash-commands", "--system-prompt", req.system];
         if (req.model)
           a.push("--model", req.model);
-        if (req.task === "explore")
+        if (req.task === "explore") {
           a.push("--tools", "Read,Grep,Glob", "--allowedTools", "Read,Grep,Glob");
-        else
+          const deny = (req.secretGlobs ?? []).map((g) => `Read(**/${g})`).join(",");
+          if (deny)
+            a.push("--disallowedTools", deny);
+        } else
           a.push("--tools", "");
         return { args: a, input: req.prompt };
       },
@@ -4341,6 +4357,30 @@ async function exec2(cmd, args) {
 `).slice(-2).join(" ").slice(0, 200);
   return { ok: r.code === 0, text: `${cmd} ${args.join(" ")}${r.code === 0 ? "" : `  → exit ${r.code}: ${tail}`}` };
 }
+function winCommand() {
+  return `${JSON.stringify(process.execPath)} ${JSON.stringify(join12(pluginDir(), "dist", "cli.js"))}`;
+}
+function rewriteForWindows(file, from) {
+  if (!isWin3 || !existsSync11(file))
+    return;
+  const j = JSON.parse(readFileSync12(file, "utf8"));
+  const walk = (v) => {
+    if (typeof v === "string")
+      return v.replace(from, winCommand());
+    if (Array.isArray(v))
+      return v.map(walk);
+    if (v && typeof v === "object")
+      return Object.fromEntries(Object.entries(v).map(([k, x]) => [k, walk(x)]));
+    return v;
+  };
+  const out = walk(j);
+  for (const srv of Object.values(out.mcpServers ?? {})) {
+    srv.command = process.execPath;
+    srv.args = [join12(pluginDir(), "dist", "cli.js"), "mcp"];
+  }
+  writeFileSync9(file, JSON.stringify(out, null, 2) + `
+`);
+}
 function geminiExtension(dir, launcher) {
   const src = join12(pluginDir(), "hosts", "gemini");
   mkdirSync4(join12(dir, "hooks"), { recursive: true });
@@ -4357,6 +4397,8 @@ function geminiExtension(dir, launcher) {
   writeFileSync9(join12(dir, "hooks", "hooks.json"), JSON.stringify(hooks, null, 2) + `
 `);
   cpSync(join12(src, "GEMINI.md"), join12(dir, "GEMINI.md"));
+  rewriteForWindows(join12(dir, "hooks", "hooks.json"), /"[^"]*offload-ts"/g);
+  rewriteForWindows(join12(dir, "gemini-extension.json"), /"[^"]*offload-ts"/g);
 }
 async function install(host, opts = {}) {
   const steps = [];
@@ -4393,6 +4435,8 @@ async function install(host, opts = {}) {
       rmSync3(dest, { recursive: true, force: true });
       mkdirSync4(join12(dest, ".."), { recursive: true });
       cpSync(pluginDir(), dest, { recursive: true });
+      rewriteForWindows(join12(dest, "hosts", "cursor", "hooks.json"), /"\$\{CURSOR_PLUGIN_ROOT\}\/bin\/offload-ts"/g);
+      rewriteForWindows(join12(dest, "hosts", "cursor", "mcp.json"), /\$\{CURSOR_PLUGIN_ROOT\}\/bin\/offload-ts/g);
       steps.push({ ok: true, text: `installed local plugin → ${dest}` });
       steps.push({ ok: true, text: "in Cursor: Developer: Reload Window (CLI: cursor-agent picks it up on the next run)" });
       record(host, { dir: dest });
@@ -4521,7 +4565,7 @@ var HOSTS, HOST_LABELS, HOST_BIN, home = () => process.env.OFFLOAD_HOME || homed
     all[host] = data;
   writeFileSync9(f, JSON.stringify(all, null, 2) + `
 `);
-};
+}, isWin3;
 var init_install = __esm(() => {
   init_proc();
   init_state();
@@ -4541,6 +4585,7 @@ var init_install = __esm(() => {
     mcp: "Any MCP client"
   };
   HOST_BIN = { claude: "claude", codex: "codex", gemini: "gemini", pi: "pi", opencode: "opencode", kilo: "kilo", devin: "devin" };
+  isWin3 = process.platform === "win32";
 });
 
 // src/commands/setup.ts
@@ -26953,11 +26998,13 @@ async function readStdin() {
 function preToolOut(host, v) {
   switch (host) {
     case "cursor":
-      return v.action === "note" ? { permission: "allow" } : { permission: "deny", agent_message: v.message, user_message: "offload kept a large read out of the agent's context (see its options)." };
+      if (v.action === "note")
+        return { agent_message: v.message };
+      return v.action === "ask" ? { permission: "ask", agent_message: v.message, user_message: "offload suggests keeping this large read out of the agent's context." } : { permission: "deny", agent_message: v.message, user_message: "offload kept a large read out of the agent's context (see its options)." };
     case "gemini":
-      return v.action === "note" ? { hookSpecificOutput: { hookEventName: "BeforeTool", additionalContext: v.message } } : { decision: "deny", reason: v.message };
+      return v.action === "deny" ? { decision: "deny", reason: v.message } : { hookSpecificOutput: { hookEventName: "BeforeTool", additionalContext: v.message } };
     case "codex":
-      return v.action === "note" ? { hookSpecificOutput: { hookEventName: "PreToolUse", additionalContext: v.message } } : { hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision: "deny", permissionDecisionReason: v.message } };
+      return v.action === "deny" ? { hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision: "deny", permissionDecisionReason: v.message } } : { hookSpecificOutput: { hookEventName: "PreToolUse", additionalContext: v.message } };
     default:
       return v.action === "note" ? { hookSpecificOutput: { hookEventName: "PreToolUse", additionalContext: v.message } } : { hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision: v.action, permissionDecisionReason: v.message } };
   }
@@ -27111,6 +27158,7 @@ init_proc();
 init_args();
 
 // src/commands/core.ts
+init_proc();
 init_args();
 init_config();
 init_digest();
@@ -27457,7 +27505,7 @@ async function cmdExplore(argv) {
 function execToFile(cmd, log) {
   return new Promise((res) => {
     const fd = openSync3(log, "w");
-    const child = typeof cmd === "string" ? spawn2(process.platform === "win32" ? cmd : "bash", process.platform === "win32" ? [] : ["-c", cmd], { stdio: ["inherit", fd, fd], shell: process.platform === "win32" }) : spawn2(cmd[0], cmd.slice(1), { stdio: ["inherit", fd, fd] });
+    const child = typeof cmd === "string" ? spawn2(process.platform === "win32" ? cmd : "bash", process.platform === "win32" ? [] : ["-c", cmd], { stdio: ["inherit", fd, fd], shell: process.platform === "win32" }) : spawnSafe(cmd[0], cmd.slice(1), { stdio: ["inherit", fd, fd] });
     child.on("error", (e) => {
       try {
         writeFileSync6(log, `offload: cannot run ${Array.isArray(cmd) ? cmd[0] : cmd}: ${e.message}

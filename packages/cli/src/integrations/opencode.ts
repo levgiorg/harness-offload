@@ -23,12 +23,12 @@ const textOf = (v: any): string => (typeof v === "string" ? v : Array.isArray(v)
 async function guardRead(cwd: string, file: string | undefined, offset?: number, limit?: number) {
   if (!(await available())) return;
   const v = readGuard("opencode", cwd, file, offset, limit);
-  if (v && v.action !== "note") throw new Blocked(v.message);
+  if (v && v.action === "deny") throw new Blocked(v.message); // plugins cannot ask: "ask" lets it through
 }
 async function guardShell(cwd: string, command: string | undefined) {
   if (!(await available())) return;
   const v = bashGuard("opencode", cwd, command);
-  if (v && v.action !== "note") throw new Blocked(v.message);
+  if (v && v.action === "deny") throw new Blocked(v.message); // plugins cannot ask: "ask" lets it through
 }
 
 const plugin = {

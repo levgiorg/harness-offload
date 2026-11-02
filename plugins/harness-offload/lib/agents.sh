@@ -151,6 +151,16 @@ co_spawn_wait() {
   wait "$pid"; CO_RUN_RC=$?
 }
 
+# The last JSON object a CLI printed, even when log lines precede a
+# pretty-printed object (then: parse from the last line that opens one).
+co_json_last() {
+  if jq -e . "$1" >/dev/null 2>&1; then
+    jq -cs 'map(select(type == "object")) | last // empty' "$1"
+  else
+    awk 'NR == FNR { if ($0 ~ /^\{/) n = FNR; next } FNR >= n' "$1" "$1" | jq -cs 'map(select(type == "object")) | last // empty' 2>/dev/null
+  fi
+}
+
 # Turns an error text + exit code into CO_OC_ERROR and a return code.
 co_agent_fail() {
   CO_OC_ERROR="$1"
@@ -179,7 +189,15 @@ co_agent_attempt() {
       # lean headless Claude on the user's plan (not --bare: it can't use OAuth logins)
       a=(-p --output-format json --no-session-persistence --setting-sources "" --strict-mcp-config --disable-slash-commands --system-prompt "$sys")
       [ -n "$model" ] && a+=(--model "$model")
-      if [ "$task" = explore ]; then a+=(--tools Read,Grep,Glob --allowedTools Read,Grep,Glob); else a+=(--tools ""); fi
+      if [ "$task" = explore ]; then
+        a+=(--tools Read,Grep,Glob --allowedTools Read,Grep,Glob)
+        # secret files stay unreadable for the worker too (Read rules cover Grep/Glob)
+        local g deny=""
+        while IFS= read -r g; do [ -n "$g" ] && deny="$deny${deny:+,}Read(**/$g)"; done <<EOF
+$(co_cfg_list '.privacy.secret_globs')
+EOF
+        [ -n "$deny" ] && a+=(--disallowedTools "$deny")
+      else a+=(--tools ""); fi
       in="$prompt_file" ;;
     codex)
       a=(exec --json --ephemeral --skip-git-repo-check -s read-only --disable hooks --ignore-rules -C "$workdir")
@@ -212,6 +230,9 @@ co_agent_attempt() {
   rc=$CO_RUN_RC
   [ "$rc" = 124 ] && { co_agent_fail "" 124 "$timeout"; return $?; }
 
+  case "$backend" in
+    claude|cursor|gemini) co_json_last "$out" > "$out.j"; mv "$out.j" "$out" ;;
+  esac
   case "$backend" in
     claude|cursor)
       text=$(jq -rs 'map(select(type == "object")) | last | if .is_error then empty else (.result // empty) end' "$out" 2>/dev/null)

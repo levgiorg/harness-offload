@@ -77,7 +77,7 @@ CLI, OpenCode, Windsurf, and anything that speaks MCP.
 - [x] **Self-contained plugin**: commit a built `plugins/harness-offload/dist/cli.js` (+ pi.js, opencode.js) so marketplace installs (GitHub clone, Codex cache copy, Cursor local copy) never need a build; CI fails if it is stale.
 - [ ] **All known harnesses**: add Copilot CLI, Crush, Qwen Code (await research), Amp, Cline, Goose/Zed/Continue (MCP recipes), Kiro (hooks?), Aider (conventions file) — each with install + doc row.
 - [x] Out of the box: `models.default = "@host"`, fallback `["@default"]`; `-m MODEL` is exact (no fallback). Real check: bash engine + real `claude` CLI on the plan → Haiku read, 5/5 citations verified.
-- [ ] Security review findings #2–#12 (explore sandbox, DoS caps, fail-open in-process plugins, env side effects, process lifecycle, verify caps, redaction gaps, Windows spawning).
+- [x] Security review findings #2–#12 (explore sandbox, DoS caps, fail-open in-process plugins, env side effects, process lifecycle, verify caps, redaction gaps, Windows spawning).
 - [ ] Any UI (landing page/docs site, stats dashboard) must use the **impeccable** skill (github: pbakaus/impeccable) and Claude Code's design skills (artifact-design etc.). Plan: `offload dashboard` local stats page + a landing page in `site/`.
 
 ## Loop protocol (every iteration, including the 30-minute /loop wake-ups)

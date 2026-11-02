@@ -62,6 +62,32 @@ async function exec(cmd: string, args: string[]): Promise<Step> {
   return { ok: r.code === 0, text: `${cmd} ${args.join(" ")}${r.code === 0 ? "" : `  → exit ${r.code}: ${tail}`}` };
 }
 
+const isWin = process.platform === "win32";
+
+/** Windows can't run the bash launcher: point copied host files at node + the
+ * plugin's bundled CLI instead. Returns the command prefix for hooks. */
+function winCommand(): string {
+  return `${JSON.stringify(process.execPath)} ${JSON.stringify(join(pluginDir(), "dist", "cli.js"))}`;
+}
+
+function rewriteForWindows(file: string, from: RegExp): void {
+  if (!isWin || !existsSync(file)) return;
+  const j = JSON.parse(readFileSync(file, "utf8"));
+  const walk = (v: any): any => {
+    if (typeof v === "string") return v.replace(from, winCommand());
+    if (Array.isArray(v)) return v.map(walk);
+    if (v && typeof v === "object") return Object.fromEntries(Object.entries(v).map(([k, x]) => [k, walk(x)]));
+    return v;
+  };
+  const out = walk(j);
+  // MCP servers: command + args form
+  for (const srv of Object.values<any>(out.mcpServers ?? {})) {
+    srv.command = process.execPath;
+    srv.args = [join(pluginDir(), "dist", "cli.js"), "mcp"];
+  }
+  writeFileSync(file, JSON.stringify(out, null, 2) + "\n");
+}
+
 function geminiExtension(dir: string, launcher: string): void {
   const src = join(pluginDir(), "hosts", "gemini");
   mkdirSync(join(dir, "hooks"), { recursive: true });
@@ -76,6 +102,8 @@ function geminiExtension(dir: string, launcher: string): void {
   }
   writeFileSync(join(dir, "hooks", "hooks.json"), JSON.stringify(hooks, null, 2) + "\n");
   cpSync(join(src, "GEMINI.md"), join(dir, "GEMINI.md"));
+  rewriteForWindows(join(dir, "hooks", "hooks.json"), /"[^"]*offload-ts"/g);
+  rewriteForWindows(join(dir, "gemini-extension.json"), /"[^"]*offload-ts"/g);
 }
 
 export async function install(host: HostName, opts: { dryRun?: boolean } = {}): Promise<Step[]> {
@@ -110,6 +138,8 @@ export async function install(host: HostName, opts: { dryRun?: boolean } = {}): 
       rmSync(dest, { recursive: true, force: true });
       mkdirSync(join(dest, ".."), { recursive: true });
       cpSync(pluginDir(), dest, { recursive: true });
+      rewriteForWindows(join(dest, "hosts", "cursor", "hooks.json"), /"\$\{CURSOR_PLUGIN_ROOT\}\/bin\/offload-ts"/g);
+      rewriteForWindows(join(dest, "hosts", "cursor", "mcp.json"), /\$\{CURSOR_PLUGIN_ROOT\}\/bin\/offload-ts/g);
       steps.push({ ok: true, text: `installed local plugin → ${dest}` });
       steps.push({ ok: true, text: "in Cursor: Developer: Reload Window (CLI: cursor-agent picks it up on the next run)" });
       record(host, { dir: dest });

@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import { spawnSafe } from "../proc.ts";
 import { closeSync, existsSync, lstatSync, mkdirSync, openSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join, relative, resolve, sep } from "node:path";
 import { execFileSync } from "node:child_process";
@@ -210,7 +211,7 @@ function execToFile(cmd: string[] | string, log: string): Promise<number> {
     const child =
       typeof cmd === "string"
         ? spawn(process.platform === "win32" ? cmd : "bash", process.platform === "win32" ? [] : ["-c", cmd], { stdio: ["inherit", fd, fd], shell: process.platform === "win32" })
-        : spawn(cmd[0], cmd.slice(1), { stdio: ["inherit", fd, fd] });
+        : spawnSafe(cmd[0], cmd.slice(1), { stdio: ["inherit", fd, fd] }); // npm/npx .cmd shims on Windows
     child.on("error", (e) => {
       try {
         writeFileSync(log, `offload: cannot run ${Array.isArray(cmd) ? cmd[0] : cmd}: ${e.message}\n`, { flag: "a" });

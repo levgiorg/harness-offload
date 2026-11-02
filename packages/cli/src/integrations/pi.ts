@@ -43,7 +43,7 @@ export default function harnessOffload(pi: any): void {
       const input = event?.input ?? {};
       if (!(await available())) return undefined;
       const v = event.toolName === "read" ? readGuard("pi", cwd, input.path, input.offset, input.limit) : event.toolName === "bash" ? bashGuard("pi", cwd, input.command) : undefined;
-      if (!v || v.action === "note") return undefined;
+      if (!v || v.action !== "deny") return undefined; // extensions cannot ask: "ask" lets it through
       return { block: true, reason: v.message };
     }),
   );

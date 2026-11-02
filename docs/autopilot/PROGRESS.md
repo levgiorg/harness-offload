@@ -40,3 +40,11 @@
 - Doctors (bash + TS) explain @host and check each model's real backend.
 - Defaults: `@host` then `@default`; `-m` exact. Real check with the real Claude CLI (bash engine, no Node needed for the worker): Haiku read of agents.sh, 11 s, 5/5 citations.
 - Suites: conformance 209/209 ×2 engines, routing 49/49 ×2, bun 31/31.
+
+## 2026-11-02 ~11:00 UTC — security review fixed (all 12 findings)
+- Critical: untrusted project config (earlier). High: explore tool sandbox (real paths, no symlinks, .git refused, regex worker with deadline, caps, redaction), fail-open OpenCode/Pi plugins, no `process.env` side effects (digest options + total budget in both engines).
+- Medium: process lifecycle (exit+drain, group kill, signal/exit cleanup, UTF-8 decoding, abort), bounded citation checks (both engines), wider redaction + redacted command labels/log names/stats/answers, Claude explore denies secret files, MCP limits/cancel/annotations/`mcp.run_tool`.
+- Windows: no shell (npm shims → node script, escaped cmd.exe fallback), taskkill tree, Cursor/Gemini installs rewritten to node + bundled CLI, `run -- npm test` via shims.
+- Low: "ask" no longer a hard deny where hosts can't ask (Codex/Gemini/OpenCode/Pi → advice; Cursor → permission ask), Cursor notes no longer auto-approve, HTTP body timeouts, Gemini pretty JSON after log lines.
+- SECURITY.md rewritten with the trust model and known limits.
+- Suites: conformance 229/229 ×2, bun 43/43, routing 49/49 ×2.

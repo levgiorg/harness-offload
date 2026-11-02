@@ -873,15 +873,16 @@ async function post(url, body, headers, timeoutMs) {
   const ac = new AbortController;
   const t = setTimeout(() => ac.abort(), timeoutMs);
   let res;
+  let text;
   try {
     res = await fetch(url, { method: "POST", headers: { "content-type": "application/json", ...headers }, body: JSON.stringify(body), signal: ac.signal });
+    text = await res.text();
   } catch (e) {
     clearTimeout(t);
-    if (e.name === "AbortError")
+    if (e.name === "AbortError" || ac.signal.aborted)
       throw new WorkerError(E.TIMEOUT, `timed out after ${Math.round(timeoutMs / 1000)}s`);
     throw new WorkerError(E.WORKER, `cannot reach ${url}: ${e.message}`);
   }
-  const text = await res.text();
   clearTimeout(t);
   let json;
   try {
@@ -1500,7 +1501,19 @@ var lastJson = (s) => {
     return JSON.parse(t);
   } catch {
     const lines = jsonLines(t);
-    return lines[lines.length - 1];
+    if (lines.length)
+      return lines[lines.length - 1];
+    const ls = t.split(`
+`);
+    for (let i = ls.length - 1;i >= 0; i--) {
+      if (!ls[i].startsWith("{"))
+        continue;
+      try {
+        return JSON.parse(ls.slice(i).join(`
+`));
+      } catch {}
+    }
+    return;
   }
 };
 var empty = (text, extra = {}) => ({ text, tokensIn: 0, tokensOut: 0, ctxIn: 0, cost: 0, ...extra });
@@ -1519,9 +1532,12 @@ var CLI_AGENTS = {
       const a = ["-p", "--output-format", "json", "--no-session-persistence", "--setting-sources", "", "--strict-mcp-config", "--disable-slash-commands", "--system-prompt", req.system];
       if (req.model)
         a.push("--model", req.model);
-      if (req.task === "explore")
+      if (req.task === "explore") {
         a.push("--tools", "Read,Grep,Glob", "--allowedTools", "Read,Grep,Glob");
-      else
+        const deny = (req.secretGlobs ?? []).map((g) => `Read(**/${g})`).join(",");
+        if (deny)
+          a.push("--disallowedTools", deny);
+      } else
         a.push("--tools", "");
       return { args: a, input: req.prompt };
     },
@@ -2334,7 +2350,7 @@ ${sessionGuide("pi")}`.trim();
     if (!await available())
       return;
     const v = event.toolName === "read" ? readGuard("pi", cwd, input.path, input.offset, input.limit) : event.toolName === "bash" ? bashGuard("pi", cwd, input.command) : undefined;
-    if (!v || v.action === "note")
+    if (!v || v.action !== "deny")
       return;
     return { block: true, reason: v.message };
   }));

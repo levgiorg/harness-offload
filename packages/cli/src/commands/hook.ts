@@ -19,13 +19,18 @@ const text = (v: unknown): string => (typeof v === "string" ? v : Array.isArray(
 function preToolOut(host: Host, v: Verdict): J {
   switch (host) {
     case "cursor":
-      return v.action === "note" ? { permission: "allow" } : { permission: "deny", agent_message: v.message, user_message: "offload kept a large read out of the agent's context (see its options)." };
+      // advisory notes must not turn into an approval of the tool call
+      if (v.action === "note") return { agent_message: v.message };
+      return v.action === "ask"
+        ? { permission: "ask", agent_message: v.message, user_message: "offload suggests keeping this large read out of the agent's context." }
+        : { permission: "deny", agent_message: v.message, user_message: "offload kept a large read out of the agent's context (see its options)." };
+    // Gemini and Codex hooks cannot ask the user: "ask" degrades to advice, not a block
     case "gemini":
-      return v.action === "note" ? { hookSpecificOutput: { hookEventName: "BeforeTool", additionalContext: v.message } } : { decision: "deny", reason: v.message };
+      return v.action === "deny" ? { decision: "deny", reason: v.message } : { hookSpecificOutput: { hookEventName: "BeforeTool", additionalContext: v.message } };
     case "codex":
-      return v.action === "note"
-        ? { hookSpecificOutput: { hookEventName: "PreToolUse", additionalContext: v.message } }
-        : { hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision: "deny", permissionDecisionReason: v.message } };
+      return v.action === "deny"
+        ? { hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision: "deny", permissionDecisionReason: v.message } }
+        : { hookSpecificOutput: { hookEventName: "PreToolUse", additionalContext: v.message } };
     default:
       return v.action === "note"
         ? { hookSpecificOutput: { hookEventName: "PreToolUse", additionalContext: v.message } }

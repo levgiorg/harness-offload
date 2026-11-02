@@ -330,6 +330,10 @@ out=$(ag ask -m pi: "hello pi")
 expect_has "pi: answer" "$out" "PI-STUB: hello pi"
 out=$(ag read -m pi: -q "what?" small.txt)
 expect_has "pi: read footer" "$out" "[offload read · pi:"
+out=$(STUB_AGENT_MODE=pretty ag ask -m gemini:x "pretty")
+expect_has "gemini: pretty-printed JSON after log lines" "$out" "GEMINI-PRETTY: pretty"
+: > "$STUB_AGENT_LOG"; ag explore -m claude:haiku "where?" >/dev/null
+expect_has "claude explore: secret files denied to its Read tool" "$(cat "$STUB_AGENT_LOG")" "arg[Read(**/.env)"
 STUB_AGENT_MODE=auth ag ask -m claude:haiku "hi" >/dev/null; expect_eq "claude: login problem → exit 11" "$?" 11
 STUB_AGENT_MODE=quota ag ask -m claude:sonnet "hi" >/dev/null; expect_eq "claude: usage limit → exit 10" "$?" 10
 STUB_AGENT_MODE=quota ag ask -m codex:x "hi" >/dev/null; expect_eq "codex: usage limit → exit 10" "$?" 10

@@ -28,6 +28,9 @@ case "$name:$mode" in
     echo '{"type":"thread.started","thread_id":"t"}'
     jq -nc --arg t "CODEX-STUB: $first" '{type:"item.completed",item:{type:"agent_message",text:$t}}'
     echo '{"type":"turn.completed","usage":{"input_tokens":50,"cached_input_tokens":10,"output_tokens":7}}' ;;
+  gemini:pretty)
+    echo "Loaded cached credentials."
+    printf '{\n  "response": "GEMINI-PRETTY: %s",\n  "stats": {"models": {}}\n}\n' "$first" ;;
   gemini:auth) echo '{"error":{"type":"auth","message":"Please set an Auth method"}}'; exit 41 ;;
   gemini:*)
     sys=missing; [ -f "${GEMINI_SYSTEM_MD:-/nonexistent}" ] && grep -q . "$GEMINI_SYSTEM_MD" && sys=ok

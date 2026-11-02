@@ -39,7 +39,18 @@ const lastJson = (s: string): any => {
     return JSON.parse(t);
   } catch {
     const lines = jsonLines(t);
-    return lines[lines.length - 1];
+    if (lines.length) return lines[lines.length - 1];
+    // pretty-printed JSON after some log lines: parse from the last line that opens an object
+    const ls = t.split("\n");
+    for (let i = ls.length - 1; i >= 0; i--) {
+      if (!ls[i].startsWith("{")) continue;
+      try {
+        return JSON.parse(ls.slice(i).join("\n"));
+      } catch {
+        /* keep looking */
+      }
+    }
+    return undefined;
   }
 };
 
@@ -60,8 +71,12 @@ export const CLI_AGENTS: Record<string, AgentSpec> = {
       // of overhead instead of ~20K). Not --bare: it never reads OAuth logins.
       const a = ["-p", "--output-format", "json", "--no-session-persistence", "--setting-sources", "", "--strict-mcp-config", "--disable-slash-commands", "--system-prompt", req.system];
       if (req.model) a.push("--model", req.model);
-      if (req.task === "explore") a.push("--tools", "Read,Grep,Glob", "--allowedTools", "Read,Grep,Glob");
-      else a.push("--tools", "");
+      if (req.task === "explore") {
+        a.push("--tools", "Read,Grep,Glob", "--allowedTools", "Read,Grep,Glob");
+        // secret files stay unreadable for the worker too (Read rules cover Grep/Glob)
+        const deny = (req.secretGlobs ?? []).map((g) => `Read(**/${g})`).join(",");
+        if (deny) a.push("--disallowedTools", deny);
+      } else a.push("--tools", "");
       return { args: a, input: req.prompt };
     },
     parse: (out) => {

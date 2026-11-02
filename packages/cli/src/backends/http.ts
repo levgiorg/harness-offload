@@ -60,14 +60,16 @@ async function post(url: string, body: unknown, headers: Record<string, string>,
   const ac = new AbortController();
   const t = setTimeout(() => ac.abort(), timeoutMs);
   let res: Response;
+  let text: string;
   try {
     res = await fetch(url, { method: "POST", headers: { "content-type": "application/json", ...headers }, body: JSON.stringify(body), signal: ac.signal });
+    // the body can still be streaming when the deadline hits: same timeout path
+    text = await res.text();
   } catch (e) {
     clearTimeout(t);
-    if ((e as Error).name === "AbortError") throw new WorkerError(E.TIMEOUT, `timed out after ${Math.round(timeoutMs / 1000)}s`);
+    if ((e as Error).name === "AbortError" || ac.signal.aborted) throw new WorkerError(E.TIMEOUT, `timed out after ${Math.round(timeoutMs / 1000)}s`);
     throw new WorkerError(E.WORKER, `cannot reach ${url}: ${(e as Error).message}`);
   }
-  const text = await res.text();
   clearTimeout(t);
   let json: any;
   try {
