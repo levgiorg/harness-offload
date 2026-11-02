@@ -5473,7 +5473,7 @@ async function nonInteractive(opts) {
 `);
   let failed = 0;
   for (const h of str(opts.hosts).split(",").filter(Boolean)) {
-    if (!HOSTS.includes(h))
+    if (!isHost(h))
       continue;
     for (const s of await install(h)) {
       process.stdout.write(`${s.ok ? "✓" : "✗"} ${s.text}

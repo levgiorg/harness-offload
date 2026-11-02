@@ -14,7 +14,7 @@ import { CLI_AGENTS } from "../backends/agents.ts";
 import { backendFor, detectHost } from "../backends/registry.ts";
 import { CONNECTORS } from "../assets.ts";
 import { invoke } from "../engine.ts";
-import { detectHosts, HOST_LABELS, HOSTS, HostName, install } from "../hosts/install.ts";
+import { detectHosts, HOST_LABELS, HOSTS, HostName, install, isHost } from "../hosts/install.ts";
 import { projectConfigPath, userConfigPath } from "../paths.ts";
 import { workDir } from "../state.ts";
 import { banner, color } from "../ui.ts";
@@ -137,7 +137,7 @@ async function nonInteractive(opts: Record<string, unknown>): Promise<number> {
   process.stdout.write(`wrote ${target}\n`);
   let failed = 0;
   for (const h of str(opts.hosts).split(",").filter(Boolean) as HostName[]) {
-    if (!HOSTS.includes(h)) continue;
+    if (!isHost(h)) continue;
     for (const s of await install(h)) {
       process.stdout.write(`${s.ok ? "✓" : "✗"} ${s.text}\n`);
       if (!s.ok) failed++;
