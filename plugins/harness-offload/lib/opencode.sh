@@ -269,9 +269,9 @@ co_ts_cli() {
 co_ts_run() {
   local cli
   cli=$(co_ts_cli) || return $CO_E_NOOC
+  # shellcheck disable=SC2086
   case "$cli" in
     "node "*) node "${cli#node }" "$@" ;;
-    # shellcheck disable=SC2086
     *) $cli "$@" ;;
   esac
 }
