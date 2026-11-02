@@ -649,15 +649,15 @@ function isSecretTarget(path) {
 function redact(text) {
   if (!cfgBool("privacy.redact", true))
     return text;
-  let out = text.replace(/AKIA[0-9A-Z]{16}/g, "[REDACTED-AWS-KEY]").replace(/(gh[pousr]_)[A-Za-z0-9]{30,}/g, "$1[REDACTED]").replace(/github_pat_[A-Za-z0-9_]{30,}/g, "github_pat_[REDACTED]").replace(/(sk-(?:proj-|ant-)?)[A-Za-z0-9_-]{20,}/g, "$1[REDACTED]").replace(/xox[abprs]-[A-Za-z0-9-]{10,}/g, "xox-[REDACTED]").replace(/AIza[0-9A-Za-z_-]{35}/g, "[REDACTED-GOOGLE-KEY]").replace(/eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}/g, "[REDACTED-JWT]").replace(KEY_NAME, "$1[REDACTED]");
-  out = out.replace(/-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z ]*PRIVATE KEY-----\n?/g, `[REDACTED PRIVATE KEY]
+  return text.replace(/(?:AKIA|ASIA)[0-9A-Z]{16}/g, "[REDACTED-AWS-KEY]").replace(/(gh[pousr]_)[A-Za-z0-9]{30,}/g, "$1[REDACTED]").replace(/github_pat_[A-Za-z0-9_]{30,}/g, "github_pat_[REDACTED]").replace(/glpat-[A-Za-z0-9_-]{20,}/g, "glpat-[REDACTED]").replace(/npm_[A-Za-z0-9]{36}/g, "npm_[REDACTED]").replace(/hf_[A-Za-z0-9]{30,}/g, "hf_[REDACTED]").replace(/((?:sk|rk)_(?:live|test)_)[A-Za-z0-9]{10,}/g, "$1[REDACTED]").replace(/(sk-(?:proj-|ant-)?)[A-Za-z0-9_-]{20,}/g, "$1[REDACTED]").replace(/xox[abprs]-[A-Za-z0-9-]{10,}/g, "xox-[REDACTED]").replace(/AIza[0-9A-Za-z_-]{35}/g, "[REDACTED-GOOGLE-KEY]").replace(/eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}/g, "[REDACTED-JWT]").replace(/(bearer[ \t]+)[A-Za-z0-9._~+/=-]{16,}/gi, "$1[REDACTED]").replace(/(basic[ \t]+)[A-Za-z0-9+/=]{16,}/gi, "$1[REDACTED]").replace(/([A-Za-z][A-Za-z0-9+.-]*:\/\/[^/\s:@]+:)[^@\s/]+@/g, "$1[REDACTED]@").replace(QUOTED_DQ, '$1[REDACTED]"').replace(QUOTED_SQ, "$1[REDACTED]'").replace(KEY_NAME, "$1[REDACTED]").replace(/-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?(?:-----END [A-Z ]*PRIVATE KEY-----\n?|$)/g, `[REDACTED PRIVATE KEY]
 `);
-  return out;
 }
-var KEY_NAME;
+var KEY_NAME, QUOTED_DQ, QUOTED_SQ;
 var init_secrets = __esm(() => {
   init_config();
-  KEY_NAME = /((?:password|passwd|secret|api_?key|access_?token)[A-Za-z0-9_]*["']?\s*[:=]\s*["']?)[^"'\s,;]{8,}/gi;
+  KEY_NAME = /((?:password|passwd|secret|api[-_]?key|access[-_]?token|auth[-_]?token)[A-Za-z0-9_]*["']?\s*[:=]\s*["']?)[^"'\s,;]{8,}/gi;
+  QUOTED_DQ = /((?:token|password|passphrase|secret)"?\s*[:=]\s*")[^"]{6,}"/gi;
+  QUOTED_SQ = /((?:token|password|passphrase|secret)'?\s*[:=]\s*')[^']{6,}'/gi;
 });
 
 // src/text.ts
@@ -1282,7 +1282,7 @@ function newLogPath(label) {
   const d = new Date;
   const p = (n) => String(n).padStart(2, "0");
   const ts = `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}`;
-  return join5(stateDir(), "logs", `${ts}-${slug(label)}.log`);
+  return join5(stateDir(), "logs", `${ts}-${slug(redact(label))}.log`);
 }
 function pruneLogs() {
   const days = cfgInt("log_retention_days", 7);
@@ -1322,6 +1322,7 @@ function clearCooldowns() {
 }
 var workDir = () => join5(stateDir(), "work"), cooldownFile = (model) => join5(stateDir(), "cooldowns", model.replace(/[^A-Za-z0-9._-]/g, "_"));
 var init_state = __esm(() => {
+  init_secrets();
   init_config();
   init_paths();
 });
@@ -1943,7 +1944,8 @@ async function invoke(task, prompt, cwd, override, opts = {}) {
         secretGlobs: cfgList("privacy.secret_globs"),
         allowGlobs: cfgList("privacy.secret_allow_globs")
       });
-      return { ...r, model: ref === "@default" ? `${backend}-default-model` : ref, seconds: Math.round((Date.now() - t0) / 1000) };
+      const text = task === "write" ? r.text : redact(r.text);
+      return { ...r, text, model: ref === "@default" ? `${backend}-default-model` : ref, seconds: Math.round((Date.now() - t0) / 1000) };
     } catch (e) {
       const err = e instanceof WorkerError ? e : new WorkerError(E.WORKER, String(e?.message ?? e));
       lastCode = err.code;
@@ -1969,6 +1971,7 @@ ${errors.join(`
 `)}`);
 }
 var init_engine = __esm(() => {
+  init_secrets();
   init_assets2();
   init_config();
   init_registry();
@@ -2038,7 +2041,8 @@ function logExcerpt(text) {
 `) + `
 `;
 }
-async function digest(log, label, code, focus, source, modelOverride, opts = {}) {
+async function digest(log, rawLabel, code, focus, source, modelOverride, opts = {}) {
+  const label = redact(rawLabel);
   const text = readFileSync7(log, "utf8");
   const lines = countLines(text);
   const bytes = Buffer.byteLength(text);
@@ -2399,7 +2403,7 @@ var init_ui = __esm(() => {
 });
 
 // src/hooks/logic.ts
-import { existsSync as existsSync9, readFileSync as readFileSync11, statSync as statSync7 } from "node:fs";
+import { existsSync as existsSync9, readFileSync as readFileSync11, statSync as statSync8 } from "node:fs";
 import { basename as basename3, isAbsolute as isAbsolute4, resolve as resolve3 } from "node:path";
 import { writeFileSync as writeFileSync7 } from "node:fs";
 function callStyle(host) {
@@ -2477,7 +2481,7 @@ function readGuard(host, cwd, file, offset, limit) {
   if (!enabled2() || cfgStr("hooks.read_guard", "block") === "off" || !file)
     return;
   const p = isAbsolute4(file) ? file : resolve3(cwd, file);
-  if (!existsSync9(p) || !statSync7(p).isFile())
+  if (!existsSync9(p) || !statSync8(p).isFile())
     return;
   if (ignored(file) || notForOffload(p))
     return;
@@ -2546,7 +2550,7 @@ function bashGuard(host, cwd, command) {
   const maxTokens = cfgInt("hooks.read_threshold_tokens", 6000);
   for (const f of files) {
     const p = isAbsolute4(f) ? f : resolve3(cwd, f);
-    if (!existsSync9(p) || !statSync7(p).isFile() || ignored(f) || notForOffload(p))
+    if (!existsSync9(p) || !statSync8(p).isFile() || ignored(f) || notForOffload(p))
       continue;
     const lines = fileLines(p);
     const tokens = estTokens(fileBytes(p));
@@ -27117,13 +27121,15 @@ init_secrets();
 init_state();
 init_text();
 import { spawn as spawn2 } from "node:child_process";
-import { closeSync as closeSync3, existsSync as existsSync7, lstatSync as lstatSync3, mkdirSync as mkdirSync3, openSync as openSync3, readFileSync as readFileSync10, readdirSync as readdirSync3, rmSync as rmSync2, statSync as statSync6, writeFileSync as writeFileSync6 } from "node:fs";
-import { dirname as dirname3, join as join9, relative as relative2, resolve as resolve2, sep as sep2 } from "node:path";
+import { closeSync as closeSync3, existsSync as existsSync7, lstatSync as lstatSync3, mkdirSync as mkdirSync3, openSync as openSync3, readFileSync as readFileSync10, readdirSync as readdirSync3, rmSync as rmSync2, statSync as statSync7, writeFileSync as writeFileSync6 } from "node:fs";
+import { dirname as dirname3, join as join9, relative as relative3, resolve as resolve2, sep as sep2 } from "node:path";
 import { execFileSync as execFileSync2 } from "node:child_process";
 
 // src/verify.ts
-import { readFileSync as readFileSync9 } from "node:fs";
-import { isAbsolute as isAbsolute3, join as join8 } from "node:path";
+import { readFileSync as readFileSync9, realpathSync as realpathSync3, statSync as statSync6 } from "node:fs";
+import { isAbsolute as isAbsolute3, join as join8, relative as relative2 } from "node:path";
+var MAX_FILE_BYTES2 = 8 * 1024 * 1024;
+var MAX_LINE2 = 4000;
 var norm = (s) => s.replace(/[ \t\r]+/g, " ").trim();
 function lastSpan(s) {
   let open = false;
@@ -27150,7 +27156,14 @@ function verifyCitations(answer, root, slack = 3) {
       return cache.get(p);
     let lines = null;
     try {
-      const t = readFileSync9(isAbsolute3(p) ? p : join8(root, p.replace(/^\.\//, "")), "utf8");
+      const real = realpathSync3(isAbsolute3(p) ? p : join8(root, p.replace(/^\.\//, "")));
+      const rel = relative2(realpathSync3(root), real);
+      if (rel.startsWith("..") || isAbsolute3(rel))
+        throw new Error("outside");
+      const st = statSync6(real);
+      if (!st.isFile() || st.size > MAX_FILE_BYTES2)
+        throw new Error("not a regular file");
+      const t = readFileSync9(real, "utf8");
       lines = t.split(`
 `);
       if (t.endsWith(`
@@ -27182,9 +27195,11 @@ function verifyCitations(answer, root, slack = 3) {
   };
   let ok = 0;
   let bad = 0;
-  const cite = /[A-Za-z0-9_.@\/+-]+:L[0-9]+(?:-L?[0-9]+)?/;
+  const cite = /(?<![A-Za-z0-9_.@\/+-])[A-Za-z0-9_.@\/+-]+:L[0-9]+(?:-L?[0-9]+)?/;
   const out = answer.split(`
 `).map((line) => {
+    if (line.length > MAX_LINE2)
+      return line;
     let rest = line;
     let marked = false;
     let m;
@@ -27287,7 +27302,7 @@ function listDirFiles(d) {
     };
     walk(d);
   }
-  const rel = (f) => relative2(process.cwd(), f).split(sep2).join("/") || f;
+  const rel = (f) => relative3(process.cwd(), f).split(sep2).join("/") || f;
   return files.map(rel).filter((f) => !/(^|\/)(package-lock\.json|yarn\.lock|pnpm-lock\.yaml|Cargo\.lock|poetry\.lock|go\.sum|.*\.min\.(js|css)|.*\.map)$/.test(f)).sort();
 }
 function fileBlock(path, from, to, total) {
@@ -27328,9 +27343,9 @@ async function cmdRead(argv) {
       to = Number(m[3]);
     }
     path = path.replace(/^\.\//, "");
-    if (existsSync7(path) && statSync6(path).isDirectory()) {
+    if (existsSync7(path) && statSync7(path).isDirectory()) {
       for (const f of listDirFiles(path)) {
-        if (!existsSync7(f) || !statSync6(f).isFile())
+        if (!existsSync7(f) || !statSync7(f).isFile())
           continue;
         if (lstatSync3(f).isSymbolicLink()) {
           skipped.push(`${f}(symlink)`);
@@ -27353,7 +27368,7 @@ async function cmdRead(argv) {
       }
       continue;
     }
-    if (!existsSync7(path) || !statSync6(path).isFile())
+    if (!existsSync7(path) || !statSync7(path).isFile())
       die(`read: file not found or unreadable: ${item}`);
     if (isSecretTarget(path) && !allow)
       die(`read: refusing to send ${path} to a third-party model (matches privacy.secret_globs). Use --allow-secrets if you are sure.`, E.REFUSED);

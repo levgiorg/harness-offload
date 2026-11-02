@@ -20,10 +20,20 @@ function resolve(p) {
   return root "/" p
 }
 
+# Only regular files of at most 8 MB inside root: a model can cite /dev/zero
+# or a FIFO, which must not hang or exhaust memory.
+function readable(p, f,    q) {
+  if (substr(p, 1, 1) == "/" && index(p, root "/") != 1) return 0
+  if (p ~ /(^|\/)\.\.(\/|$)/) return 0
+  q = f; gsub(/'/, "'\\''", q)
+  return system("test -f '" q "' && test \"$(wc -c < '" q "')\" -le 8388608 2>/dev/null") == 0
+}
+
 # Loads a file into lines[path, n]; nlines[path] = count (-1 if unreadable).
 function load(p,    f, l, n) {
   if (p in nlines) return nlines[p]
   f = resolve(p); n = 0
+  if (!readable(p, f)) { nlines[p] = -1; return -1 }
   while ((getline l < f) > 0) { n++; lines[p, n] = l }
   close(f)
   nlines[p] = (n > 0 ? n : -1)
@@ -60,6 +70,9 @@ function lastspan(s,    n, i, c, open, cur, last) {
 }
 
 BEGIN { if (slack == "") slack = 3; ok = 0; bad = 0 }
+
+# Very long lines (minified output) are passed through unscanned.
+length($0) > 4000 { print; next }
 
 {
   line = $0

@@ -68,7 +68,9 @@ co_log_excerpt() {
 # co_digest <log_file> <label> <exit_code|""> <focus> <source>
 # Prints the digest. <source> is recorded in stats (run|hook|summarize).
 co_digest() {
-  local log="$1" label="$2" code="$3" focus="$4" source="$5"
+  local log="$1" label code="$3" focus="$4" source="$5"
+  # a command line can carry credentials (FOO_KEY=… cmd): never send/store them
+  label=$(printf '%s' "$2" | co_redact)
   local lines bytes kb key_max tail_n keyf keycount prompt answer status_line
   local use_model model_note="" summary="" max_in t0
   lines=$(co_file_lines "$log")
@@ -158,5 +160,5 @@ co_digest() {
 
 # New log file path for a label.
 co_new_log() {
-  printf '%s/logs/%s-%s.log' "$(co_state_dir)" "$(date +%Y%m%d-%H%M%S)" "$(co_slug "$1")"
+  printf '%s/logs/%s-%s.log' "$(co_state_dir)" "$(date +%Y%m%d-%H%M%S)" "$(co_slug "$(printf '%s' "$1" | co_redact)")"
 }

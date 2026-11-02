@@ -84,3 +84,23 @@ describe("runProcess", () => {
     expect(r.killedBy).toBe("cancelled");
   });
 });
+
+describe("redact (same vectors as the bash suite)", () => {
+  test("masks credentials in their common shapes", async () => {
+    const { redact } = await import("../src/secrets.ts");
+    const input = [
+      'curl -H "Authorization: Bearer abcdefghijklmnopqrstuvwxyz012345" -H "X-Api-Key: zyxwvutsrqponmlk"',
+      "DATABASE_URL=postgres://admin:s3cr3tpass@db.example.com/app",
+      "AWS=ASIAABCDEFGHIJKLMNOP",
+      '{"token": "abc def ghi jkl"}',
+      "password = 'correct horse battery'",
+      "sk_live_abcdefghijklmnop npm_abcdefghijklmnopqrstuvwxyz0123456789 glpat-abcdefghijklmnopqrst",
+      "-----BEGIN OPENSSH PRIVATE KEY-----",
+      "b3BlbnNzaC1rZXktdjEAAAA",
+    ].join("\n");
+    const out = redact(input);
+    for (const leak of ["abcdefghijklmnopqrstuvwxyz012345", "zyxwvutsrqponmlk", "s3cr3tpass", "ASIAABCDEFGHIJKLMNOP", "abc def ghi jkl", "correct horse battery", "sk_live_abcdefghijklmnop", "npm_abcdefghijklmnopqrstuvwxyz0123456789", "glpat-abcdefghijklmnopqrst", "b3BlbnNzaC1rZXktdjEAAAA"])
+      expect(out).not.toContain(leak);
+    expect(out).toContain("@db.example.com/app");
+  });
+});

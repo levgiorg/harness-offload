@@ -1,5 +1,8 @@
-import { readFileSync } from "node:fs";
-import { isAbsolute, join } from "node:path";
+import { readFileSync, realpathSync, statSync } from "node:fs";
+import { isAbsolute, join, relative } from "node:path";
+
+const MAX_FILE_BYTES = 8 * 1024 * 1024;
+const MAX_LINE = 4000; // answer lines longer than this are not scanned for citations
 
 const norm = (s: string) => s.replace(/[ \t\r]+/g, " ").trim();
 
@@ -32,7 +35,14 @@ export function verifyCitations(answer: string, root: string, slack = 3): { text
     if (cache.has(p)) return cache.get(p)!;
     let lines: string[] | null = null;
     try {
-      const t = readFileSync(isAbsolute(p) ? p : join(root, p.replace(/^\.\//, "")), "utf8");
+      // only regular, reasonably sized files inside the project: a model can
+      // cite /dev/zero or a FIFO, which must not hang or exhaust memory
+      const real = realpathSync(isAbsolute(p) ? p : join(root, p.replace(/^\.\//, "")));
+      const rel = relative(realpathSync(root), real);
+      if (rel.startsWith("..") || isAbsolute(rel)) throw new Error("outside");
+      const st = statSync(real);
+      if (!st.isFile() || st.size > MAX_FILE_BYTES) throw new Error("not a regular file");
+      const t = readFileSync(real, "utf8");
       lines = t.split("\n");
       if (t.endsWith("\n")) lines.pop();
       if (lines.length === 0) lines = null;
@@ -55,8 +65,10 @@ export function verifyCitations(answer: string, root: string, slack = 3): { text
   };
   let ok = 0;
   let bad = 0;
-  const cite = /[A-Za-z0-9_.@\/+-]+:L[0-9]+(?:-L?[0-9]+)?/;
+  // anchored so the scan stays linear on long runs of path characters
+  const cite = /(?<![A-Za-z0-9_.@\/+-])[A-Za-z0-9_.@\/+-]+:L[0-9]+(?:-L?[0-9]+)?/;
   const out = answer.split("\n").map((line) => {
+    if (line.length > MAX_LINE) return line;
     let rest = line;
     let marked = false;
     let m: RegExpExecArray | null;

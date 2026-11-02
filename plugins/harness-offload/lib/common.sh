@@ -283,15 +283,25 @@ co_is_secret_target() {
 co_redact() {
   if ! co_cfg_bool '.privacy.redact' true; then cat; return; fi
   # LC_ALL=C: BSD sed stops at the first invalid UTF-8 byte otherwise.
+  # Same patterns as redact() in secrets.ts.
   LC_ALL=C sed -E \
-    -e 's/AKIA[0-9A-Z]{16}/[REDACTED-AWS-KEY]/g' \
+    -e 's/(AKIA|ASIA)[0-9A-Z]{16}/[REDACTED-AWS-KEY]/g' \
     -e 's/(gh[pousr]_)[A-Za-z0-9]{30,}/\1[REDACTED]/g' \
     -e 's/github_pat_[A-Za-z0-9_]{30,}/github_pat_[REDACTED]/g' \
+    -e 's/glpat-[A-Za-z0-9_-]{20,}/glpat-[REDACTED]/g' \
+    -e 's/npm_[A-Za-z0-9]{36}/npm_[REDACTED]/g' \
+    -e 's/hf_[A-Za-z0-9]{30,}/hf_[REDACTED]/g' \
+    -e 's/((sk|rk)_(live|test)_)[A-Za-z0-9]{10,}/\1[REDACTED]/g' \
     -e 's/(sk-(proj-|ant-)?)[A-Za-z0-9_-]{20,}/\1[REDACTED]/g' \
     -e 's/xox[abprs]-[A-Za-z0-9-]{10,}/xox-[REDACTED]/g' \
     -e 's/AIza[0-9A-Za-z_-]{35}/[REDACTED-GOOGLE-KEY]/g' \
     -e 's/eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}/[REDACTED-JWT]/g' \
-    -e 's/(([Pp][Aa][Ss][Ss][Ww][Oo][Rr][Dd]|[Pp][Aa][Ss][Ss][Ww][Dd]|[Ss][Ee][Cc][Rr][Ee][Tt]|[Aa][Pp][Ii]_?[Kk][Ee][Yy]|[Aa][Cc][Cc][Ee][Ss][Ss]_?[Tt][Oo][Kk][Ee][Nn])[A-Za-z0-9_]*["'"'"']?[[:space:]]*[:=][[:space:]]*["'"'"']?)[^"'"'"'[:space:],;]{8,}/\1[REDACTED]/g' \
+    -e 's/([Bb][Ee][Aa][Rr][Ee][Rr][[:space:]]+)[A-Za-z0-9._~+\/=-]{16,}/\1[REDACTED]/g' \
+    -e 's/([Bb][Aa][Ss][Ii][Cc][[:space:]]+)[A-Za-z0-9+\/=]{16,}/\1[REDACTED]/g' \
+    -e 's#([A-Za-z][A-Za-z0-9+.-]*://[^/[:space:]:@]+:)[^@[:space:]/]+@#\1[REDACTED]@#g' \
+    -e 's/(([Tt][Oo][Kk][Ee][Nn]|[Pp][Aa][Ss][Ss][Ww][Oo][Rr][Dd]|[Pp][Aa][Ss][Ss][Pp][Hh][Rr][Aa][Ss][Ee]|[Ss][Ee][Cc][Rr][Ee][Tt])"?[[:space:]]*[:=][[:space:]]*")[^"]{6,}"/\1[REDACTED]"/g' \
+    -e "s/(([Tt][Oo][Kk][Ee][Nn]|[Pp][Aa][Ss][Ss][Ww][Oo][Rr][Dd]|[Pp][Aa][Ss][Ss][Pp][Hh][Rr][Aa][Ss][Ee]|[Ss][Ee][Cc][Rr][Ee][Tt])'?[[:space:]]*[:=][[:space:]]*')[^']{6,}'/\1[REDACTED]'/g" \
+    -e 's/(([Pp][Aa][Ss][Ss][Ww][Oo][Rr][Dd]|[Pp][Aa][Ss][Ss][Ww][Dd]|[Ss][Ee][Cc][Rr][Ee][Tt]|[Aa][Pp][Ii][-_]?[Kk][Ee][Yy]|[Aa][Cc][Cc][Ee][Ss][Ss][-_]?[Tt][Oo][Kk][Ee][Nn]|[Aa][Uu][Tt][Hh][-_]?[Tt][Oo][Kk][Ee][Nn])[A-Za-z0-9_]*["'"'"']?[[:space:]]*[:=][[:space:]]*["'"'"']?)[^"'"'"'[:space:],;]{8,}/\1[REDACTED]/g' \
   | LC_ALL=C awk '
       /-----BEGIN [A-Z ]*PRIVATE KEY-----/ { print "[REDACTED PRIVATE KEY]"; skip = 1; next }
       skip && /-----END [A-Z ]*PRIVATE KEY-----/ { skip = 0; next }

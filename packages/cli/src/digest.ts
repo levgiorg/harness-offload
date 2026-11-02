@@ -73,7 +73,9 @@ export interface DigestOptions {
   budgetSec?: number;
 }
 
-export async function digest(log: string, label: string, code: string, focus: string, source: string, modelOverride?: string, opts: DigestOptions = {}): Promise<string> {
+export async function digest(log: string, rawLabel: string, code: string, focus: string, source: string, modelOverride?: string, opts: DigestOptions = {}): Promise<string> {
+  // a command line can carry credentials (FOO_KEY=… cmd): never send/store them
+  const label = redact(rawLabel);
   const text = readFileSync(log, "utf8");
   const lines = countLines(text);
   const bytes = Buffer.byteLength(text);

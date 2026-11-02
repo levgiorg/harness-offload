@@ -1,3 +1,4 @@
+import { redact } from "./secrets.ts";
 import { PROMPTS, Task } from "./assets.ts";
 import { cfgInt, cfgList, cfgStr } from "./config.ts";
 import { backendFor, parseRef } from "./backends/registry.ts";
@@ -83,7 +84,10 @@ export async function invoke(task: Task, prompt: string, cwd: string, override?:
         secretGlobs: cfgList("privacy.secret_globs"),
       allowGlobs: cfgList("privacy.secret_allow_globs"),
       });
-      return { ...r, model: ref === "@default" ? `${backend}-default-model` : ref, seconds: Math.round((Date.now() - t0) / 1000) };
+      // answers can quote what a worker read (an explore agent may have opened
+      // .env); generated code is left alone (its fixtures are not secrets)
+      const text = task === "write" ? r.text : redact(r.text);
+      return { ...r, text, model: ref === "@default" ? `${backend}-default-model` : ref, seconds: Math.round((Date.now() - t0) / 1000) };
     } catch (e) {
       const err = e instanceof WorkerError ? e : new WorkerError(E.WORKER, String((e as Error)?.message ?? e));
       lastCode = err.code;

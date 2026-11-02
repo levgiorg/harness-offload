@@ -57,20 +57,32 @@ export function isSecretTarget(path: string): boolean {
   }
 }
 
-const KEY_NAME = /((?:password|passwd|secret|api_?key|access_?token)[A-Za-z0-9_]*["']?\s*[:=]\s*["']?)[^"'\s,;]{8,}/gi;
+const KEY_NAME = /((?:password|passwd|secret|api[-_]?key|access[-_]?token|auth[-_]?token)[A-Za-z0-9_]*["']?\s*[:=]\s*["']?)[^"'\s,;]{8,}/gi;
+const QUOTED_DQ = /((?:token|password|passphrase|secret)"?\s*[:=]\s*")[^"]{6,}"/gi;
+const QUOTED_SQ = /((?:token|password|passphrase|secret)'?\s*[:=]\s*')[^']{6,}'/gi;
 
-/** Masks common credential shapes in text bound for a third-party model. */
+/** Masks common credential shapes in text bound for a third-party model.
+ * Same patterns as co_redact in lib/common.sh. */
 export function redact(text: string): string {
   if (!cfgBool("privacy.redact", true)) return text;
-  let out = text
-    .replace(/AKIA[0-9A-Z]{16}/g, "[REDACTED-AWS-KEY]")
+  return text
+    .replace(/(?:AKIA|ASIA)[0-9A-Z]{16}/g, "[REDACTED-AWS-KEY]")
     .replace(/(gh[pousr]_)[A-Za-z0-9]{30,}/g, "$1[REDACTED]")
     .replace(/github_pat_[A-Za-z0-9_]{30,}/g, "github_pat_[REDACTED]")
+    .replace(/glpat-[A-Za-z0-9_-]{20,}/g, "glpat-[REDACTED]")
+    .replace(/npm_[A-Za-z0-9]{36}/g, "npm_[REDACTED]")
+    .replace(/hf_[A-Za-z0-9]{30,}/g, "hf_[REDACTED]")
+    .replace(/((?:sk|rk)_(?:live|test)_)[A-Za-z0-9]{10,}/g, "$1[REDACTED]")
     .replace(/(sk-(?:proj-|ant-)?)[A-Za-z0-9_-]{20,}/g, "$1[REDACTED]")
     .replace(/xox[abprs]-[A-Za-z0-9-]{10,}/g, "xox-[REDACTED]")
     .replace(/AIza[0-9A-Za-z_-]{35}/g, "[REDACTED-GOOGLE-KEY]")
     .replace(/eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}/g, "[REDACTED-JWT]")
-    .replace(KEY_NAME, "$1[REDACTED]");
-  out = out.replace(/-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z ]*PRIVATE KEY-----\n?/g, "[REDACTED PRIVATE KEY]\n");
-  return out;
+    .replace(/(bearer[ \t]+)[A-Za-z0-9._~+/=-]{16,}/gi, "$1[REDACTED]")
+    .replace(/(basic[ \t]+)[A-Za-z0-9+/=]{16,}/gi, "$1[REDACTED]")
+    .replace(/([A-Za-z][A-Za-z0-9+.-]*:\/\/[^/\s:@]+:)[^@\s/]+@/g, "$1[REDACTED]@")
+    .replace(QUOTED_DQ, '$1[REDACTED]"')
+    .replace(QUOTED_SQ, "$1[REDACTED]'")
+    .replace(KEY_NAME, "$1[REDACTED]")
+    // a key cut off by a line range or an excerpt has no END line: mask to the end
+    .replace(/-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?(?:-----END [A-Z ]*PRIVATE KEY-----\n?|$)/g, "[REDACTED PRIVATE KEY]\n");
 }

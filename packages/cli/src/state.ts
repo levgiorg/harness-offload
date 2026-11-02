@@ -1,3 +1,4 @@
+import { redact } from "./secrets.ts";
 import { appendFileSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { cfgInt, cfgStr } from "./config.ts";
@@ -42,7 +43,7 @@ export function newLogPath(label: string): string {
   const d = new Date();
   const p = (n: number) => String(n).padStart(2, "0");
   const ts = `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}`;
-  return join(stateDir(), "logs", `${ts}-${slug(label)}.log`);
+  return join(stateDir(), "logs", `${ts}-${slug(redact(label))}.log`);
 }
 
 export function pruneLogs(): void {

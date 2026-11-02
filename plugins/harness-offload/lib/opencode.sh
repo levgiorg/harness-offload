@@ -485,6 +485,9 @@ co_oc_invoke() {
     co_oc_attempt "$agent" "$model" "$prompt_file" "$workdir" "$variant" "$answer_file"
     rc=$?
     if [ "$rc" = 0 ]; then
+      # answers can quote what a worker read (an explore agent may have opened
+      # .env); generated code is left alone (its fixtures are not secrets)
+      if [ "$task" != write ]; then co_redact < "$answer_file" > "$answer_file.r" && mv "$answer_file.r" "$answer_file"; fi
       CO_OC_MODEL="$model"
       [ "$model" = "@default" ] && CO_OC_MODEL="opencode-default-model"
       return 0

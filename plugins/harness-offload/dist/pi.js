@@ -411,22 +411,6 @@ function cfgList(path) {
 // src/digest.ts
 import { readFileSync as readFileSync7, writeFileSync as writeFileSync5 } from "node:fs";
 
-// src/engine.ts
-init_assets2();
-
-// src/backends/registry.ts
-init_assets2();
-
-// src/backends/http.ts
-init_assets2();
-import { existsSync as existsSync3, readFileSync as readFileSync3 } from "node:fs";
-import { join as join3 } from "node:path";
-
-// src/backends/tools.ts
-import { closeSync as closeSync2, lstatSync as lstatSync2, openSync as openSync2, readdirSync, readSync as readSync2, realpathSync as realpathSync2, statSync as statSync3 } from "node:fs";
-import { isAbsolute, join as join2, relative, resolve, sep } from "node:path";
-import { Worker } from "node:worker_threads";
-
 // src/secrets.ts
 import { lstatSync, realpathSync } from "node:fs";
 import { basename } from "node:path";
@@ -478,15 +462,31 @@ function isSecretTarget(path) {
     return false;
   }
 }
-var KEY_NAME = /((?:password|passwd|secret|api_?key|access_?token)[A-Za-z0-9_]*["']?\s*[:=]\s*["']?)[^"'\s,;]{8,}/gi;
+var KEY_NAME = /((?:password|passwd|secret|api[-_]?key|access[-_]?token|auth[-_]?token)[A-Za-z0-9_]*["']?\s*[:=]\s*["']?)[^"'\s,;]{8,}/gi;
+var QUOTED_DQ = /((?:token|password|passphrase|secret)"?\s*[:=]\s*")[^"]{6,}"/gi;
+var QUOTED_SQ = /((?:token|password|passphrase|secret)'?\s*[:=]\s*')[^']{6,}'/gi;
 function redact(text) {
   if (!cfgBool("privacy.redact", true))
     return text;
-  let out = text.replace(/AKIA[0-9A-Z]{16}/g, "[REDACTED-AWS-KEY]").replace(/(gh[pousr]_)[A-Za-z0-9]{30,}/g, "$1[REDACTED]").replace(/github_pat_[A-Za-z0-9_]{30,}/g, "github_pat_[REDACTED]").replace(/(sk-(?:proj-|ant-)?)[A-Za-z0-9_-]{20,}/g, "$1[REDACTED]").replace(/xox[abprs]-[A-Za-z0-9-]{10,}/g, "xox-[REDACTED]").replace(/AIza[0-9A-Za-z_-]{35}/g, "[REDACTED-GOOGLE-KEY]").replace(/eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}/g, "[REDACTED-JWT]").replace(KEY_NAME, "$1[REDACTED]");
-  out = out.replace(/-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z ]*PRIVATE KEY-----\n?/g, `[REDACTED PRIVATE KEY]
+  return text.replace(/(?:AKIA|ASIA)[0-9A-Z]{16}/g, "[REDACTED-AWS-KEY]").replace(/(gh[pousr]_)[A-Za-z0-9]{30,}/g, "$1[REDACTED]").replace(/github_pat_[A-Za-z0-9_]{30,}/g, "github_pat_[REDACTED]").replace(/glpat-[A-Za-z0-9_-]{20,}/g, "glpat-[REDACTED]").replace(/npm_[A-Za-z0-9]{36}/g, "npm_[REDACTED]").replace(/hf_[A-Za-z0-9]{30,}/g, "hf_[REDACTED]").replace(/((?:sk|rk)_(?:live|test)_)[A-Za-z0-9]{10,}/g, "$1[REDACTED]").replace(/(sk-(?:proj-|ant-)?)[A-Za-z0-9_-]{20,}/g, "$1[REDACTED]").replace(/xox[abprs]-[A-Za-z0-9-]{10,}/g, "xox-[REDACTED]").replace(/AIza[0-9A-Za-z_-]{35}/g, "[REDACTED-GOOGLE-KEY]").replace(/eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}/g, "[REDACTED-JWT]").replace(/(bearer[ \t]+)[A-Za-z0-9._~+/=-]{16,}/gi, "$1[REDACTED]").replace(/(basic[ \t]+)[A-Za-z0-9+/=]{16,}/gi, "$1[REDACTED]").replace(/([A-Za-z][A-Za-z0-9+.-]*:\/\/[^/\s:@]+:)[^@\s/]+@/g, "$1[REDACTED]@").replace(QUOTED_DQ, '$1[REDACTED]"').replace(QUOTED_SQ, "$1[REDACTED]'").replace(KEY_NAME, "$1[REDACTED]").replace(/-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?(?:-----END [A-Z ]*PRIVATE KEY-----\n?|$)/g, `[REDACTED PRIVATE KEY]
 `);
-  return out;
 }
+
+// src/engine.ts
+init_assets2();
+
+// src/backends/registry.ts
+init_assets2();
+
+// src/backends/http.ts
+init_assets2();
+import { existsSync as existsSync3, readFileSync as readFileSync3 } from "node:fs";
+import { join as join3 } from "node:path";
+
+// src/backends/tools.ts
+import { closeSync as closeSync2, lstatSync as lstatSync2, openSync as openSync2, readdirSync, readSync as readSync2, realpathSync as realpathSync2, statSync as statSync3 } from "node:fs";
+import { isAbsolute, join as join2, relative, resolve, sep } from "node:path";
+import { Worker } from "node:worker_threads";
 
 // src/text.ts
 import { openSync, readSync, closeSync, readFileSync as readFileSync2, statSync as statSync2 } from "node:fs";
@@ -1219,7 +1219,7 @@ function newLogPath(label) {
   const d = new Date;
   const p = (n) => String(n).padStart(2, "0");
   const ts = `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}`;
-  return join5(stateDir(), "logs", `${ts}-${slug(label)}.log`);
+  return join5(stateDir(), "logs", `${ts}-${slug(redact(label))}.log`);
 }
 function pruneLogs() {
   const days = cfgInt("log_retention_days", 7);
@@ -1849,7 +1849,8 @@ async function invoke(task, prompt, cwd, override, opts = {}) {
         secretGlobs: cfgList("privacy.secret_globs"),
         allowGlobs: cfgList("privacy.secret_allow_globs")
       });
-      return { ...r, model: ref === "@default" ? `${backend}-default-model` : ref, seconds: Math.round((Date.now() - t0) / 1000) };
+      const text = task === "write" ? r.text : redact(r.text);
+      return { ...r, text, model: ref === "@default" ? `${backend}-default-model` : ref, seconds: Math.round((Date.now() - t0) / 1000) };
     } catch (e) {
       const err = e instanceof WorkerError ? e : new WorkerError(E.WORKER, String(e?.message ?? e));
       lastCode = err.code;
@@ -1946,7 +1947,8 @@ function logExcerpt(text) {
 `) + `
 `;
 }
-async function digest(log, label, code, focus, source, modelOverride, opts = {}) {
+async function digest(log, rawLabel, code, focus, source, modelOverride, opts = {}) {
+  const label = redact(rawLabel);
   const text = readFileSync7(log, "utf8");
   const lines = countLines(text);
   const bytes = Buffer.byteLength(text);

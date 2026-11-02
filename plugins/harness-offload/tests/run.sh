@@ -157,6 +157,15 @@ expect_not "redact: GitHub token" "$red" "ghp_abcdefghij"
 expect_not "redact: password value" "$red" "hunter2hunter2"
 expect_not "redact: private key body" "$red" "MIIabc"
 expect_has "redact: leaves normal text" "$red" "normal line"
+red2=$(printf '%s\n' 'curl -H "Authorization: Bearer abcdefghijklmnopqrstuvwxyz012345" -H "X-Api-Key: zyxwvutsrqponmlk"' \
+  'DATABASE_URL=postgres://admin:s3cr3tpass@db.example.com/app' 'AWS=ASIAABCDEFGHIJKLMNOP' '{"token": "abc def ghi jkl"}' \
+  "password = 'correct horse battery'" 'sk_live_abcdefghijklmnop npm_abcdefghijklmnopqrstuvwxyz0123456789 glpat-abcdefghijklmnopqrst' \
+  '-----BEGIN OPENSSH PRIVATE KEY-----' 'b3BlbnNzaC1rZXktdjEAAAA' | co_redact)
+for leak in abcdefghijklmnopqrstuvwxyz012345 zyxwvutsrqponmlk s3cr3tpass ASIAABCDEFGHIJKLMNOP "abc def ghi jkl" "correct horse battery" \
+  sk_live_abcdefghijklmnop npm_abcdefghijklmnopqrstuvwxyz0123456789 glpat-abcdefghijklmnopqrst b3BlbnNzaC1rZXktdjEAAAA; do
+  expect_not "redact: $leak" "$red2" "$leak"
+done
+expect_has "redact: keeps the URL host" "$red2" "@db.example.com/app"
 co_is_text blob.bin && bad "binary detection" || ok "binary detection"
 out=$(co_outline big.ts 10)
 expect_has "outline: finds functions with line numbers" "$out" "L1: export function fn1"
@@ -235,6 +244,11 @@ section "commands"
 out=$(STUB_PROMPT="$T/prompt" STUB_ANSWER='fn3 adds 3 — big.ts:L3 `export function fn3(a: number)`' "$OFFLOAD" read -q "what does fn3 do?" big.ts 2>&1)
 expect_has "read: answer + verified citation footer" "$out" "citations: 1 verified, 0 unverified"
 expect_has "read: line-numbered file in prompt" "$(cat "$T/prompt")" "     3	export function fn3"
+out=$(STUB_PROMPT="$T/prompt-key" "$OFFLOAD" run -c 'OPENAI_API_KEY=sk-proj-abcdefghijklmnopqrstuvwxyz seq 1 3000' 2>&1)
+expect_not "run: a key in the command line never reaches the worker" "$(cat "$T/prompt-key" 2>/dev/null)" "abcdefghijklmnopqrstuvwxyz"
+expect_not "run: … nor the stats or log names" "$(cat "$OFFLOAD_STATE_DIR/stats.jsonl"; ls "$OFFLOAD_STATE_DIR/logs")" "abcdefghijklmnopqrstuvwxyz"
+out=$(STUB_ANSWER='the key is AKIAABCDEFGHIJKLMNOP' "$OFFLOAD" ask "what key?" 2>&1)
+expect_not "answers are redacted before they reach the agent" "$out" "AKIAABCDEFGHIJKLMNOP"
 ln -sf .env notes-link.md
 "$OFFLOAD" read -q "what?" notes-link.md >/dev/null 2>&1; expect_eq "read: a link to a secret is refused (exit 16)" "$?" 16
 mkdir -p linkdir; printf 'hello\n' > linkdir/ok.txt; ln -sf ../.env linkdir/env-link.txt
