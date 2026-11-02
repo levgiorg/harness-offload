@@ -10,7 +10,7 @@ import { distFile, marketplaceRoot, packageRoot, pluginDir } from "./assets.ts";
 import { opencodeMajor } from "../backends/opencode.ts";
 import { cfgStr } from "../config.ts";
 
-export const HOSTS = ["claude", "codex", "cursor", "gemini", "copilot", "qwen", "crush", "pi", "opencode", "kilo", "amp", "devin", "mcp"] as const;
+export const HOSTS = ["claude", "codex", "cursor", "gemini", "copilot", "qwen", "crush", "pi", "opencode", "kilo", "amp", "devin", "aider", "mcp"] as const;
 export type HostName = (typeof HOSTS)[number];
 
 export const HOST_LABELS: Record<HostName, string> = {
@@ -26,10 +26,35 @@ export const HOST_LABELS: Record<HostName, string> = {
   kilo: "Kilo Code CLI",
   amp: "Amp (experimental)",
   devin: "Devin Desktop / Windsurf",
+  aider: "Aider (conventions file)",
   mcp: "Any MCP client",
 };
 
-const HOST_BIN: Partial<Record<HostName, string>> = { claude: "claude", codex: "codex", gemini: "gemini", copilot: "copilot", qwen: "qwen", crush: "crush", pi: "pi", opencode: "opencode", kilo: "kilo", amp: "amp", devin: "devin" };
+const HOST_BIN: Partial<Record<HostName, string>> = { claude: "claude", codex: "codex", gemini: "gemini", copilot: "copilot", qwen: "qwen", crush: "crush", pi: "pi", opencode: "opencode", kilo: "kilo", amp: "amp", devin: "devin", aider: "aider" };
+
+/** The stdio command an MCP client should start: the global CLI when present,
+ * else node + the bundled CLI (absolute, so it works from any client). */
+async function mcpCommand(): Promise<{ command: string; args: string[] }> {
+  if (await which("harness-offload")) return { command: "harness-offload", args: ["mcp"] };
+  return { command: isWin ? process.execPath : "node", args: [join(pluginDir(), "dist", "cli.js"), "mcp"] };
+}
+
+/** Config snippets for MCP-only clients (no hook API to intercept tools). */
+export async function mcpRecipes(): Promise<Record<string, { file: string; snippet: string }>> {
+  const { command, args } = await mcpCommand();
+  const json = (o: unknown) => JSON.stringify(o, null, 2);
+  const env = { OFFLOAD_HOST: "mcp" };
+  const yamlArgs = `[${args.map((a) => JSON.stringify(a)).join(", ")}]`;
+  return {
+    "Claude Desktop": { file: "claude_desktop_config.json", snippet: json({ mcpServers: { offload: { command, args, env } } }) },
+    Cline: { file: "cline_mcp_settings.json (Cline → MCP Servers → Configure)", snippet: json({ mcpServers: { offload: { command, args, env, disabled: false } } }) },
+    "VS Code (Copilot Chat agent mode)": { file: ".vscode/mcp.json", snippet: json({ servers: { offload: { type: "stdio", command, args, env } } }) },
+    Zed: { file: "~/.config/zed/settings.json", snippet: json({ context_servers: { offload: { command, args, env } } }) },
+    Kiro: { file: ".kiro/settings/mcp.json (or ~/.kiro/settings/mcp.json)", snippet: json({ mcpServers: { offload: { command, args, env } } }) },
+    Continue: { file: "~/.continue/config.yaml", snippet: `mcpServers:\n  - name: offload\n    command: ${JSON.stringify(command)}\n    args: ${yamlArgs}` },
+    Goose: { file: "~/.config/goose/config.yaml", snippet: `extensions:\n  offload:\n    type: stdio\n    enabled: true\n    cmd: ${JSON.stringify(command)}\n    args: ${yamlArgs}\n    timeout: 300` },
+  };
+}
 
 /** Crush's global config directory (CRUSH_GLOBAL_CONFIG overrides it). */
 function crushDir(): string {
@@ -119,7 +144,7 @@ function geminiExtension(dir: string, launcher: string): void {
 export async function install(host: HostName, opts: { dryRun?: boolean } = {}): Promise<Step[]> {
   const steps: Step[] = [];
   const bin = host === "opencode" ? cfgStr("opencode.bin", "opencode") : HOST_BIN[host];
-  if (bin && !(await which(bin)) && !["cursor", "mcp"].includes(host)) {
+  if (bin && !(await which(bin)) && !["cursor", "mcp", "aider"].includes(host)) {
     return [{ ok: false, text: `${HOST_LABELS[host]} not found on PATH (${bin}); install it first.` }];
   }
   const launcher = join(pluginDir(), "bin", "offload-ts");
@@ -260,9 +285,23 @@ export async function install(host: HostName, opts: { dryRun?: boolean } = {}): 
       record(host, { plugin: pluginDir() });
       break;
     }
+    case "aider": {
+      // Aider has neither hooks nor MCP: a conventions file read at start-up
+      // teaches it to call the CLI from /run.
+      const file = join(stateDir(), "aider-conventions.md");
+      if (opts.dryRun) return [{ ok: true, text: `write ${file}` }];
+      const { sessionGuide } = await import("../hooks/logic.ts");
+      const cli = isWin ? winCommand() : JSON.stringify(join(pluginDir(), "bin", "offload"));
+      writeFileSync(file, `# Harness Offload\n\n${sessionGuide("aider" as any, cli)}\n\nIn Aider, run these with /run (the output comes back into the chat).\n`);
+      steps.push({ ok: true, text: `wrote ${file}` });
+      steps.push({ ok: true, text: `use it with: aider --read ${JSON.stringify(file)}   (or add to ~/.aider.conf.yml →  read: [${JSON.stringify(file)}])` });
+      record(host, { file });
+      break;
+    }
     case "mcp": {
-      steps.push({ ok: true, text: `stdio command for any MCP client: ${launcher} mcp   (or: harness-offload mcp)` });
-      steps.push({ ok: true, text: `JSON: {"mcpServers":{"offload":{"command":"harness-offload","args":["mcp"]}}}` });
+      const { command, args } = await mcpCommand();
+      steps.push({ ok: true, text: `stdio command for any MCP client: ${[command, ...args].map((a) => (/\s/.test(a) ? JSON.stringify(a) : a)).join(" ")}` });
+      for (const [client, r] of Object.entries(await mcpRecipes())) steps.push({ ok: true, text: `${client} — ${r.file}:\n${r.snippet}` });
       break;
     }
   }
@@ -336,6 +375,12 @@ export async function uninstall(host: HostName): Promise<Step[]> {
     case "devin":
       steps.push(await exec("devin", ["plugins", "uninstall", "harness-offload"]));
       break;
+    case "aider": {
+      const f = join(stateDir(), "aider-conventions.md");
+      rmSync(f, { force: true });
+      steps.push({ ok: true, text: `removed ${f} (drop it from ~/.aider.conf.yml if you added it)` });
+      break;
+    }
     case "mcp":
       steps.push({ ok: true, text: "remove the offload entry from your MCP client's config" });
   }

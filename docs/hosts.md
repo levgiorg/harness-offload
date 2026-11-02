@@ -6,14 +6,14 @@ What each integration installs, how it talks to the host, and what to know.
 - **Install:** `offload install claude` (= `claude plugin marketplace add <bundled marketplace>` + `claude plugin install harness-offload@harness-offload`), or `/plugin marketplace add OWNER/harness-offload`.
 - **Hooks (bash, need `jq`):** `PreToolUse(Read)` full-read guard, `PreToolUse(Bash)` dump guard + optional autowrap, `PostToolUse(Bash)` digest via `updatedToolOutput` (reads `persistedOutputPath` for >30 KB outputs and puts the verbatim lines first because Claude only sees a 2 KB preview), `SessionStart` guide.
 - **CLI:** `offload` is on the Bash tool's PATH while the plugin is enabled. Skills: `/harness-offload:setup`, `/harness-offload:doctor`, `/harness-offload:stats`.
-- Non-OpenCode backends (`BACKEND:MODEL`) need the `harness-offload` npm package (the bash engine calls `offload worker` for transport).
+- Works with **jq + bash only**: the default model `@host` is `claude:haiku` — a lean `claude -p` on your own Claude plan. Other agent CLIs (`codex:`, `gemini:`, `cursor:`, `pi:`) and HTTP APIs (via `curl`) are native too; only `explore` over an HTTP API uses the bundled TypeScript CLI (`dist/cli.js`, needs Node 18+).
 
 ## Codex CLI
 - **Install:** `offload install codex` (= `codex plugin marketplace add …` + `codex plugin add harness-offload@harness-offload`). Then **open `/hooks` and trust the Harness Offload hooks** — Codex skips untrusted plugin hooks.
 - Manifest `.codex-plugin/plugin.json` → `hosts/codex/hooks.json`, `hosts/codex/mcp.json`, `hosts/codex/skills`.
 - Codex has no Read tool; files are read through Bash, so the Bash guard covers `cat`/`head`/`sed -n`. Long successful output is replaced via `{"continue": false, "reason": <digest>}`.
 - Codex sandboxes the agent's shell without network, so the guide and deny messages point to the **MCP tools** (`offload_read`, …), which run outside the sandbox. Hooks also run outside it.
-- `bin/` isn't on Codex's PATH; hooks/MCP call `bin/offload-ts`, which needs `harness-offload` installed (`npm i -g harness-offload`) or falls back to `npx`.
+- `bin/` isn't on Codex's PATH; hooks/MCP call `bin/offload-ts`, which runs the plugin's bundled `dist/cli.js` with Node (or a global `harness-offload`). `@host` = `codex:gpt-6-luna` via `codex exec` on your ChatGPT plan.
 
 ## Cursor
 - **Install:** `offload install cursor` copies the plugin to `~/.cursor/plugins/local/harness-offload` (then *Developer: Reload Window*).
@@ -40,6 +40,29 @@ What each integration installs, how it talks to the host, and what to know.
 ## Devin Desktop / Windsurf
 - Cascade was replaced by Devin Local, which reads Claude Code plugins and hooks. `offload install devin` runs `devin plugins install --local <plugin>`.
 
-## Any MCP client
-- `offload mcp` (stdio). Config: `{"mcpServers": {"offload": {"command": "harness-offload", "args": ["mcp"]}}}`.
-- Tools: `offload_read`, `offload_explore`, `offload_run`, `offload_summarize`, `offload_write`, `offload_ask`, `offload_outline`.
+## GitHub Copilot CLI
+- **Install:** `offload install copilot` (= `copilot plugin marketplace add …` + `copilot plugin install harness-offload@harness-offload`). Copilot loads the Claude Code plugin as is ("live" from a local marketplace).
+- The same bash hooks detect `COPILOT_CLI=1` and speak Copilot's dialect: read arguments `path`/`view_range`, output via `modifiedResult`, the guide as top-level `additionalContext`, the CLI by absolute path (Copilot doesn't put `bin/` on PATH).
+- Verified with Copilot CLI 1.0.105: a 3,000-line `view` is denied with the outline, `seq 1 400` comes back as a digest, the guide is injected.
+- `@host` → `@default` (OpenCode). To spend your Copilot plan, log OpenCode into GitHub Copilot (`opencode auth login`) and pick a `github-copilot/…` model.
+
+## Qwen Code
+- **Install:** `offload install qwen` (= `qwen extensions install <plugin> --consent`): Qwen converts the Claude plugin into an extension.
+- Reads (`read_file`, 0-based offsets) and shell dumps are guarded; the guide is injected at session start. Qwen has no documented way to replace a tool's output, so long command output is not digested — the guide steers noisy commands to `offload run`.
+- Verified with Qwen Code 0.26.5.
+
+## Crush
+- **Install:** `offload install crush` merges into `~/.config/crush/crush.json` (backup next to it): `PreToolUse` hook on `^(view|bash)$`, `PostToolUse` on `^bash$` (`updated_output` digest), and the guide as a `global_context_paths` entry (Crush's `SessionStart` output is ignored; setting the list keeps Crush's two defaults). `offload uninstall crush` removes exactly those entries.
+- Verified with Crush 0.99.0.
+
+## Amp (experimental)
+- **Install:** `offload install amp` writes `~/.config/amp/plugins/harness-offload.ts` (re-exports `dist/amp.js`); run *plugins: reload* in Amp.
+- `tool.call` → `reject-and-continue` for big `Read`s (`read_range` slices pass) and dumps; `tool.result` replaces long shell output with the digest. Built from Amp's published plugin API and tested against a simulated API — not yet run inside Amp.
+
+## Aider
+- No hooks or MCP. `offload install aider` writes a conventions file; start Aider with `aider --read <that file>` (or list it under `read:` in `~/.aider.conf.yml`) and the model will call `offload read/explore/run` through `/run`.
+
+## MCP-only clients (Cline, Zed, Continue, Goose, Kiro, VS Code, Claude Desktop)
+- `offload install mcp` prints a ready snippet for each client (config file + JSON/YAML) with a command that works on your machine (`harness-offload mcp`, or node + the bundled CLI).
+- Tools: `offload_read`, `offload_explore`, `offload_run` (annotated destructive/open-world; disable with `mcp.run_tool: false`), `offload_summarize`, `offload_write`, `offload_ask`, `offload_outline`.
+- These clients have no hook API, so nothing is blocked automatically: the tools are there for the model to choose.

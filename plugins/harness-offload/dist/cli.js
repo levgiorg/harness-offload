@@ -4361,6 +4361,35 @@ import { cpSync, existsSync as existsSync11, mkdirSync as mkdirSync4, readFileSy
 import { homedir as homedir2 } from "node:os";
 import { join as join13 } from "node:path";
 import { pathToFileURL } from "node:url";
+async function mcpCommand() {
+  if (await which("harness-offload"))
+    return { command: "harness-offload", args: ["mcp"] };
+  return { command: isWin3 ? process.execPath : "node", args: [join13(pluginDir(), "dist", "cli.js"), "mcp"] };
+}
+async function mcpRecipes() {
+  const { command, args } = await mcpCommand();
+  const json = (o) => JSON.stringify(o, null, 2);
+  const env = { OFFLOAD_HOST: "mcp" };
+  const yamlArgs = `[${args.map((a) => JSON.stringify(a)).join(", ")}]`;
+  return {
+    "Claude Desktop": { file: "claude_desktop_config.json", snippet: json({ mcpServers: { offload: { command, args, env } } }) },
+    Cline: { file: "cline_mcp_settings.json (Cline → MCP Servers → Configure)", snippet: json({ mcpServers: { offload: { command, args, env, disabled: false } } }) },
+    "VS Code (Copilot Chat agent mode)": { file: ".vscode/mcp.json", snippet: json({ servers: { offload: { type: "stdio", command, args, env } } }) },
+    Zed: { file: "~/.config/zed/settings.json", snippet: json({ context_servers: { offload: { command, args, env } } }) },
+    Kiro: { file: ".kiro/settings/mcp.json (or ~/.kiro/settings/mcp.json)", snippet: json({ mcpServers: { offload: { command, args, env } } }) },
+    Continue: { file: "~/.continue/config.yaml", snippet: `mcpServers:
+  - name: offload
+    command: ${JSON.stringify(command)}
+    args: ${yamlArgs}` },
+    Goose: { file: "~/.config/goose/config.yaml", snippet: `extensions:
+  offload:
+    type: stdio
+    enabled: true
+    cmd: ${JSON.stringify(command)}
+    args: ${yamlArgs}
+    timeout: 300` }
+  };
+}
 function crushDir() {
   return process.env.CRUSH_GLOBAL_CONFIG || join13(process.env.XDG_CONFIG_HOME || join13(home(), ".config"), "crush");
 }
@@ -4428,7 +4457,7 @@ function geminiExtension(dir, launcher) {
 async function install(host, opts = {}) {
   const steps = [];
   const bin = host === "opencode" ? cfgStr("opencode.bin", "opencode") : HOST_BIN[host];
-  if (bin && !await which(bin) && !["cursor", "mcp"].includes(host)) {
+  if (bin && !await which(bin) && !["cursor", "mcp", "aider"].includes(host)) {
     return [{ ok: false, text: `${HOST_LABELS[host]} not found on PATH (${bin}); install it first.` }];
   }
   const launcher = join13(pluginDir(), "bin", "offload-ts");
@@ -4585,9 +4614,29 @@ export { default } from ${JSON.stringify(pathToFileURL(distFile("amp.js")).href)
       record(host, { plugin: pluginDir() });
       break;
     }
+    case "aider": {
+      const file = join13(stateDir(), "aider-conventions.md");
+      if (opts.dryRun)
+        return [{ ok: true, text: `write ${file}` }];
+      await Promise.resolve().then(() => init_logic());
+      const cli = isWin3 ? winCommand() : JSON.stringify(join13(pluginDir(), "bin", "offload"));
+      writeFileSync9(file, `# Harness Offload
+
+${sessionGuide("aider", cli)}
+
+In Aider, run these with /run (the output comes back into the chat).
+`);
+      steps.push({ ok: true, text: `wrote ${file}` });
+      steps.push({ ok: true, text: `use it with: aider --read ${JSON.stringify(file)}   (or add to ~/.aider.conf.yml →  read: [${JSON.stringify(file)}])` });
+      record(host, { file });
+      break;
+    }
     case "mcp": {
-      steps.push({ ok: true, text: `stdio command for any MCP client: ${launcher} mcp   (or: harness-offload mcp)` });
-      steps.push({ ok: true, text: `JSON: {"mcpServers":{"offload":{"command":"harness-offload","args":["mcp"]}}}` });
+      const { command, args } = await mcpCommand();
+      steps.push({ ok: true, text: `stdio command for any MCP client: ${[command, ...args].map((a) => /\s/.test(a) ? JSON.stringify(a) : a).join(" ")}` });
+      for (const [client, r] of Object.entries(await mcpRecipes()))
+        steps.push({ ok: true, text: `${client} — ${r.file}:
+${r.snippet}` });
       break;
     }
   }
@@ -4663,6 +4712,12 @@ async function uninstall(host) {
     case "devin":
       steps.push(await exec2("devin", ["plugins", "uninstall", "harness-offload"]));
       break;
+    case "aider": {
+      const f = join13(stateDir(), "aider-conventions.md");
+      rmSync3(f, { force: true });
+      steps.push({ ok: true, text: `removed ${f} (drop it from ~/.aider.conf.yml if you added it)` });
+      break;
+    }
     case "mcp":
       steps.push({ ok: true, text: "remove the offload entry from your MCP client's config" });
   }
@@ -4696,7 +4751,7 @@ var init_install = __esm(() => {
   init_assets3();
   init_opencode();
   init_config();
-  HOSTS = ["claude", "codex", "cursor", "gemini", "copilot", "qwen", "crush", "pi", "opencode", "kilo", "amp", "devin", "mcp"];
+  HOSTS = ["claude", "codex", "cursor", "gemini", "copilot", "qwen", "crush", "pi", "opencode", "kilo", "amp", "devin", "aider", "mcp"];
   HOST_LABELS = {
     claude: "Claude Code",
     codex: "OpenAI Codex CLI",
@@ -4710,9 +4765,10 @@ var init_install = __esm(() => {
     kilo: "Kilo Code CLI",
     amp: "Amp (experimental)",
     devin: "Devin Desktop / Windsurf",
+    aider: "Aider (conventions file)",
     mcp: "Any MCP client"
   };
-  HOST_BIN = { claude: "claude", codex: "codex", gemini: "gemini", copilot: "copilot", qwen: "qwen", crush: "crush", pi: "pi", opencode: "opencode", kilo: "kilo", amp: "amp", devin: "devin" };
+  HOST_BIN = { claude: "claude", codex: "codex", gemini: "gemini", copilot: "copilot", qwen: "qwen", crush: "crush", pi: "pi", opencode: "opencode", kilo: "kilo", amp: "amp", devin: "devin", aider: "aider" };
   CRUSH_DEFAULT_CONTEXT = ["~/.config/crush/CRUSH.md", "~/.config/AGENTS.md"];
   isWin3 = process.platform === "win32";
 });

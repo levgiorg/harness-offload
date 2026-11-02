@@ -48,3 +48,8 @@
 - Low: "ask" no longer a hard deny where hosts can't ask (Codex/Gemini/OpenCode/Pi → advice; Cursor → permission ask), Cursor notes no longer auto-approve, HTTP body timeouts, Gemini pretty JSON after log lines.
 - SECURITY.md rewritten with the trust model and known limits.
 - Suites: conformance 229/229 ×2, bun 43/43, routing 49/49 ×2.
+
+## 2026-11-02 ~12:30 UTC — all known harnesses
+- Copilot CLI (loads the Claude plugin; bash hooks speak its dialect), Qwen Code (converted extension), Crush (crush.json hooks + global context guide), Amp (experimental plugin), Aider (conventions file), MCP snippets for Cline/Zed/Continue/Goose/Kiro/VS Code/Claude Desktop.
+- Real end-to-end runs with Copilot CLI 1.0.105, Crush 0.99.0 and Qwen Code 0.26.5 against a mock model: big read denied with outline (all three), long output digested (Copilot, Crush), guide injected (all three).
+- Suites: conformance 236/236 ×2, bun 50/50, routing 49/49 ×2.

@@ -12,7 +12,7 @@ function withStubs() {
     writeFileSync(f, `#!/bin/sh\necho "${name} $*" >> "${join(s.dir, "calls.log")}"\n`);
     chmodSync(f, 0o755);
   }
-  const env = { ...s.env, OFFLOAD_HOME: join(s.dir, "home"), XDG_CONFIG_HOME: join(s.dir, "home", ".config"), PATH: `${bin}:${process.env.PATH}` };
+  const env: NodeJS.ProcessEnv = { ...s.env, OFFLOAD_HOME: join(s.dir, "home"), XDG_CONFIG_HOME: join(s.dir, "home", ".config"), PATH: `${bin}:${process.env.PATH}` };
   delete env.CRUSH_GLOBAL_CONFIG;
   return { ...s, env };
 }
@@ -94,6 +94,17 @@ describe("offload install", () => {
   test("amp: plugin re-export file (experimental)", () => {
     expect(cli(["install", "amp"], { env: s.env }).code).toBe(0);
     expect(readFileSync(join(s.dir, "home", ".config", "amp", "plugins", "harness-offload.ts"), "utf8")).toContain("dist/amp.js");
+  });
+  test("mcp: per-client snippets with a command that works here", () => {
+    const r = cli(["install", "mcp"], { env: s.env });
+    expect(r.code).toBe(0);
+    for (const client of ["Cline", "Zed", "Kiro", "Continue", "Goose", "VS Code", "Claude Desktop"]) expect(r.stdout).toContain(client);
+    expect(r.stdout).toMatch(/cli\.js"?,?\s*"?mcp|harness-offload mcp/);
+  });
+  test("aider: conventions file to pass with --read", () => {
+    const r = cli(["install", "aider"], { env: s.env });
+    expect(r.code).toBe(0);
+    expect(r.stdout).toContain("aider --read");
   });
   test("unknown host → usage error", () => {
     expect(cli(["install", "notepad"], { env: s.env }).code).toBe(2);
