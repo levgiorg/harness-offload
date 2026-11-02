@@ -5326,7 +5326,7 @@ function installedHosts() {
     return [];
   }
 }
-var HOSTS, HOST_LABELS, HOST_BIN, CRUSH_DEFAULT_CONTEXT, home = () => process.env.OFFLOAD_HOME || homedir2(), record = (host, data) => {
+var HOSTS, HIDDEN_HOSTS, isHost = (h) => HOSTS.includes(h) || HIDDEN_HOSTS.includes(h), HOST_LABELS, HOST_BIN, CRUSH_DEFAULT_CONTEXT, home = () => process.env.OFFLOAD_HOME || homedir2(), record = (host, data) => {
   const f = join14(stateDir(), "installs.json");
   let all = {};
   try {
@@ -5345,7 +5345,8 @@ var init_install = __esm(() => {
   init_assets3();
   init_opencode();
   init_config();
-  HOSTS = ["claude", "codex", "cursor", "gemini", "copilot", "qwen", "crush", "pi", "opencode", "kilo", "amp", "devin", "aider", "mcp"];
+  HOSTS = ["claude", "codex", "cursor", "gemini", "copilot", "qwen", "crush", "pi", "opencode", "kilo", "devin", "aider", "mcp"];
+  HIDDEN_HOSTS = ["amp"];
   HOST_LABELS = {
     claude: "Claude Code",
     codex: "OpenAI Codex CLI",
@@ -5642,7 +5643,7 @@ __export(exports_install, {
 async function cmdInstall(cmd, argv) {
   const dry = argv.includes("--dry-run");
   const hosts = argv.filter((a) => !a.startsWith("-"));
-  if (!hosts.length || hosts.some((h) => !HOSTS.includes(h))) {
+  if (!hosts.length || hosts.some((h) => !isHost(h))) {
     process.stderr.write(`usage: offload ${cmd} <host...> [--dry-run]   hosts: ${HOSTS.join(" · ")}
 `);
     return 2;
@@ -28798,7 +28799,7 @@ var HELP = () => `${banner()}
     offload setup                           interactive wizard: backends, keys, models, hosts
     offload demo                            10-second tour, no model calls
     offload install <host> | uninstall <host>   claude · codex · cursor · gemini · copilot · qwen · crush
-                                            pi · opencode · kilo · amp · devin · aider · mcp
+                                            pi · opencode · kilo · devin · aider · mcp
     offload sync                            refresh every installed integration (after an upgrade)
     offload doctor [--ping] [--reset]       check everything; --ping makes one tiny call per model
     offload models [BACKEND...]             list models your backends offer

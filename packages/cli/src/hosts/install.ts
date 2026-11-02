@@ -10,8 +10,11 @@ import { distFile, marketplaceRoot, packageRoot, pluginDir } from "./assets.ts";
 import { opencodeMajor } from "../backends/opencode.ts";
 import { cfgStr } from "../config.ts";
 
-export const HOSTS = ["claude", "codex", "cursor", "gemini", "copilot", "qwen", "crush", "pi", "opencode", "kilo", "amp", "devin", "aider", "mcp"] as const;
-export type HostName = (typeof HOSTS)[number];
+export const HOSTS = ["claude", "codex", "cursor", "gemini", "copilot", "qwen", "crush", "pi", "opencode", "kilo", "devin", "aider", "mcp"] as const;
+/** Integrations that work but are not listed anywhere yet (Amp: built from its docs, never run live). */
+export const HIDDEN_HOSTS = ["amp"] as const;
+export type HostName = (typeof HOSTS)[number] | (typeof HIDDEN_HOSTS)[number];
+export const isHost = (h: string): h is HostName => (HOSTS as readonly string[]).includes(h) || (HIDDEN_HOSTS as readonly string[]).includes(h);
 
 export const HOST_LABELS: Record<HostName, string> = {
   claude: "Claude Code",

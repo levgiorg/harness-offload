@@ -55,10 +55,6 @@ What each integration installs, how it talks to the host, and what to know.
 - **Install:** `offload install crush` merges into `~/.config/crush/crush.json` (backup next to it): `PreToolUse` hook on `^(view|bash)$`, `PostToolUse` on `^bash$` (`updated_output` digest), and the guide as a `global_context_paths` entry (Crush's `SessionStart` output is ignored; setting the list keeps Crush's two defaults). `offload uninstall crush` removes exactly those entries.
 - Verified with Crush 0.99.0.
 
-## Amp (experimental)
-- **Install:** `offload install amp` writes `~/.config/amp/plugins/harness-offload.ts` (re-exports `dist/amp.js`); run *plugins: reload* in Amp.
-- `tool.call` → `reject-and-continue` for big `Read`s (`read_range` slices pass) and dumps; `tool.result` replaces long shell output with the digest. Built from Amp's published plugin API and tested against a simulated API — not yet run inside Amp.
-
 ## Aider
 - No hooks or MCP. `offload install aider` writes a conventions file; start Aider with `aider --read <that file>` (or list it under `read:` in `~/.aider.conf.yml`) and the model will call `offload read/explore/run` through `/run`.
 

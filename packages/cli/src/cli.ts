@@ -22,7 +22,7 @@ const HELP = () => `${banner()}
     offload setup                           interactive wizard: backends, keys, models, hosts
     offload demo                            10-second tour, no model calls
     offload install <host> | uninstall <host>   claude · codex · cursor · gemini · copilot · qwen · crush
-                                            pi · opencode · kilo · amp · devin · aider · mcp
+                                            pi · opencode · kilo · devin · aider · mcp
     offload sync                            refresh every installed integration (after an upgrade)
     offload doctor [--ping] [--reset]       check everything; --ping makes one tiny call per model
     offload models [BACKEND...]             list models your backends offer

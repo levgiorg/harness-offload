@@ -9,7 +9,7 @@ let the models you already pay for do the heavy lifting.
 [![npm](https://img.shields.io/npm/v/harness-offload)](https://www.npmjs.com/package/harness-offload)
 [![license: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-Claude Code · Codex · Cursor · Gemini CLI · Copilot CLI · OpenCode · Pi · Qwen Code · Crush · Kilo · Amp · Devin/Windsurf · Aider · any MCP client
+Claude Code · Codex · Cursor · Gemini CLI · Copilot CLI · OpenCode · Pi · Qwen Code · Crush · Kilo · Devin/Windsurf · Aider · any MCP client
 
 </div>
 
@@ -89,7 +89,6 @@ trust the hooks in `/hooks`). A landing page for the project lives in [`site/`](
 | **GitHub Copilot CLI** | Claude plugin (`offload install copilot`) | ✓ view + bash | ✓ | SessionStart | `offload` CLI (absolute path) |
 | **Qwen Code** | extension converted from the plugin (`offload install qwen`) | ✓ read_file + shell | — (no output replacement) | SessionStart | `offload` CLI |
 | **Crush** | hooks in `crush.json` (`offload install crush`) | ✓ view + bash | ✓ | global context file | `offload` CLI |
-| **Amp** *(experimental)* | plugin (`offload install amp`) | ✓ Read + Bash | ✓ | — | `offload` CLI |
 | **Devin Desktop / Windsurf** | Claude plugin (`offload install devin`) | ✓ (Claude hooks) | — | — | `offload` CLI |
 | **Aider** | conventions file (`offload install aider`, then `aider --read …`) | — | — | conventions | `/run offload …` |
 | **MCP clients** (Cline, Zed, Continue, Goose, Kiro, VS Code, Claude Desktop) | `offload install mcp` prints each client's config | — | — | server instructions | MCP tools |

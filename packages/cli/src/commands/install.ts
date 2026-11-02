@@ -1,10 +1,10 @@
-import { detectHosts, HOST_LABELS, HOSTS, HostName, install, installedHosts, uninstall } from "../hosts/install.ts";
+import { detectHosts, HOST_LABELS, HOSTS, HostName, install, installedHosts, isHost, uninstall } from "../hosts/install.ts";
 import { color, sym } from "../ui.ts";
 
 export async function cmdInstall(cmd: string, argv: string[]): Promise<number> {
   const dry = argv.includes("--dry-run");
   const hosts = argv.filter((a) => !a.startsWith("-"));
-  if (!hosts.length || hosts.some((h) => !HOSTS.includes(h as HostName))) {
+  if (!hosts.length || hosts.some((h) => !isHost(h))) {
     process.stderr.write(`usage: offload ${cmd} <host...> [--dry-run]   hosts: ${HOSTS.join(" · ")}\n`);
     return 2;
   }
