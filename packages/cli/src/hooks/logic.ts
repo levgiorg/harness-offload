@@ -1,7 +1,8 @@
 // Host-neutral hook decisions — the TypeScript twin of the bash hooks in the
 // Claude Code plugin. Host adapters translate their JSON in and out.
 import { existsSync, readFileSync, statSync } from "node:fs";
-import { basename, isAbsolute, resolve } from "node:path";
+import { basename, delimiter, isAbsolute, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { cfgBool, cfgInt, cfgList, cfgStr, loadConfig } from "../config.ts";
 import { digest } from "../digest.ts";
 import { parseRef, backendFor } from "../backends/registry.ts";
@@ -12,7 +13,7 @@ import { outline } from "../outline.ts";
 import { estTokens, fileBytes, fileLines, fmtInt, isText, shquote } from "../text.ts";
 import { writeFileSync } from "node:fs";
 
-export type Host = "claude" | "codex" | "cursor" | "gemini" | "pi" | "opencode" | "kilo" | "devin";
+export type Host = "claude" | "codex" | "cursor" | "gemini" | "pi" | "opencode" | "kilo" | "devin" | "copilot" | "qwen" | "crush" | "amp";
 
 export interface Verdict {
   action: "deny" | "ask" | "note";
@@ -74,11 +75,28 @@ function guard(message: string): Verdict | undefined {
   }
 }
 
+let cliCache: string | undefined;
+/** How an agent should call the CLI from its shell: `offload` when it is on
+ * PATH, else node + the bundled CLI next to this module. */
+export function cliCommand(): string {
+  if (cliCache) return cliCache;
+  if (process.env.OFFLOAD_CLI_COMMAND) return (cliCache = process.env.OFFLOAD_CLI_COMMAND);
+  const onPath = (process.env.PATH ?? "").split(delimiter).some((d) => d && (existsSync(join(d, "offload")) || existsSync(join(d, "offload.cmd"))));
+  if (onPath) return (cliCache = "offload");
+  try {
+    const js = fileURLToPath(new URL("./cli.js", import.meta.url));
+    if (existsSync(js)) return (cliCache = `node ${shquote(js)}`);
+  } catch {
+    /* not bundled */
+  }
+  return (cliCache = "offload");
+}
+
 function readCmd(host: Host, file: string): string {
-  return callStyle(host) === "mcp" ? `the offload_read tool (question + paths: ["${file}"])` : `Bash: offload read -q "<specific question>" ${shquote(file)}`;
+  return callStyle(host) === "mcp" ? `the offload_read tool (question + paths: ["${file}"])` : `Bash: ${cliCommand()} read -q "<specific question>" ${shquote(file)}`;
 }
 function exploreCmd(host: Host): string {
-  return callStyle(host) === "mcp" ? "the offload_explore tool" : 'Bash: offload explore "<question>"';
+  return callStyle(host) === "mcp" ? "the offload_explore tool" : `Bash: ${cliCommand()} explore "<question>"`;
 }
 
 export function bigFileMessage(host: Host, file: string, lines: number, tokens: number, how: string): string {
@@ -111,7 +129,7 @@ export function readGuard(host: Host, cwd: string, file: string | undefined, off
     if (span > remaining) span = remaining;
     if (span <= chunk) return undefined;
     appendStats({ kind: "hook", event: "read_slice_blocked", host, lines: span });
-    return guard(`offload: that read slice is ${fmtInt(span)} lines of ${file}; keep slices to at most ${chunk} lines, or ask: ${callStyle(host) === "mcp" ? "offload_read" : "offload read"} -q "<question>" ${shquote(file)}:${start}-${start + span - 1}`);
+    return guard(`offload: that read slice is ${fmtInt(span)} lines of ${file}; keep slices to at most ${chunk} lines, or ask: ${callStyle(host) === "mcp" ? "offload_read" : `${cliCommand()} read`} -q "<question>" ${shquote(file)}:${start}-${start + span - 1}`);
   }
   if (lines <= cfgInt("hooks.read_threshold_lines", 600) && tokens <= cfgInt("hooks.read_threshold_tokens", 6000)) return undefined;
   appendStats({ kind: "hook", event: "read_blocked", host, lines, tokens });
@@ -207,7 +225,7 @@ export async function postBash(opts: { command?: string; output: string; persist
 }
 
 /** Usage guidance injected at session start. */
-export function sessionGuide(host: Host, cliPath = "offload"): string {
+export function sessionGuide(host: Host, cliPath = cliCommand()): string {
   const lines = cfgStr("hooks.read_threshold_lines", "600");
   if (callStyle(host) === "mcp") {
     return `offload is installed: cheap worker models do bulk reading/digesting so it stays out of your context. Use its tools:

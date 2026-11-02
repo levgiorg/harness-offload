@@ -32,7 +32,7 @@ if [ -n "$offset" ] || [ -n "$limit" ]; then
   [ "$span" -gt "$remaining" ] && span=$remaining
   [ "$span" -le "$chunk" ] && exit 0
   hk_event read_slice_blocked "$(jq -nc --argjson l "$span" '{lines: $l}')"
-  hk_guard "offload: that Read slice is $(co_fmt_int "$span") lines of $file; keep slices to at most $chunk lines (use offset/limit), or ask: offload read -q \"<question>\" $(co_shquote "$file"):$start-$(( start + span - 1 ))"
+  hk_guard "offload: that Read slice is $(co_fmt_int "$span") lines of $file; keep slices to at most $chunk lines (use offset/limit), or ask: $HK_CLI read -q \"<question>\" $(co_shquote "$file"):$start-$(( start + span - 1 ))"
 fi
 
 tokens=$(co_est_tokens "$bytes")

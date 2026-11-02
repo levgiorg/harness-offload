@@ -6,10 +6,33 @@
 
 command -v jq >/dev/null 2>&1 || exit 0
 
+# Several harnesses run this Claude-format plugin: GitHub Copilot CLI loads it
+# as is, Qwen Code converts it. Same events, slightly different dialects.
+if [ "${COPILOT_CLI:-}" = 1 ]; then HK_DIALECT=copilot
+elif [ -n "${QWEN_CODE_SESSION_ID:-}${QWEN_PROJECT_DIR:-}" ]; then HK_DIALECT=qwen
+else HK_DIALECT=claude
+fi
 # @host models resolve to the harness that runs this hook
-export OFFLOAD_HOST="${OFFLOAD_HOST:-claude}"
+export OFFLOAD_HOST="${OFFLOAD_HOST:-$HK_DIALECT}"
 HK_INPUT=$(cat)
 [ -z "$HK_INPUT" ] && exit 0
+# Normalise to Claude's field names (Copilot: path/view_range, toolArgs,
+# tool_result; Qwen: 0-based offsets).
+case "$HK_DIALECT" in
+  copilot)
+    HK_INPUT=$(printf '%s' "$HK_INPUT" | jq -c '
+      .tool_name = (.tool_name // .toolName // "")
+      | .tool_input = ((.tool_input // .toolArgs // {}) | if type == "object" then . else {} end
+          | if (.file_path == null and .path != null) then .file_path = .path else . end
+          | if (.view_range | type) == "array" and (.view_range | length) == 2 then
+              .offset = .view_range[0]
+              | .limit = (if .view_range[1] == -1 then null else (.view_range[1] - .view_range[0] + 1) end)
+            else . end)
+      | .tool_response = (.tool_response // (if (.tool_result // .toolResult) then
+          {stdout: (.tool_result.text_result_for_llm // .toolResult.textResultForLlm // "")} else null end))' 2>/dev/null) || exit 0 ;;
+  qwen)
+    HK_INPUT=$(printf '%s' "$HK_INPUT" | jq -c 'if (.tool_input.offset | type) == "number" then .tool_input.offset += 1 else . end' 2>/dev/null) || exit 0 ;;
+esac
 # Debug aid: OFFLOAD_DEBUG_DIR=/some/dir keeps every hook input there.
 if [ -n "${OFFLOAD_DEBUG_DIR:-}" ]; then
   mkdir -p "$OFFLOAD_DEBUG_DIR" 2>/dev/null &&
@@ -23,6 +46,10 @@ CO_ROOT="${CLAUDE_PLUGIN_ROOT:-$(cd "$(dirname "$0")/.." && pwd)}"
 . "$CO_ROOT/lib/opencode.sh" || exit 0
 
 hk_get() { printf '%s' "$HK_INPUT" | jq -r "($1) // empty | tostring" 2>/dev/null; }
+
+# How the agent should call the CLI: Claude Code puts the plugin's bin/ on the
+# Bash PATH; other harnesses get the absolute path.
+if [ "$HK_DIALECT" = claude ]; then HK_CLI=offload; else HK_CLI=$(co_shquote "$CO_ROOT/bin/offload"); fi
 
 # Resolve the tool's cwd so relative paths in commands mean what Claude meant.
 HK_CWD=$(hk_get '.cwd')
@@ -50,12 +77,19 @@ hk_deny() {
   exit 0
 }
 hk_ask() {
+  # Copilot and headless Qwen cannot ask: advice instead of a block
+  [ "$HK_DIALECT" != claude ] && hk_note "$1"
   jq -nc --arg r "$1" '{hookSpecificOutput: {hookEventName: "PreToolUse", permissionDecision: "ask", permissionDecisionReason: $r}}'
   exit 0
 }
-# Lets the tool run as usual but adds a note to Claude's context.
+# Lets the tool run as usual but adds a note to the agent's context.
 hk_note() {
-  jq -nc --arg c "$1" --arg ev "${2:-PreToolUse}" '{hookSpecificOutput: {hookEventName: $ev, additionalContext: $c}}'
+  if [ "$HK_DIALECT" = copilot ]; then
+    # Copilot reads additionalContext at the top level only
+    jq -nc --arg c "$1" '{additionalContext: $c}'
+  else
+    jq -nc --arg c "$1" --arg ev "${2:-PreToolUse}" '{hookSpecificOutput: {hookEventName: $ev, additionalContext: $c}}'
+  fi
   exit 0
 }
 
@@ -109,9 +143,9 @@ hk_big_file_message() {
 offload: $how would put all of $file into your context ($(co_fmt_int "$lines") lines, ~$(co_fmt_int "$tokens") tokens; limit $(co_cfg '.hooks.read_threshold_lines') lines / $(co_fmt_int "$(co_cfg '.hooks.read_threshold_tokens')") tokens).
 Pick the cheapest option:
 - Need exact text (to edit/quote)? Read with offset/limit (max $chunk lines per call) — outline below; \`grep -n PATTERN $q\` finds more.
-- Need understanding/facts? Bash: offload read -q "<specific question>" $q
+- Need understanding/facts? Bash: $HK_CLI read -q "<specific question>" $q
   A cheap model answers with $file:Lx-Ly citations whose quotes are checked; then Read only those lines if you must edit.
-- Question spans many files? Bash: offload explore "<question>"
+- Question spans many files? Bash: $HK_CLI explore "<question>"
 EOF
   if [ -n "$outline" ]; then
     printf 'Outline of %s:\n%s\n' "$file" "$outline"

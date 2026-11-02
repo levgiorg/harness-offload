@@ -103,6 +103,10 @@
     "pi": "pi:",
     "opencode": "@default",
     "kilo": "@default",
-    "devin": "claude:haiku"
+    "devin": "claude:haiku",
+    "copilot": "@default",
+    "qwen": "@default",
+    "crush": "@default",
+    "amp": "@default"
   }
 }

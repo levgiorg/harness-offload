@@ -90,7 +90,7 @@ if co_cfg_bool '.hooks.autowrap' false; then
   pat=$(co_cfg '.hooks.autowrap_pattern')
   if [ -n "$pat" ] && printf '%s\n' "$cmd" | grep -qE -- "$pat"; then
     [ "$(hk_get '.tool_input.run_in_background')" = "true" ] && exit 0
-    wrapped="offload run -c $(co_shquote "$cmd")"
+    wrapped="$HK_CLI run -c $(co_shquote "$cmd")"
     hk_event autowrap
     printf '%s' "$HK_INPUT" | jq -c --arg c "$wrapped" '
       {hookSpecificOutput: {hookEventName: "PreToolUse", updatedInput: (.tool_input + {command: $c})}}'

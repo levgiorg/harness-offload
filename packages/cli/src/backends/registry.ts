@@ -14,13 +14,17 @@ export interface ModelRef {
 
 const LOCAL = new Set(["opencode", ...Object.keys(CLI_AGENTS)]);
 
-export const HOST_NAMES = ["claude", "codex", "gemini", "cursor", "pi", "opencode", "kilo", "devin"] as const;
+export const HOST_NAMES = ["claude", "codex", "gemini", "cursor", "pi", "opencode", "kilo", "devin", "copilot", "qwen", "crush", "amp"] as const;
 
 /** Which harness is calling us: OFFLOAD_HOST (set by our hooks, MCP launchers and
  * in-process integrations), else the environment the harness gives its shell. */
 export function detectHost(): string | undefined {
   const e = process.env;
   if (e.OFFLOAD_HOST) return e.OFFLOAD_HOST;
+  // harnesses that also set Claude's variables come first
+  if (e.COPILOT_CLI === "1") return "copilot";
+  if (e.QWEN_CODE_SESSION_ID || e.QWEN_PROJECT_DIR) return "qwen";
+  if (e.CRUSH === "1" || e.CRUSH_SESSION_ID) return "crush";
   if (e.CLAUDECODE === "1" || e.CLAUDE_CODE_ENTRYPOINT) return "claude";
   if (e.CODEX_THREAD_ID || e.CODEX_SANDBOX || e.CODEX_CI) return "codex";
   if (e.CURSOR_AGENT || e.CURSOR_CONVERSATION_ID) return "cursor";

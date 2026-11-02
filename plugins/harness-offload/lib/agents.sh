@@ -18,6 +18,10 @@ co_is_agent_backend() {
 # the environment each harness gives its shell.
 co_detect_host() {
   if [ -n "${OFFLOAD_HOST:-}" ]; then printf '%s' "$OFFLOAD_HOST"; return 0; fi
+  # harnesses that also set Claude's variables come first
+  if [ "${COPILOT_CLI:-}" = 1 ]; then printf copilot; return 0; fi
+  if [ -n "${QWEN_CODE_SESSION_ID:-}${QWEN_PROJECT_DIR:-}" ]; then printf qwen; return 0; fi
+  if [ "${CRUSH:-}" = 1 ] || [ -n "${CRUSH_SESSION_ID:-}" ]; then printf crush; return 0; fi
   if [ "${CLAUDECODE:-}" = 1 ] || [ -n "${CLAUDE_CODE_ENTRYPOINT:-}" ]; then printf claude; return 0; fi
   if [ -n "${CODEX_THREAD_ID:-}${CODEX_SANDBOX:-}${CODEX_CI:-}" ]; then printf codex; return 0; fi
   if [ -n "${CURSOR_AGENT:-}${CURSOR_CONVERSATION_ID:-}" ]; then printf cursor; return 0; fi

@@ -18,6 +18,9 @@ const text = (v: unknown): string => (typeof v === "string" ? v : Array.isArray(
 
 function preToolOut(host: Host, v: Verdict): J {
   switch (host) {
+    // Crush: flat decision; no "ask" — advice is appended to the tool result instead
+    case "crush":
+      return v.action === "deny" ? { decision: "deny", reason: v.message } : { context: v.message };
     case "cursor":
       // advisory notes must not turn into an approval of the tool call
       if (v.action === "note") return { agent_message: v.message };
@@ -45,6 +48,8 @@ async function handle(host: Host, event: string, input: J): Promise<J | undefine
   const ti: J = input.tool_input ?? {};
   const tool: string = input.tool_name ?? "";
 
+  // Crush's SessionStart output is ignored (the guide goes in via context paths)
+  if (event === "session-start" && host === "crush") return undefined;
   if (event === "session-start") {
     const guide = sessionGuide(host);
     if (!(await available())) return undefined;
@@ -56,8 +61,8 @@ async function handle(host: Host, event: string, input: J): Promise<J | undefine
   if (["pre-read", "pre-bash", "pre-tool", "before-tool"].includes(event)) {
     if (!(await available())) return undefined;
     let v: Verdict | undefined;
-    const isRead = event === "pre-read" || /^(Read|read_file|read)$/.test(tool);
-    const isShell = event === "pre-bash" || /^(Bash|Shell|run_shell_command|shell|exec)$/.test(tool);
+    const isRead = event === "pre-read" || /^(Read|read_file|read|view)$/.test(tool);
+    const isShell = event === "pre-bash" || /^(Bash|Shell|run_shell_command|shell|exec|bash)$/.test(tool);
     if (isRead) {
       const file = ti.file_path ?? ti.path ?? ti.filePath;
       let offset = num(ti.offset);
@@ -67,6 +72,8 @@ async function handle(host: Host, event: string, input: J): Promise<J | undefine
         const end = num(ti.end_line);
         limit = end !== undefined ? end - (offset ?? 1) + 1 : undefined;
       }
+      // Crush's view takes a 0-based offset (default limit 200 lines)
+      if (host === "crush" && offset !== undefined) offset += 1;
       v = readGuard(host, cwd, file, offset, limit);
     } else if (isShell) {
       v = bashGuard(host, ti.working_directory || cwd, ti.command);
@@ -77,12 +84,14 @@ async function handle(host: Host, event: string, input: J): Promise<J | undefine
   if (["post-bash", "post-tool", "after-tool"].includes(event)) {
     if (host === "cursor") return undefined; // Cursor cannot replace shell output
     const resp = input.tool_response;
-    const output = host === "gemini" ? text(resp?.llmContent ?? resp?.returnDisplay) : host === "codex" ? text(resp) : [text(resp?.stdout), resp?.stderr ? `[stderr]\n${text(resp.stderr)}` : ""].filter(Boolean).join("\n");
+    const output = host === "gemini" ? text(resp?.llmContent ?? resp?.returnDisplay) : host === "codex" || host === "crush" ? text(resp) : [text(resp?.stdout), resp?.stderr ? `[stderr]\n${text(resp.stderr)}` : ""].filter(Boolean).join("\n");
     const d = await postBash({ command: ti.command, output, persistedPath: resp?.persistedOutputPath, description: ti.description, background: ti.run_in_background === true || ti.is_background === true, interrupted: resp?.interrupted === true });
     if (!d) return undefined;
     switch (host) {
       case "codex":
         return { continue: false, stopReason: "offload digested a long command output", reason: d };
+      case "crush":
+        return { updated_output: d };
       case "gemini":
         return { decision: "deny", reason: `offload: the command ran successfully; its long output was replaced by this digest.\n${d}` };
       default:

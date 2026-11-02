@@ -9,7 +9,7 @@ describe("claude adapter", () => {
     const o = hook("claude", "pre-read", { tool_name: "Read", tool_input: { file_path: join(s.dir, "big.ts") } }, s);
     expect(o.hookSpecificOutput.permissionDecision).toBe("deny");
     expect(o.hookSpecificOutput.permissionDecisionReason).toContain("L1: export function f0");
-    expect(o.hookSpecificOutput.permissionDecisionReason).toContain("Bash: offload read -q");
+    expect(o.hookSpecificOutput.permissionDecisionReason).toMatch(/Bash: (offload|node .*cli\.js.?) read -q/);
   });
   test("allows small files and slices", () => {
     expect(hook("claude", "pre-read", { tool_input: { file_path: join(s.dir, "small.ts") } }, s)).toBeUndefined();
@@ -23,7 +23,7 @@ describe("claude adapter", () => {
   });
   test("session-start guide", () => {
     const o = hook("claude", "session-start", { source: "startup" }, s);
-    expect(o.hookSpecificOutput.additionalContext).toContain("offload read -q");
+    expect(o.hookSpecificOutput.additionalContext).toMatch(/(offload|cli\.js.?) read -q/);
   });
 });
 
@@ -90,4 +90,35 @@ describe("fail open", () => {
     const { cli } = require("./helpers");
     expect(cli(["hook", "claude", "pre-read"], { env: s.env, input: "{not json" }).stdout).toBe("");
   });
+});
+
+describe("amp plugin (simulated Amp API)", () => {
+  test("rejects a huge read and digests long shell output", async () => {
+    const { mkdtempSync, writeFileSync } = await import("node:fs");
+    const { tmpdir } = await import("node:os");
+    const { join } = await import("node:path");
+    const dir = mkdtempSync(join(tmpdir(), "offload-amp-"));
+    writeFileSync(join(dir, "big.ts"), Array.from({ length: 3000 }, (_, i) => `export const v${i} = ${i};`).join("\n") + "\n");
+    process.env.OFFLOAD_STATE_DIR = join(dir, "state");
+    process.env.OFFLOAD_CONFIG = join(dir, "none.json");
+    process.env.OFFLOAD_PROJECT_DIR = dir;
+    process.env.OFFLOAD_OPENCODE_BIN = (await import("./helpers.ts")).STUB;
+    process.env.OFFLOAD_MODEL = "stub/ok";
+    process.env.STUB_VERSION = "1.19.5";
+    const handlers: Record<string, (e: any, ctx?: any) => Promise<any>> = {};
+    const amp = { on: (ev: string, fn: any) => (handlers[ev] = fn), helpers: { shellCommandFromToolCall: (e: any) => (e.tool === "Bash" ? { command: e.input.cmd } : undefined) } };
+    const { resetConfig } = await import("../src/config.ts");
+    resetConfig();
+    const plugin = (await import("../src/integrations/amp.ts")).default;
+    plugin(amp);
+    const r1 = await handlers["tool.call"]({ tool: "Read", input: { path: join(dir, "big.ts") }, thread: { id: "t" } });
+    expect(r1.action).toBe("reject-and-continue");
+    expect(r1.message).toContain("3,000 lines");
+    const r2 = await handlers["tool.call"]({ tool: "Read", input: { path: join(dir, "big.ts"), read_range: [10, 60] }, thread: { id: "t" } });
+    expect(r2.action).toBe("allow");
+    const out = Array.from({ length: 900 }, (_, i) => `line ${i}`).join("\n");
+    const r3 = await handlers["tool.result"]({ tool: "Bash", input: { cmd: "seq 1 900" }, status: "done", output: { output: out, exitCode: 0 }, thread: { id: "t" } });
+    expect(r3.status).toBe("done");
+    expect(String(r3.output)).toContain("[offload] `seq 1 900`");
+  }, 30_000);
 });

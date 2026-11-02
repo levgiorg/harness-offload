@@ -10,7 +10,7 @@ import { distFile, marketplaceRoot, packageRoot, pluginDir } from "./assets.ts";
 import { opencodeMajor } from "../backends/opencode.ts";
 import { cfgStr } from "../config.ts";
 
-export const HOSTS = ["claude", "codex", "cursor", "gemini", "pi", "opencode", "kilo", "devin", "mcp"] as const;
+export const HOSTS = ["claude", "codex", "cursor", "gemini", "copilot", "qwen", "crush", "pi", "opencode", "kilo", "amp", "devin", "mcp"] as const;
 export type HostName = (typeof HOSTS)[number];
 
 export const HOST_LABELS: Record<HostName, string> = {
@@ -18,14 +18,24 @@ export const HOST_LABELS: Record<HostName, string> = {
   codex: "OpenAI Codex CLI",
   cursor: "Cursor",
   gemini: "Gemini CLI",
+  copilot: "GitHub Copilot CLI",
+  qwen: "Qwen Code",
+  crush: "Crush",
   pi: "Pi",
   opencode: "OpenCode",
   kilo: "Kilo Code CLI",
+  amp: "Amp (experimental)",
   devin: "Devin Desktop / Windsurf",
   mcp: "Any MCP client",
 };
 
-const HOST_BIN: Partial<Record<HostName, string>> = { claude: "claude", codex: "codex", gemini: "gemini", pi: "pi", opencode: "opencode", kilo: "kilo", devin: "devin" };
+const HOST_BIN: Partial<Record<HostName, string>> = { claude: "claude", codex: "codex", gemini: "gemini", copilot: "copilot", qwen: "qwen", crush: "crush", pi: "pi", opencode: "opencode", kilo: "kilo", amp: "amp", devin: "devin" };
+
+/** Crush's global config directory (CRUSH_GLOBAL_CONFIG overrides it). */
+function crushDir(): string {
+  return process.env.CRUSH_GLOBAL_CONFIG || join(process.env.XDG_CONFIG_HOME || join(home(), ".config"), "crush");
+}
+const CRUSH_DEFAULT_CONTEXT = ["~/.config/crush/CRUSH.md", "~/.config/AGENTS.md"];
 
 export interface Step {
   ok: boolean;
@@ -154,6 +164,57 @@ export async function install(host: HostName, opts: { dryRun?: boolean } = {}): 
       record(host, { dir: dest });
       break;
     }
+    case "copilot": {
+      // Copilot CLI reads Claude marketplaces and plugins; the plugin's hooks
+      // speak Copilot's dialect when COPILOT_CLI=1.
+      const root = marketplaceRoot();
+      if (opts.dryRun) return [{ ok: true, text: `copilot plugin marketplace add ${root} && copilot plugin install harness-offload@harness-offload` }];
+      steps.push(await exec("copilot", ["plugin", "marketplace", "add", root]));
+      steps.push(await exec("copilot", ["plugin", "install", "harness-offload@harness-offload"]));
+      steps.push({ ok: true, text: "start a new Copilot session to load it" });
+      record(host, { marketplace: root });
+      break;
+    }
+    case "qwen": {
+      // Qwen Code converts a Claude plugin into an extension on install.
+      if (opts.dryRun) return [{ ok: true, text: `qwen extensions install ${pluginDir()} --consent` }];
+      steps.push(await exec("qwen", ["extensions", "install", pluginDir(), "--consent"]));
+      steps.push({ ok: true, text: "Qwen Code can't replace tool output, so long command output is not digested there; reads and the guide work" });
+      record(host, { plugin: pluginDir() });
+      break;
+    }
+    case "crush": {
+      // No plugin system: hooks + a global context file in crush.json.
+      const dir = crushDir();
+      const file = join(dir, "crush.json");
+      const guide = join(stateDir(), "crush-guide.md");
+      const cmd = isWin ? winCommand() : JSON.stringify(launcher);
+      if (opts.dryRun) return [{ ok: true, text: `add hooks + context path to ${file}` }];
+      let cfg: Record<string, any> = {};
+      if (existsSync(file)) {
+        try {
+          cfg = JSON.parse(readFileSync(file, "utf8"));
+        } catch {
+          return [{ ok: false, text: `${file} is not plain JSON; add the hooks by hand (see docs/hosts.md#crush)` }];
+        }
+        writeFileSync(`${file}.bak-harness-offload`, readFileSync(file));
+      }
+      const { sessionGuide } = await import("../hooks/logic.ts");
+      writeFileSync(guide, sessionGuide("crush", isWin ? winCommand() : JSON.stringify(join(pluginDir(), "bin", "offload"))) + "\n");
+      const ours = (h: any) => h?.name === "harness-offload";
+      cfg.hooks ??= {};
+      cfg.hooks.PreToolUse = [...(cfg.hooks.PreToolUse ?? []).filter((h: any) => !ours(h)), { name: "harness-offload", matcher: "^(view|bash)$", command: `${cmd} hook crush pre-tool`, timeout: 20 }];
+      cfg.hooks.PostToolUse = [...(cfg.hooks.PostToolUse ?? []).filter((h: any) => !ours(h)), { name: "harness-offload", matcher: "^bash$", command: `${cmd} hook crush post-tool`, timeout: 120 }];
+      cfg.options ??= {};
+      const ctx: string[] = cfg.options.global_context_paths ?? [...CRUSH_DEFAULT_CONTEXT]; // setting it replaces the defaults
+      if (!ctx.includes(guide)) ctx.push(guide);
+      cfg.options.global_context_paths = ctx;
+      mkdirSync(dir, { recursive: true });
+      writeFileSync(file, JSON.stringify(cfg, null, 2) + "\n");
+      steps.push({ ok: true, text: `added hooks and the guide (${guide}) to ${file}` });
+      record(host, { file, guide });
+      break;
+    }
     case "pi": {
       const pkg = packageRoot();
       if (opts.dryRun) return [{ ok: true, text: `pi install ${pkg}` }];
@@ -180,6 +241,16 @@ export async function install(host: HostName, opts: { dryRun?: boolean } = {}): 
       mkdirSync(dir, { recursive: true });
       writeFileSync(file, `// Harness Offload for Kilo Code (generated by \`offload install kilo\`)\nexport { default } from ${JSON.stringify(pathToFileURL(distFile("opencode.js")).href)};\n`);
       steps.push({ ok: true, text: `wrote ${file}` });
+      record(host, { file });
+      break;
+    }
+    case "amp": {
+      const dir = join(process.env.XDG_CONFIG_HOME || join(home(), ".config"), "amp", "plugins");
+      const file = join(dir, "harness-offload.ts");
+      if (opts.dryRun) return [{ ok: true, text: `write ${file}` }];
+      mkdirSync(dir, { recursive: true });
+      writeFileSync(file, `// Harness Offload for Amp (generated by \`offload install amp\`; experimental)\nexport { default } from ${JSON.stringify(pathToFileURL(distFile("amp.js")).href)};\n`);
+      steps.push({ ok: true, text: `wrote ${file} — in Amp run "plugins: reload" (experimental: built from Amp's plugin API docs)` });
       record(host, { file });
       break;
     }
@@ -214,6 +285,30 @@ export async function uninstall(host: HostName): Promise<Step[]> {
       steps.push({ ok: true, text: `removed ${dir}` });
       break;
     }
+    case "copilot":
+      steps.push(await exec("copilot", ["plugin", "uninstall", "harness-offload@harness-offload"]));
+      break;
+    case "qwen":
+      steps.push(await exec("qwen", ["extensions", "uninstall", "harness-offload"]));
+      break;
+    case "crush": {
+      const file = join(crushDir(), "crush.json");
+      try {
+        const cfg = JSON.parse(readFileSync(file, "utf8"));
+        const ours = (h: any) => h?.name === "harness-offload";
+        for (const ev of Object.keys(cfg.hooks ?? {})) cfg.hooks[ev] = cfg.hooks[ev].filter((h: any) => !ours(h));
+        const guide = join(stateDir(), "crush-guide.md");
+        if (Array.isArray(cfg.options?.global_context_paths)) {
+          cfg.options.global_context_paths = cfg.options.global_context_paths.filter((p: string) => p !== guide);
+          if (JSON.stringify(cfg.options.global_context_paths) === JSON.stringify(CRUSH_DEFAULT_CONTEXT)) delete cfg.options.global_context_paths;
+        }
+        writeFileSync(file, JSON.stringify(cfg, null, 2) + "\n");
+        steps.push({ ok: true, text: `removed Harness Offload hooks and guide from ${file}` });
+      } catch {
+        steps.push({ ok: false, text: `could not edit ${file}; remove the "harness-offload" hooks by hand` });
+      }
+      break;
+    }
     case "pi":
       steps.push(await exec("pi", ["remove", packageRoot()]));
       break;
@@ -228,6 +323,12 @@ export async function uninstall(host: HostName): Promise<Step[]> {
       break;
     case "kilo": {
       const f = join(home(), ".config", "kilo", "plugin", "harness-offload.js");
+      rmSync(f, { force: true });
+      steps.push({ ok: true, text: `removed ${f}` });
+      break;
+    }
+    case "amp": {
+      const f = join(process.env.XDG_CONFIG_HOME || join(home(), ".config"), "amp", "plugins", "harness-offload.ts");
       rmSync(f, { force: true });
       steps.push({ ok: true, text: `removed ${f}` });
       break;

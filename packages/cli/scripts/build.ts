@@ -9,9 +9,9 @@ const res = await Bun.build({
   naming: "cli.js",
   banner: "#!/usr/bin/env node",
 });
-// Host integrations loaded in-process by pi (Node) and OpenCode (Bun).
+// Host integrations loaded in-process by pi (Node), OpenCode and Amp (Bun).
 const res2 = await Bun.build({
-  entrypoints: ["src/integrations/pi.ts", "src/integrations/opencode.ts"],
+  entrypoints: ["src/integrations/pi.ts", "src/integrations/opencode.ts", "src/integrations/amp.ts"],
   outdir: "dist",
   target: "node",
   format: "esm",
@@ -41,7 +41,7 @@ chmodSync("dist/offload-node", 0o755);
   const pdist = "../../plugins/harness-offload/dist";
   rmSync(pdist, { recursive: true, force: true });
   mkdirSync(pdist, { recursive: true });
-  for (const f of ["cli.js", "pi.js", "opencode.js"]) cpSync(`dist/${f}`, `${pdist}/${f}`);
+  for (const f of ["cli.js", "pi.js", "opencode.js", "amp.js"]) cpSync(`dist/${f}`, `${pdist}/${f}`);
   chmodSync(`${pdist}/cli.js`, 0o755);
   writeFileSync(`${pdist}/SOURCE_HASH`, sourceHash() + "\n");
 }

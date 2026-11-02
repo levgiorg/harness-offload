@@ -421,6 +421,21 @@ fi
 
 # ------------------------------------------------------------------ hooks
 section "hooks"
+# GitHub Copilot CLI loads this plugin as is (its own field names/outputs)
+out=$(printf '%s' "$(jq -nc --arg c "$P" --arg f "$P/big.ts" '{hook_event_name: "PreToolUse", cwd: $c, tool_name: "Read", tool_input: {path: $f}}')" | COPILOT_CLI=1 "$PLUGIN/hooks/pre-read")
+expect_eq "copilot: path → large read denied" "$(decision "$out")" "deny"
+expect_has "copilot: messages use the absolute CLI path" "$out" "$PLUGIN/bin/offload read -q"
+out=$(printf '%s' "$(jq -nc --arg c "$P" --arg f "$P/big.ts" '{cwd: $c, tool_name: "Read", tool_input: {path: $f, view_range: [10, 60]}}')" | COPILOT_CLI=1 "$PLUGIN/hooks/pre-read")
+expect_eq "copilot: a view_range slice passes" "$(decision "$out")" "none"
+out=$(printf '%s' "$(jq -nc --arg c "$P" --arg o "$(seq 1 900)" '{cwd: $c, tool_name: "Bash", tool_input: {command: "seq 1 900"}, tool_result: {result_type: "success", text_result_for_llm: $o}}')" | COPILOT_CLI=1 OFFLOAD_NO_MODEL=1 "$PLUGIN/hooks/post-bash")
+expect_has "copilot: long output replaced via modifiedResult" "$(printf '%s' "$out" | jq -r '.modifiedResult.textResultForLlm // empty')" "[offload] \`seq 1 900\`"
+out=$(printf '%s' "$(jq -nc --arg c "$P" '{cwd: $c, source: "startup"}')" | COPILOT_CLI=1 "$PLUGIN/hooks/session-start")
+expect_has "copilot: session guide as top-level additionalContext" "$(printf '%s' "$out" | jq -r '.additionalContext // empty')" "offload is installed"
+# Qwen Code converts the plugin: 0-based offsets, no output replacement
+out=$(printf '%s' "$(jq -nc --arg c "$P" --arg f "$P/big.ts" '{cwd: $c, tool_name: "read_file", tool_input: {file_path: $f}}')" | QWEN_CODE_SESSION_ID=x "$PLUGIN/hooks/pre-read")
+expect_eq "qwen: large read_file denied" "$(decision "$out")" "deny"
+out=$(printf '%s' "$(jq -nc --arg c "$P" --arg o "$(seq 1 900)" '{cwd: $c, tool_name: "run_shell_command", tool_input: {command: "seq 1 900"}, tool_response: {llmContent: $o}}')" | QWEN_CODE_SESSION_ID=x "$PLUGIN/hooks/post-bash")
+expect_eq "qwen: no output replacement attempted" "$out" ""
 r=$(pre_read '{"file_path":"big.ts"}')
 expect_eq "pre-read: blocks a big full read" "$(decision "$r")" "deny"
 expect_has "pre-read: message has outline" "$r" "L1: export function fn1"

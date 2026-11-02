@@ -11,6 +11,8 @@
 
 co_cfg_bool '.enabled' true || exit 0
 co_cfg_bool '.hooks.summarize_bash_output' true || exit 0
+# Qwen Code has no documented way to replace a tool result
+[ "$HK_DIALECT" = qwen ] && exit 0
 hk_skip_subagent && exit 0
 
 cmd=$(hk_get '.tool_input.command')
@@ -57,6 +59,10 @@ focus=$(hk_get '.tool_input.description')
 digest=$(co_digest "$log" "$cmd" "0" "$focus" hook) || exit 0
 [ -z "$digest" ] && exit 0
 
+if [ "$HK_DIALECT" = copilot ]; then
+  jq -nc --arg d "$digest" '{modifiedResult: {resultType: "success", textResultForLlm: $d}}'
+  exit 0
+fi
 printf '%s' "$HK_INPUT" | jq -c --arg d "$digest" '
   {hookSpecificOutput: {hookEventName: "PostToolUse",
     updatedToolOutput: ((.tool_response // {}) + {stdout: $d, stderr: ""})}}'
