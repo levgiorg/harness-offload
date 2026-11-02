@@ -16,6 +16,7 @@ const HELP = () => `${banner()}
     offload write --spec S --ref FILE [--context FILE] [--out PATH] [--check 'CMD']
     offload ask [--stdin|-f FILE] QUESTION  one-off question to the cheap model
     offload outline FILE                    symbol outline with line numbers (no model)
+    offload dashboard [--open] [--sample]   HTML report of what was kept out of context
 
   ${color.bold("Set up")}
     offload setup                           interactive wizard: backends, keys, models, hosts
@@ -74,6 +75,8 @@ async function main(argv: string[]): Promise<number> {
     case "outline":
       cmdOutline(rest);
       return 0;
+    case "dashboard":
+      return (await import("./commands/dashboard.ts")).cmdDashboard(rest);
     case "doctor":
       return cmdDoctor(rest);
     case "stats":

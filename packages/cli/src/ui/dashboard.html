@@ -1,0 +1,433 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Offload Report</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<style>
+/* Layout: a carbon-blue header band with the period filter, one summary line, the daily chart, breakdown tables side by side, then the latest delegations */
+:root {
+  --shell: #2140b8;
+  --on-shell: #f4f7ff;
+  --on-shell-2: #cdd7ff;
+  --bg: #eef1f9;
+  --panel: #fbfcff;
+  --line: #d6ddef;
+  --grid: #e3e8f5;
+  --text: #161a26;
+  --text-2: #4a5373;
+  --accent: #2140b8;
+  --accent-hover: #3555d6;
+  --ok: #1b7348;
+  --bad: #c81e36;
+  --warn: #8a5300;
+  --font: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --mono: ui-monospace, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --shell: #13205e; --on-shell: #eef1ff; --on-shell-2: #a9b8f2; --bg: #0b1230; --panel: #141c40; --line: #2a3566;
+    --grid: #1f2a55; --text: #e9edff; --text-2: #a7b2dc; --accent: #5f79ec; --accent-hover: #7a90f2; --ok: #2a9f6a;
+    --bad: #ec4f64; --warn: #e0a347; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --shell: #13205e; --on-shell: #eef1ff; --on-shell-2: #a9b8f2; --bg: #0b1230; --panel: #141c40; --line: #2a3566;
+  --grid: #1f2a55; --text: #e9edff; --text-2: #a7b2dc; --accent: #5f79ec; --accent-hover: #7a90f2; --ok: #2a9f6a;
+  --bad: #ec4f64; --warn: #e0a347; color-scheme: dark;
+}
+*, *::before, *::after { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--text); font: 400 15px/1.5 var(--font); }
+::selection { background: var(--accent); color: var(--panel); }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.gutter { padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+.wrap { max-width: 76rem; margin: 0 auto; }
+h1, h2 { margin: 0; text-wrap: balance; }
+
+header.band { background: var(--shell); color: var(--on-shell); padding-block: 1.1rem 1.2rem; }
+header .wrap { display: flex; flex-wrap: wrap; gap: 0.75rem 2rem; align-items: center; justify-content: space-between; }
+header h1 { font-size: 1.15rem; font-weight: 700; letter-spacing: -0.01em; }
+header .meta { color: var(--on-shell-2); font-size: 0.8rem; margin-top: 0.15rem; overflow-wrap: anywhere; }
+.period { display: inline-flex; margin: 0; padding: 0; min-inline-size: 0; border: 1px solid var(--on-shell-2); border-radius: 6px; overflow: hidden; }
+.period input { position: absolute; opacity: 0; pointer-events: none; }
+.period label { padding: 0.4rem 0.8rem; font-size: 0.85rem; font-weight: 600; cursor: pointer; color: var(--on-shell); transition: background-color 150ms ease-out; }
+.period label:not(:first-of-type) { border-left: 1px solid var(--on-shell-2); }
+.period label:hover { background: rgb(255 255 255 / 0.12); }
+.period input:checked + label { background: var(--on-shell); color: var(--shell); }
+.period input:focus-visible + label { outline: 2px solid var(--on-shell); outline-offset: -4px; }
+
+.notice { background: var(--panel); border-bottom: 1px solid var(--line); padding-block: 0.6rem; font-size: 0.85rem; color: var(--text-2); }
+.notice strong { color: var(--warn); }
+
+main { padding-block: 1.5rem 3rem; }
+.stack { display: grid; gap: 1.5rem; }
+.summary { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 1px; background: var(--line); border: 1px solid var(--line); border-radius: 8px; overflow: hidden; margin: 0; }
+.summary > div { background: var(--panel); padding: 0.9rem 1.1rem; display: grid; gap: 0.15rem; min-width: 0; }
+.summary dt { font-size: 0.8rem; color: var(--text-2); }
+.summary dd { margin: 0; font-size: 1.6rem; font-weight: 650; font-variant-numeric: tabular-nums; letter-spacing: -0.01em; }
+.summary .sub { font-size: 0.8rem; color: var(--text-2); font-variant-numeric: tabular-nums; }
+
+.panel { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 1rem 1.1rem 1.1rem; min-width: 0; }
+.panel-head { display: flex; flex-wrap: wrap; gap: 0.5rem 1rem; align-items: baseline; justify-content: space-between; margin-bottom: 0.75rem; }
+.panel h2 { font-size: 0.95rem; font-weight: 650; }
+.panel .hint { font-size: 0.8rem; color: var(--text-2); }
+.chart { position: relative; }
+.chart svg { display: block; width: 100%; height: 240px; overflow: visible; }
+.chart .bar { fill: var(--accent); transition: fill 120ms ease-out; }
+.chart .hit { fill: transparent; cursor: default; }
+.chart .hit:hover + .bar, .chart .hit:focus + .bar, .chart g.on .bar { fill: var(--accent-hover); }
+.chart .gridline { stroke: var(--grid); stroke-width: 1; }
+.chart .axis { fill: var(--text-2); font: 400 11px var(--font); font-variant-numeric: tabular-nums; }
+.tip { position: absolute; pointer-events: none; background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 0.45rem 0.6rem; font-size: 0.8rem; box-shadow: 0 6px 18px -8px rgb(0 0 0 / 0.35); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.tip strong { display: block; font-size: 0.95rem; }
+.tip span { color: var(--text-2); }
+details.table-view { margin-top: 0.6rem; font-size: 0.85rem; }
+details.table-view summary { cursor: pointer; color: var(--text-2); }
+
+.split { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1.5rem; }
+.scroll { overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; font-size: 0.875rem; }
+th { text-align: left; font-weight: 600; font-size: 0.78rem; color: var(--text-2); padding: 0.45rem 0.6rem; border-bottom: 1px solid var(--line); white-space: nowrap; }
+td { padding: 0.5rem 0.6rem; border-bottom: 1px solid var(--grid); vertical-align: top; }
+tbody tr:hover td { background: color-mix(in srgb, var(--accent) 5%, transparent); }
+.num { text-align: right; }
+.mono { font-family: var(--mono); font-size: 0.82rem; white-space: nowrap; }
+.split table { min-width: 30rem; }
+#recent { min-width: 52rem; }
+.more { margin-top: 0.75rem; font: 600 0.85rem/1 var(--font); color: var(--accent); background: transparent; border: 1px solid var(--line); border-radius: 6px; padding: 0.5rem 0.8rem; cursor: pointer; }
+.more:hover { border-color: var(--accent); }
+.what { max-width: 26rem; overflow-wrap: anywhere; }
+.muted { color: var(--text-2); }
+
+.chip { display: inline-flex; align-items: center; gap: 0.3rem; padding: 0.12rem 0.45rem; border-radius: 4px; font-size: 0.78rem; font-weight: 600; white-space: nowrap; border: 1px solid currentColor; }
+.chip svg { width: 12px; height: 12px; flex: none; }
+.chip.ok { color: var(--ok); }
+.chip.bad { color: var(--bad); }
+.chip.none { color: var(--text-2); border-color: var(--line); font-weight: 500; }
+
+.empty { padding: 2rem 1rem; text-align: left; display: grid; gap: 0.5rem; max-width: 40rem; }
+.empty h2 { font-size: 1.05rem; }
+.empty code { font-family: var(--mono); background: var(--bg); padding: 0.1rem 0.35rem; border-radius: 4px; }
+
+footer { padding-block: 0 2rem; font-size: 0.8rem; color: var(--text-2); }
+
+@media (max-width: 900px) {
+  .summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .split { grid-template-columns: minmax(0, 1fr); }
+}
+@media (max-width: 420px) {
+  .summary dd { font-size: 1.35rem; }
+}
+@media (prefers-reduced-motion: reduce) {
+  * { transition: none !important; }
+}
+</style>
+</head>
+<body>
+<header class="band gutter">
+  <div class="wrap">
+    <div>
+      <h1>Harness Offload report</h1>
+      <div class="meta" id="meta"></div>
+    </div>
+    <fieldset class="period" aria-label="Period">
+      <input type="radio" name="p" id="p1" value="1"><label for="p1">24 hours</label>
+      <input type="radio" name="p" id="p7" value="7"><label for="p7">7 days</label>
+      <input type="radio" name="p" id="p30" value="30"><label for="p30">30 days</label>
+      <input type="radio" name="p" id="p0" value="0"><label for="p0">All</label>
+    </fieldset>
+  </div>
+</header>
+<div class="notice gutter" id="sample" hidden><div class="wrap"><strong>Example data.</strong> These figures were generated for illustration and are not anyone’s real usage. Run <span class="mono">offload dashboard</span> without <span class="mono">--sample</span> for your own.</div></div>
+
+<main class="gutter">
+  <div class="wrap stack">
+    <dl class="summary" id="summary" aria-label="Summary for the selected period"></dl>
+
+    <section class="panel" aria-labelledby="chart-h">
+      <div class="panel-head">
+        <h2 id="chart-h">Tokens kept out of your agent’s context</h2>
+        <span class="hint" id="chart-hint"></span>
+      </div>
+      <div class="chart" id="chart"></div>
+      <details class="table-view"><summary>Show as a table</summary><div class="scroll"><table id="chart-table"></table></div></details>
+    </section>
+
+    <div class="split">
+      <section class="panel" aria-labelledby="kind-h">
+        <div class="panel-head"><h2 id="kind-h">By kind</h2><span class="hint">reads, digests, exploration, writing</span></div>
+        <div class="scroll"><table id="by-kind"></table></div>
+      </section>
+      <section class="panel" aria-labelledby="model-h">
+        <div class="panel-head"><h2 id="model-h">By model</h2><span class="hint">who did the reading</span></div>
+        <div class="scroll"><table id="by-model"></table></div>
+      </section>
+    </div>
+
+    <section class="panel" aria-labelledby="recent-h">
+      <div class="panel-head"><h2 id="recent-h">Latest delegations</h2><span class="hint" id="hooks-line"></span></div>
+      <div class="scroll"><table id="recent"></table></div>
+      <button type="button" class="more" id="more" hidden></button>
+    </section>
+  </div>
+</main>
+<footer class="gutter"><div class="wrap" id="foot"></div></footer>
+
+<script id="offload-data" type="application/json">/*__OFFLOAD_DATA__*/null</script>
+<script>
+(() => {
+  const DATA = JSON.parse(document.getElementById("offload-data").textContent) || { rows: [], source: "", generated: Math.floor(Date.now() / 1000), version: "", days: 0 };
+  const all = (DATA.rows || []).filter((r) => r && typeof r.ts === "number");
+  const nf = new Intl.NumberFormat("en-US");
+  const compact = (n) => (Math.abs(n) >= 1e6 ? (n / 1e6).toFixed(n >= 1e7 ? 0 : 1) + "M" : Math.abs(n) >= 1e4 ? Math.round(n / 1e3) + "K" : nf.format(Math.round(n)));
+  const el = (tag, attrs = {}, kids = []) => {
+    const e = document.createElement(tag);
+    for (const [k, v] of Object.entries(attrs)) {
+      if (k === "text") e.textContent = v;
+      else if (k === "class") e.className = v;
+      else e.setAttribute(k, v);
+    }
+    for (const c of kids) e.append(c);
+    return e;
+  };
+  const SVGNS = "http://www.w3.org/2000/svg";
+  const svg = (tag, attrs = {}) => {
+    const e = document.createElementNS(SVGNS, tag);
+    for (const [k, v] of Object.entries(attrs)) e.setAttribute(k, String(v));
+    return e;
+  };
+  const ICON = {
+    ok: '<svg viewBox="0 0 12 12" aria-hidden="true"><path d="M2.2 6.3 4.8 8.8 9.8 3.4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+    bad: '<svg viewBox="0 0 12 12" aria-hidden="true"><path d="M6 1.6 11 10.4H1z" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/><path d="M6 4.6v2.6M6 8.7v.1" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>',
+  };
+  const chip = (cls, text) => {
+    const c = el("span", { class: `chip ${cls}` });
+    if (ICON[cls]) c.insertAdjacentHTML("afterbegin", ICON[cls]);
+    c.append(document.createTextNode(text));
+    return c;
+  };
+  const KIND = { read: "Read", digest: "Command digest", explore: "Explore", write: "Write", ask: "Ask", summarize: "Summarize" };
+  const kindName = (r) => (r.kind === "digest" && r.source ? `${KIND.digest} (${r.source})` : KIND[r.kind] || r.kind);
+  const worker = (r) => (Number(r.worker_tokens_in) || 0) + (Number(r.worker_tokens_out) || 0);
+  const kept = (r) => Math.max(0, Number(r.saved_tokens) || 0);
+  const failed = (r) => r.model_ok === false;
+
+  document.getElementById("meta").textContent = `${DATA.sample ? "example data" : DATA.source || "stats"} · generated ${new Date(DATA.generated * 1000).toLocaleString()}`;
+  document.getElementById("sample").hidden = !DATA.sample;
+  document.getElementById("foot").textContent = `Harness Offload ${DATA.version || ""} · estimates are bytes ÷ 4 of what stayed out of context; cache effects and extra turns are not counted.`;
+
+  const now = DATA.generated || Math.floor(Date.now() / 1000);
+  const hasRecent = all.some((r) => r.ts >= now - 30 * 86400);
+  let days = DATA.days || (hasRecent ? 30 : 0);
+  const radio = document.querySelector(`.period input[value="${days}"]`) || document.getElementById("p0");
+  radio.checked = true;
+  for (const r of document.querySelectorAll(".period input")) r.addEventListener("change", () => { days = Number(r.value); render(); });
+
+  function render() {
+    const since = days ? now - days * 86400 : -Infinity;
+    const rows = all.filter((r) => r.ts >= since);
+    const del = rows.filter((r) => r.kind !== "hook");
+    const hooks = rows.filter((r) => r.kind === "hook");
+    summary(del);
+    chart(del);
+    byKind(del);
+    byModel(del);
+    recent(del, hooks);
+  }
+
+  function summary(del) {
+    const s = document.getElementById("summary");
+    s.replaceChildren();
+    const ok = del.reduce((a, r) => a + (Number(r.cites_ok) || 0), 0);
+    const bad = del.reduce((a, r) => a + (Number(r.cites_bad) || 0), 0);
+    const fails = del.filter(failed).length;
+    const items = [
+      ["Kept out of context", compact(del.reduce((a, r) => a + kept(r), 0)), "tokens (estimated)"],
+      ["Worker tokens", compact(del.reduce((a, r) => a + worker(r), 0)), "read and written by cheap models"],
+      ["Delegations", nf.format(del.length), !del.length ? "none yet" : fails ? `${fails} without a model summary` : "all completed"],
+      ["Citations checked", ok + bad ? `${Math.round((ok / (ok + bad)) * 100)}%` : "—", ok + bad ? `${nf.format(ok)} of ${nf.format(ok + bad)} quotes found in the file` : "no cited answers yet"],
+    ];
+    for (const [label, value, sub] of items) s.append(el("div", {}, [el("dt", { text: label }), el("dd", { text: value }), el("span", { class: "sub", text: sub })]));
+  }
+
+  function buckets(del) {
+    const hourly = days === 1;
+    const span = hourly ? 3600 : 86400;
+    let start;
+    if (days) start = now - days * 86400;
+    else start = del.length ? Math.min(...del.map((r) => r.ts)) : now - 7 * 86400;
+    const weekly = !hourly && (now - start) / 86400 > 120;
+    const step = weekly ? 7 * 86400 : span;
+    const floor = (t) => {
+      const d = new Date(t * 1000);
+      if (hourly) d.setMinutes(0, 0, 0);
+      else d.setHours(0, 0, 0, 0);
+      return Math.floor(d.getTime() / 1000);
+    };
+    const first = floor(start);
+    const out = [];
+    for (let t = first; t <= now; t += step) out.push({ t, kept: 0, n: 0, worker: 0 });
+    for (const r of del) {
+      const i = Math.min(out.length - 1, Math.max(0, Math.floor((r.ts - first) / step)));
+      if (!out[i]) continue;
+      out[i].kept += kept(r);
+      out[i].n += 1;
+      out[i].worker += worker(r);
+    }
+    const fmt = hourly ? (t) => new Date(t * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : weekly ? (t) => "week of " + new Date(t * 1000).toLocaleDateString([], { month: "short", day: "numeric" }) : (t) => new Date(t * 1000).toLocaleDateString([], { month: "short", day: "numeric" });
+    return { out, fmt, unit: hourly ? "per hour" : weekly ? "per week" : "per day" };
+  }
+
+  function niceMax(v) {
+    if (v <= 0) return 1000;
+    const p = Math.pow(10, Math.floor(Math.log10(v)));
+    for (const m of [1, 1.2, 1.5, 2, 2.5, 3, 4, 5, 6, 8, 10]) if (m * p >= v) return m * p;
+    return 10 * p;
+  }
+
+  function chart(del) {
+    const host = document.getElementById("chart");
+    host.replaceChildren();
+    const { out, fmt, unit } = buckets(del);
+    document.getElementById("chart-hint").textContent = `estimated tokens, ${unit}`;
+    const W = Math.max(320, host.clientWidth || 800);
+    const H = 240, L = 44, R = 8, T = 10, B = 26;
+    const max = niceMax(Math.max(0, ...out.map((b) => b.kept)));
+    const s = svg("svg", { viewBox: `0 0 ${W} ${H}`, role: "img", "aria-label": `Bar chart of tokens kept out of context ${unit}` });
+    const y = (v) => T + (H - T - B) * (1 - v / max);
+    for (let i = 0; i <= 4; i++) {
+      const v = (max / 4) * i;
+      s.append(svg("line", { class: "gridline", x1: L, x2: W - R, y1: y(v), y2: y(v) }));
+      const t = svg("text", { class: "axis", x: L - 6, y: y(v) + 4, "text-anchor": "end" });
+      t.textContent = compact(v);
+      s.append(t);
+    }
+    const slot = (W - L - R) / Math.max(1, out.length);
+    const bw = Math.max(2, Math.min(24, slot - 2));
+    const tip = el("div", { class: "tip", hidden: "" });
+    const labelEvery = Math.ceil(out.length / Math.max(2, Math.floor((W - L - R) / 64)));
+    out.forEach((b, i) => {
+      const cx = L + slot * i + slot / 2;
+      const g = svg("g", {});
+      const hit = svg("rect", { class: "hit", x: L + slot * i, y: T, width: slot, height: H - T - B, tabindex: 0, role: "img", "aria-label": `${fmt(b.t)}: ${nf.format(b.kept)} tokens kept, ${b.n} delegations` });
+      g.append(hit);
+      if (b.kept > 0) {
+        const h = Math.max(2, H - B - y(b.kept));
+        const x = cx - bw / 2, top = H - B - h, r = Math.min(4, bw / 2, h);
+        // rounded data end, square at the baseline
+        g.append(svg("path", { class: "bar", d: `M${x},${H - B} V${top + r} Q${x},${top} ${x + r},${top} H${x + bw - r} Q${x + bw},${top} ${x + bw},${top + r} V${H - B} Z` }));
+      }
+      if (i % labelEvery === 0) {
+        const t = svg("text", { class: "axis", x: cx, y: H - 8, "text-anchor": "middle" });
+        t.textContent = fmt(b.t);
+        s.append(t);
+      }
+      const show = () => {
+        g.classList.add("on");
+        tip.replaceChildren(el("strong", { text: `${nf.format(b.kept)} tokens kept` }), el("span", { text: `${fmt(b.t)} · ${b.n} delegation${b.n === 1 ? "" : "s"} · ${compact(b.worker)} worker tokens` }));
+        tip.hidden = false;
+        const left = Math.min(Math.max(0, (cx / W) * host.clientWidth - tip.offsetWidth / 2), host.clientWidth - tip.offsetWidth);
+        tip.style.left = `${left}px`;
+        tip.style.top = `${Math.max(0, (y(b.kept) / H) * 240 - tip.offsetHeight - 8)}px`;
+      };
+      const hide = () => { g.classList.remove("on"); tip.hidden = true; };
+      hit.addEventListener("pointerenter", show);
+      hit.addEventListener("pointerleave", hide);
+      hit.addEventListener("focus", show);
+      hit.addEventListener("blur", hide);
+      s.append(g);
+    });
+    s.append(svg("line", { class: "gridline", x1: L, x2: W - R, y1: H - B, y2: H - B }));
+    host.append(s, tip);
+    const tb = document.getElementById("chart-table");
+    tb.replaceChildren(el("thead", {}, [el("tr", {}, [el("th", { text: "Period" }), el("th", { class: "num", text: "Tokens kept" }), el("th", { class: "num", text: "Delegations" }), el("th", { class: "num", text: "Worker tokens" })])]));
+    const body = el("tbody");
+    for (const b of out) body.append(el("tr", {}, [el("td", { text: fmt(b.t) }), el("td", { class: "num", text: nf.format(b.kept) }), el("td", { class: "num", text: nf.format(b.n) }), el("td", { class: "num", text: nf.format(b.worker) })]));
+    tb.append(body);
+  }
+
+  function group(del, keyOf) {
+    const m = new Map();
+    for (const r of del) {
+      const k = keyOf(r);
+      const g = m.get(k) || { k, n: 0, kept: 0, worker: 0, secs: 0, fails: 0 };
+      g.n++; g.kept += kept(r); g.worker += worker(r); g.secs += Number(r.seconds) || 0; g.fails += failed(r) ? 1 : 0;
+      m.set(k, g);
+    }
+    return [...m.values()].sort((a, b) => b.kept - a.kept);
+  }
+
+  function table(id, head, rows, emptyText) {
+    const t = document.getElementById(id);
+    t.replaceChildren();
+    if (!rows.length) {
+      t.append(el("tbody", {}, [el("tr", {}, [el("td", { class: "muted", text: emptyText })])]));
+      return;
+    }
+    t.append(el("thead", {}, [el("tr", {}, head.map(([h, cls]) => el("th", { class: cls || "", text: h })))]));
+    const body = el("tbody");
+    for (const r of rows) body.append(el("tr", {}, r.map(([v, cls]) => { const td = el("td", { class: cls || "" }); td.append(v instanceof Node ? v : document.createTextNode(String(v))); return td; })));
+    t.append(body);
+  }
+
+  const failCell = (n) => (n ? chip("bad", `${n} failed`) : el("span", { class: "muted", text: "–" }));
+
+  function byKind(del) {
+    table("by-kind", [["Kind"], ["Count", "num"], ["Kept", "num"], ["Avg time", "num"], ["Failures"]],
+      group(del, kindName).map((g) => [[g.k], [nf.format(g.n), "num"], [compact(g.kept), "num"], [`${(g.secs / g.n).toFixed(1)} s`, "num"], [failCell(g.fails)]]), "No delegations in this period.");
+  }
+
+  function byModel(del) {
+    table("by-model", [["Model"], ["Count", "num"], ["Kept", "num"], ["Worker tokens", "num"], ["Failures"]],
+      group(del, (r) => r.model || "(no model: deterministic digest)").map((g) => [[g.k, "mono"], [nf.format(g.n), "num"], [compact(g.kept), "num"], [compact(g.worker), "num"], [failCell(g.fails)]]), "No delegations in this period.");
+  }
+
+  function citeCell(r) {
+    const ok = Number(r.cites_ok) || 0, bad = Number(r.cites_bad) || 0;
+    if (bad) return chip("bad", `${bad} unverified`);
+    if (ok) return chip("ok", `${ok} verified`);
+    return chip("none", "—");
+  }
+
+  function recent(del, hooks) {
+    const hl = document.getElementById("hooks-line");
+    const ev = new Map();
+    for (const h of hooks) ev.set(h.event || "hook", (ev.get(h.event || "hook") || 0) + 1);
+    hl.textContent = ev.size ? "hooks: " + [...ev].map(([k, v]) => `${k.replace(/_/g, " ")} ${nf.format(v)}`).join(" · ") : "";
+    if (!all.some((r) => r.kind !== "hook")) {
+      const t = document.getElementById("recent");
+      t.replaceChildren();
+      const box = el("div", { class: "empty" }, [
+        el("h2", { text: "Nothing delegated yet" }),
+        el("p", { text: "Each read, digest or search that goes to a cheap model shows up here. Try one in a project:" }),
+        el("p", {}, [el("code", { text: 'offload read -q "what does this module export?" src/big-file.ts' })]),
+        el("p", { class: "muted", text: "Inside your agent the hooks do this for you when it reaches for a huge file or a long command output." }),
+      ]);
+      const td = el("td");
+      td.append(box);
+      t.append(el("tbody", {}, [el("tr", {}, [td])]));
+      return;
+    }
+    const sorted = [...del].sort((a, b) => b.ts - a.ts);
+    const rows = showAll ? sorted : sorted.slice(0, 25);
+    const more = document.getElementById("more");
+    more.hidden = sorted.length <= 25;
+    more.textContent = showAll ? "Show the latest 25" : `Show all ${nf.format(sorted.length)}`;
+    table("recent", [["When"], ["Kind"], ["What"], ["Model"], ["Kept", "num"], ["Time", "num"], ["Citations"]],
+      rows.map((r) => {
+        const d = new Date(r.ts * 1000);
+        const when = el("span", { title: d.toLocaleString(), text: d.toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }) });
+        return [[when], [kindName(r)], [r.label || (r.files ? `${r.files} file(s)` : "—"), "what"], [r.model || (failed(r) ? "no model summary" : "—"), "mono"], [nf.format(kept(r)), "num"], [`${Number(r.seconds) || 0} s`, "num"], [citeCell(r)]];
+      }), "No delegations in this period.");
+  }
+
+  let showAll = false;
+  document.getElementById("more").addEventListener("click", () => { showAll = !showAll; render(); });
+  render();
+  let rt;
+  addEventListener("resize", () => { clearTimeout(rt); rt = setTimeout(render, 120); });
+})();
+</script>
+</body>
+</html>

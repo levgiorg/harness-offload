@@ -1,0 +1,634 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Harness Offload</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<meta name="description" content="Keep huge files, long logs and repo-wide searches out of your coding agent's context. A cheap model on a plan you already pay for reads them and answers with checked line references.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,400..900&family=Courier+Prime:wght@400;700&family=Public+Sans:ital,wght@0,400..700;1,400&display=swap">
+<style>
+/* Layout: one closed-stack request slip is the hero on a carbon-blue field; more slips stack down the page; the install stub tears off its right edge */
+:root {
+  --field: #2140b8;
+  --field-deep: #18308f;
+  --paper: #f4f7ff;
+  --paper-2: #dfe6fa;
+  --ink: #15297a;
+  --type: #191d2b;
+  --rule: #a3b3e8;
+  --stamp: #d1203a;
+  --ok: #1b7348;
+  --on-field: #f4f7ff;
+  --on-field-dim: #cdd7ff;
+  --shadow: 18 30 90;
+  --font-display: "Archivo", "Arial Narrow", "Helvetica Neue", sans-serif;
+  --font-body: "Public Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-type: "Courier Prime", "Courier New", ui-monospace, monospace;
+  --step--1: 0.875rem;
+  --step-0: 1rem;
+  --step-1: 1.25rem;
+  --step-2: 1.6rem;
+  --step-3: clamp(1.9rem, 1.2rem + 2.6vw, 2.75rem);
+  --step-4: clamp(2.4rem, 1.2rem + 4.8vw, 4.6rem);
+  --radius: 3px;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --field: #0f1b52; --field-deep: #0a1440; --paper: #18224e; --paper-2: #222e62; --ink: #b8c6ff;
+    --type: #eef1ff; --rule: #3c4c8f; --stamp: #ff5d71; --ok: #5ad69a; --on-field: #eef1ff; --on-field-dim: #a9b8f2;
+    --shadow: 2 6 30; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --field: #0f1b52; --field-deep: #0a1440; --paper: #18224e; --paper-2: #222e62; --ink: #b8c6ff;
+  --type: #eef1ff; --rule: #3c4c8f; --stamp: #ff5d71; --ok: #5ad69a; --on-field: #eef1ff; --on-field-dim: #a9b8f2;
+  --shadow: 2 6 30; color-scheme: dark;
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0;
+  background: var(--field);
+  color: var(--on-field);
+  font: 400 var(--step-0)/1.6 var(--font-body);
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+}
+::selection { background: var(--stamp); color: var(--paper); }
+:focus-visible { outline: 3px solid var(--stamp); outline-offset: 3px; border-radius: 2px; }
+a { color: inherit; text-underline-offset: 0.2em; text-decoration-thickness: 1px; }
+a:hover { text-decoration-thickness: 2px; }
+code, pre, kbd { font-family: var(--font-type); }
+h1, h2, h3 { font-family: var(--font-display); text-wrap: balance; margin: 0; line-height: 1.05; }
+p { margin: 0; }
+
+.wrap { max-width: 72rem; margin: 0 auto; }
+
+/* top line */
+.topline { padding-block: 1.25rem 2rem; }
+.topline .wrap { display: flex; flex-wrap: wrap; gap: 0.75rem 2rem; align-items: baseline; justify-content: space-between; }
+.wordmark { font: 800 var(--step-1)/1 var(--font-display); font-stretch: 112%; letter-spacing: -0.01em; text-decoration: none; }
+.topline nav { display: flex; flex-wrap: wrap; gap: 0.25rem 1.5rem; font-size: var(--step--1); color: var(--on-field-dim); }
+.topline nav a { text-decoration: none; }
+.topline nav a:hover { color: var(--on-field); text-decoration: underline; }
+
+/* paper */
+.slip {
+  position: relative;
+  background: var(--paper);
+  color: var(--type);
+  border-radius: var(--radius);
+  box-shadow: 0 1px 1px rgb(var(--shadow) / 0.25), 0 14px 32px -12px rgb(var(--shadow) / 0.55);
+}
+.slip ::selection { background: var(--ink); color: var(--paper); }
+.label {
+  font: 600 0.72rem/1.2 var(--font-display);
+  font-stretch: 75%;
+  text-transform: uppercase;
+  letter-spacing: 0.09em;
+  color: var(--ink);
+}
+
+/* hero slip */
+.hero { padding-block: 0 4.5rem; }
+.carbon { position: relative; }
+.carbon::before {
+  content: "";
+  position: absolute;
+  inset: 10px -6px -10px 8px;
+  background: var(--paper-2);
+  border-radius: var(--radius);
+  transform: rotate(0.8deg);
+  box-shadow: 0 10px 24px -14px rgb(var(--shadow) / 0.6);
+}
+.request { display: grid; grid-template-columns: minmax(0, 1fr) minmax(16rem, 21rem); }
+.request-body { position: relative; padding: clamp(1.25rem, 3vw, 2.75rem); display: grid; gap: 1.5rem; min-width: 0; }
+.form-head { display: grid; gap: 1rem; border-bottom: 2px solid var(--ink); padding-bottom: 1.25rem; }
+.form-head h1 { font-size: var(--step-4); font-weight: 850; font-stretch: 118%; letter-spacing: -0.035em; color: var(--ink); max-width: 15ch; }
+.lede { font-size: var(--step-1); line-height: 1.5; max-width: 52ch; color: var(--type); }
+
+.kinds { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+.kinds button {
+  font: 600 var(--step--1)/1 var(--font-body);
+  color: var(--ink);
+  background: transparent;
+  border: 1.5px solid var(--rule);
+  border-radius: 999px;
+  padding: 0.55rem 0.95rem;
+  cursor: pointer;
+  transition: background-color 160ms ease-out, border-color 160ms ease-out, color 160ms ease-out;
+}
+.kinds button:hover { border-color: var(--ink); }
+.kinds button[aria-selected="true"] { background: var(--ink); border-color: var(--ink); color: var(--paper); }
+
+.fields { margin: 0; display: grid; border-top: 1px solid var(--rule); }
+.fields > div { display: grid; grid-template-columns: 10.5rem minmax(0, 1fr); gap: 0.25rem 1.25rem; padding-block: 0.8rem; border-bottom: 1px solid var(--rule); }
+.fields dt { padding-top: 0.2rem; }
+.fields dd { margin: 0; font: 400 var(--step-0)/1.55 var(--font-type); color: var(--type); min-width: 0; overflow-wrap: anywhere; }
+.fields dd .mark { font-weight: 700; color: var(--ink); white-space: nowrap; }
+.fields dd .check { color: var(--ok); font-weight: 700; white-space: nowrap; }
+.fields dd .dim { color: var(--ink); opacity: 0.8; }
+.typed { animation: type-in 420ms cubic-bezier(0.16, 1, 0.3, 1) both; }
+@keyframes type-in { from { clip-path: inset(0 100% 0 0); } to { clip-path: inset(0 0 0 0); } }
+
+.form-foot { display: flex; flex-wrap: wrap; gap: 0.5rem 1.5rem; align-items: center; justify-content: space-between; }
+.form-foot small { font: 400 0.78rem/1.4 var(--font-body); color: var(--ink); opacity: 0.85; max-width: 60ch; }
+@media (min-width: 1100px) {
+  /* the stamp lands beside the headline, inside the first viewport */
+  .stamp { position: absolute; top: clamp(2rem, 4vw, 3.25rem); right: clamp(1.5rem, 3vw, 2.75rem); }
+}
+
+.stamp {
+  display: inline-grid;
+  justify-items: center;
+  gap: 0.1rem;
+  padding: 0.45rem 0.9rem 0.5rem;
+  border: 3px double var(--stamp);
+  border-radius: 6px;
+  color: var(--stamp);
+  transform: rotate(-4deg);
+  font: 800 0.8rem/1.1 var(--font-display);
+  font-stretch: 70%;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  mix-blend-mode: multiply;
+}
+:root[data-theme="dark"] .stamp { mix-blend-mode: normal; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .stamp { mix-blend-mode: normal; } }
+.stamp b { font: 850 1.65rem/1 var(--font-display); font-stretch: 85%; letter-spacing: 0; font-variant-numeric: tabular-nums; }
+.stamp.press { animation: press 300ms cubic-bezier(0.22, 1, 0.36, 1); }
+@keyframes press { from { transform: rotate(-4deg) scale(1.35); opacity: 0; filter: blur(2px); } to { transform: rotate(-4deg) scale(1); opacity: 1; filter: blur(0); } }
+
+/* tear-off stub */
+.stub {
+  position: relative;
+  padding: clamp(1.25rem, 3vw, 2.25rem);
+  border-left: 2px dashed var(--rule);
+  display: grid;
+  align-content: start;
+  gap: 1rem;
+  min-width: 0;
+}
+.stub::before, .stub::after {
+  content: "";
+  position: absolute;
+  left: -11px;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--field);
+}
+.stub::before { top: -10px; }
+.stub::after { bottom: -10px; }
+.stub h2 { font-size: var(--step-2); font-weight: 800; font-stretch: 105%; color: var(--ink); letter-spacing: -0.02em; }
+.stub p { font-size: var(--step--1); color: var(--type); }
+.select-wrap { display: grid; gap: 0.35rem; }
+.select-wrap select {
+  font: 500 var(--step-0)/1.2 var(--font-body);
+  color: var(--type);
+  background: var(--paper);
+  border: 1.5px solid var(--ink);
+  border-radius: var(--radius);
+  padding: 0.6rem 0.7rem;
+  width: 100%;
+}
+.cmd {
+  position: relative;
+  margin: 0;
+  background: var(--paper-2);
+  border-radius: var(--radius);
+  padding: 0.85rem 0.9rem;
+  font: 400 0.9rem/1.55 var(--font-type);
+  color: var(--type);
+  white-space: pre;
+  overflow-x: auto;
+}
+.copy {
+  font: 700 var(--step--1)/1 var(--font-body);
+  color: var(--paper);
+  background: var(--stamp);
+  border: 0;
+  border-radius: var(--radius);
+  padding: 0.8rem 1rem;
+  cursor: pointer;
+  justify-self: start;
+  transition: transform 140ms ease-out, filter 140ms ease-out;
+}
+.copy:hover { filter: brightness(1.08); }
+.copy:active { transform: translateY(1px); }
+.after { border-top: 1px solid var(--rule); padding-top: 0.9rem; }
+.also { display: grid; gap: 0.6rem; margin-top: 0.75rem; }
+.also p { color: var(--ink); }
+.after code { font-size: 0.85rem; color: var(--ink); }
+
+/* sections on the field */
+section.band { padding-block: 4rem; }
+.band-head { display: grid; gap: 0.9rem; margin-bottom: 2.25rem; max-width: 46rem; }
+.band-head h2 { font-size: var(--step-3); font-weight: 800; font-stretch: 112%; letter-spacing: -0.03em; }
+.band-head p { color: var(--on-field-dim); font-size: var(--step-1); line-height: 1.5; max-width: 60ch; }
+
+/* sequence: four stubs on one perforated line */
+.route { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 0; }
+.route li { padding: 1.4rem 1.3rem 1.6rem; display: grid; align-content: start; gap: 0.6rem; border-left: 2px dashed var(--rule); min-width: 0; }
+.route li:first-child { border-left: 0; }
+.route .n { font: 800 2.4rem/1 var(--font-display); font-stretch: 70%; color: var(--stamp); font-variant-numeric: tabular-nums; }
+.route h3 { font-size: var(--step-1); font-weight: 750; color: var(--ink); line-height: 1.2; }
+.route p { font-size: 0.95rem; color: var(--type); }
+.route code { font-size: 0.85rem; color: var(--ink); overflow-wrap: anywhere; }
+
+/* ledger table */
+.ledger { padding: clamp(1rem, 2.5vw, 2rem); display: grid; gap: 1.25rem; }
+.scroll { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; font-size: 0.95rem; font-variant-numeric: tabular-nums; }
+th { text-align: left; font: 600 0.72rem/1.2 var(--font-display); font-stretch: 75%; text-transform: uppercase; letter-spacing: 0.09em; color: var(--ink); padding: 0.5rem 0.75rem; border-bottom: 2px solid var(--ink); white-space: nowrap; }
+td { padding: 0.7rem 0.75rem; border-bottom: 1px solid var(--rule); vertical-align: top; }
+td.num, th.num { text-align: right; }
+td .saved { font: 700 1rem/1 var(--font-type); color: var(--stamp); }
+.ledger-notes { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem 2rem; border-top: 1px solid var(--rule); padding-top: 1.1rem; }
+.ledger-notes p { font-size: 0.95rem; color: var(--type); }
+.ledger-notes strong { color: var(--ink); }
+.source { font-size: 0.8rem; color: var(--ink); opacity: 0.85; }
+
+/* register of harnesses */
+.register td:first-child { font-weight: 650; color: var(--ink); white-space: nowrap; }
+.register code { font-size: 0.85rem; white-space: nowrap; }
+.depth { display: inline-block; font: 700 0.68rem/1 var(--font-display); font-stretch: 80%; letter-spacing: 0.08em; text-transform: uppercase; padding: 0.3rem 0.45rem; border-radius: 2px; border: 1.5px solid currentColor; white-space: nowrap; }
+.depth.full { color: var(--ok); }
+.depth.guard { color: var(--ink); }
+.depth.tools { color: var(--type); opacity: 0.8; }
+
+/* plans */
+.plans { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); gap: 2.5rem; align-items: start; }
+.plans .slip { padding: clamp(1.25rem, 3vw, 2.25rem); display: grid; gap: 1rem; }
+.plans h3 { font-size: var(--step-2); font-weight: 800; color: var(--ink); letter-spacing: -0.02em; }
+.plan-rows { margin: 0; display: grid; }
+.plan-rows > div { display: grid; grid-template-columns: 8.5rem minmax(0, 1fr); gap: 0.25rem 1rem; padding-block: 0.6rem; border-bottom: 1px solid var(--rule); }
+.plan-rows dd { margin: 0; font: 400 0.95rem/1.5 var(--font-type); min-width: 0; overflow-wrap: anywhere; }
+.plans .aside { display: grid; gap: 1.1rem; color: var(--on-field-dim); font-size: 1.05rem; max-width: 52ch; }
+.plans .aside strong { color: var(--on-field); }
+.plans .aside code { color: var(--on-field); font-size: 0.92rem; }
+
+/* guarantees */
+.rules { margin: 0; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 2rem 2.5rem; }
+.rules > div { display: grid; gap: 0.5rem; border-top: 2px solid var(--on-field); padding-top: 1rem; }
+.rules dt { font: 750 var(--step-1)/1.2 var(--font-display); font-stretch: 105%; }
+.rules dd { margin: 0; color: var(--on-field-dim); }
+.rules code { color: var(--on-field); }
+
+/* close */
+.close { padding-block: 3rem 4rem; }
+.close .slip { padding: clamp(1.25rem, 3vw, 2.5rem); display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 1.5rem 2.5rem; align-items: center; }
+.close-main { display: grid; gap: 1rem; min-width: 0; }
+.close h2 { font-size: var(--step-3); font-weight: 850; font-stretch: 115%; letter-spacing: -0.03em; color: var(--ink); }
+.close .cmd { font-size: 1rem; }
+.close .links { display: flex; flex-wrap: wrap; gap: 0.5rem 1.5rem; font-size: 0.95rem; color: var(--ink); }
+
+footer { padding-block: 0 3rem; color: var(--on-field-dim); font-size: 0.85rem; }
+footer .wrap { display: flex; flex-wrap: wrap; gap: 0.5rem 2rem; justify-content: space-between; border-top: 1px solid rgb(255 255 255 / 0.2); padding-top: 1.25rem; }
+
+@media (max-width: 860px) {
+  .request { grid-template-columns: minmax(0, 1fr); }
+  .stub { border-left: 0; border-top: 2px dashed var(--rule); }
+  .stub::before, .stub::after { top: -11px; bottom: auto; left: auto; }
+  .stub::before { left: -10px; }
+  .stub::after { right: -10px; }
+  .route { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .route li:nth-child(3) { border-left: 0; }
+  .route li:nth-child(n + 3) { border-top: 2px dashed var(--rule); }
+  .plans, .close .slip { grid-template-columns: minmax(0, 1fr); }
+  .rules { grid-template-columns: minmax(0, 1fr); }
+  .ledger-notes { grid-template-columns: minmax(0, 1fr); }
+}
+@media (max-width: 560px) {
+  .wide-only { display: none; }
+  .fields > div, .plan-rows > div { grid-template-columns: minmax(0, 1fr); }
+  .route { grid-template-columns: minmax(0, 1fr); }
+  .route li { border-left: 0; }
+  .route li + li { border-top: 2px dashed var(--rule); }
+  .carbon::before { inset: 8px -3px -8px 4px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .typed, .stamp.press { animation: none; }
+  .kinds button, .copy { transition: none; }
+}
+</style>
+</head>
+<body>
+<header class="topline">
+  <div class="wrap">
+    <a class="wordmark" href="#top" id="top">Harness Offload</a>
+    <nav aria-label="Sections">
+      <a href="#route">How it works</a>
+      <a href="#measured">Measured</a>
+      <a href="#harnesses">Harnesses</a>
+      <a href="#plans" class="wide-only">Plans</a>
+      <a href="https://github.com/OWNER/harness-offload">GitHub</a>
+    </nav>
+  </div>
+</header>
+
+<main>
+  <section class="hero" aria-label="Introduction">
+    <div class="wrap carbon">
+      <article class="slip request">
+        <div class="request-body">
+          <div class="form-head">
+            <h1>Keep the bulk off your agent’s desk.</h1>
+            <p class="lede">Huge files, long test logs and repo-wide questions go to a small model on a plan you already pay for. Your agent gets the answer back, with every line reference checked against the file.</p>
+          </div>
+
+          <div class="kinds" role="tablist" aria-label="Example request">
+            <button type="button" role="tab" id="k-file" aria-selected="true" aria-controls="fields" data-kind="file">A 919-line file</button>
+            <button type="button" role="tab" id="k-log" aria-selected="false" aria-controls="fields" data-kind="log" tabindex="-1">A 2,323-line test run</button>
+            <button type="button" role="tab" id="k-two" aria-selected="false" aria-controls="fields" data-kind="two" tabindex="-1">Two small files</button>
+          </div>
+
+          <dl class="fields" id="fields" role="tabpanel" aria-labelledby="k-file" aria-live="polite">
+            <div><dt class="label">Agent reached for</dt><dd data-f="ask"></dd></div>
+            <div><dt class="label">Held at the desk</dt><dd data-f="held"></dd></div>
+            <div><dt class="label">Read by</dt><dd data-f="by"></dd></div>
+            <div><dt class="label">Returned</dt><dd data-f="answer"></dd></div>
+          </dl>
+
+          <div class="form-foot">
+            <div class="stamp" id="stamp" aria-live="polite"><span>Kept off the desk</span><b id="kept">9,213</b><span>tokens</span></div>
+            <small>Example request. Files, answers and token counts come from the benchmark in docs/VALIDATION.md (worker: Claude Haiku).</small>
+          </div>
+        </div>
+
+        <aside class="stub" aria-labelledby="install-h">
+          <h2 id="install-h">Install</h2>
+          <div class="select-wrap">
+            <label class="label" for="harness">Your harness</label>
+            <select id="harness">
+              <option value="claude">Claude Code</option>
+              <option value="codex">OpenAI Codex CLI</option>
+              <option value="cursor">Cursor</option>
+              <option value="gemini">Gemini CLI</option>
+              <option value="copilot">GitHub Copilot CLI</option>
+              <option value="opencode">OpenCode</option>
+              <option value="pi">Pi</option>
+              <option value="qwen">Qwen Code</option>
+              <option value="crush">Crush</option>
+              <option value="kilo">Kilo Code CLI</option>
+              <option value="devin">Windsurf / Devin</option>
+              <option value="amp">Amp (experimental)</option>
+              <option value="mcp">Any MCP client</option>
+            </select>
+          </div>
+          <pre class="cmd" id="cmd" aria-live="polite"></pre>
+          <button class="copy" type="button" id="copy">Copy command</button>
+          <p class="after" id="after"></p>
+          <div class="also">
+            <p>Or install the CLI once and let its setup wire up every harness it finds:</p>
+            <pre class="cmd" id="cmd-stub-all">npm i -g harness-offload
+offload setup</pre>
+          </div>
+        </aside>
+      </article>
+    </div>
+  </section>
+
+  <section class="band" id="route" aria-labelledby="route-h">
+    <div class="wrap">
+      <div class="band-head">
+        <h2 id="route-h">How a request travels</h2>
+        <p>Nothing changes in how you work. The harness’s own hooks catch the expensive moves and send them to the stacks.</p>
+      </div>
+      <ol class="route slip">
+        <li><span class="n" aria-hidden="true">1</span><h3>Your agent reaches for 3,000 lines</h3><p>A full read, a <code>cat</code>, a test run that prints for minutes.</p></li>
+        <li><span class="n" aria-hidden="true">2</span><h3>The hook holds it at the desk</h3><p>The agent gets an outline of the file and three cheaper options instead of the dump.</p></li>
+        <li><span class="n" aria-hidden="true">3</span><h3>A small model reads it</h3><p><code>offload read -q "…" ledger.ts</code> runs on your own plan, outside the agent’s context.</p></li>
+        <li><span class="n" aria-hidden="true">4</span><h3>The answer comes back checked</h3><p>Each <code>path:L415-L417</code> must quote text that is really there, or it is flagged.</p></li>
+      </ol>
+    </div>
+  </section>
+
+  <section class="band" id="measured" aria-labelledby="measured-h">
+    <div class="wrap">
+      <div class="band-head">
+        <h2 id="measured-h">Measured on real files</h2>
+        <p>Tokens the agent would have read, against what Harness Offload handed back. Same questions, both engines, a real worker model.</p>
+      </div>
+      <div class="slip ledger">
+        <div class="scroll">
+          <table>
+            <thead>
+              <tr><th scope="col">Request</th><th scope="col" class="num">Agent would read</th><th scope="col" class="num">Returned</th><th scope="col" class="num">Kept off the desk</th><th scope="col" class="num">Facts found</th></tr>
+            </thead>
+            <tbody>
+              <tr><td>Questions about a 919-line module</td><td class="num">9,666</td><td class="num">453</td><td class="num"><span class="saved">95%</span></td><td class="num">4 / 4</td></tr>
+              <tr><td>Digest of a 2,323-line CI log with two failures</td><td class="num">32,771</td><td class="num">659</td><td class="num"><span class="saved">97%</span></td><td class="num">3 / 3</td></tr>
+              <tr><td>Pytest file written from a reference test</td><td class="num">759</td><td class="num">54</td><td class="num"><span class="saved">92%</span></td><td class="num">2 / 2</td></tr>
+              <tr><td>Two small files, one question</td><td class="num">1,230</td><td class="num">544</td><td class="num"><span class="saved">55%</span></td><td class="num">3 / 3</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="ledger-notes">
+          <p><strong>The generated tests passed 28 of 28</strong> against the real module without edits.</p>
+          <p><strong>In a real Claude Code session</strong> about 4 KB reached the agent’s context instead of 48 KB. On a debugging task it kept the work for itself, as it should.</p>
+        </div>
+        <p class="source">Source: docs/VALIDATION.md, 2026-11-01. Small inputs save little, so the read guard leaves them alone.</p>
+      </div>
+    </div>
+  </section>
+
+  <section class="band" id="harnesses" aria-labelledby="harnesses-h">
+    <div class="wrap">
+      <div class="band-head">
+        <h2 id="harnesses-h">Runs inside the harness you already use</h2>
+        <p>Each integration uses that harness’s own hooks or plugin API. Where a harness can’t intercept tools, the same work is offered as MCP tools.</p>
+      </div>
+      <div class="slip ledger">
+        <div class="scroll">
+          <table class="register">
+            <thead><tr><th scope="col">Harness</th><th scope="col">Guards</th><th scope="col">Default reader (@host)</th><th scope="col">Install</th></tr></thead>
+            <tbody>
+              <tr><td>Claude Code</td><td><span class="depth full">Reads · output · guide</span></td><td>Haiku on your Claude plan</td><td><code>npx harness-offload install claude</code></td></tr>
+              <tr><td>Codex CLI</td><td><span class="depth full">Shell · output · MCP</span></td><td>gpt-6-luna on your ChatGPT plan</td><td><code>npx harness-offload install codex</code></td></tr>
+              <tr><td>Gemini CLI</td><td><span class="depth full">Reads · output · MCP</span></td><td>Flash-Lite on your Google account</td><td><code>npx harness-offload install gemini</code></td></tr>
+              <tr><td>GitHub Copilot CLI</td><td><span class="depth full">Reads · output · guide</span></td><td>your configured model</td><td><code>npx harness-offload install copilot</code></td></tr>
+              <tr><td>OpenCode · Kilo</td><td><span class="depth full">Reads · output · guide</span></td><td>OpenCode’s default model</td><td><code>npx harness-offload install opencode</code></td></tr>
+              <tr><td>Pi</td><td><span class="depth full">Reads · output · tools</span></td><td>Pi’s default model</td><td><code>npx harness-offload install pi</code></td></tr>
+              <tr><td>Crush</td><td><span class="depth full">Reads · output · guide</span></td><td>your configured model</td><td><code>npx harness-offload install crush</code></td></tr>
+              <tr><td>Cursor</td><td><span class="depth guard">Reads · shell · MCP</span></td><td>Cursor’s default model</td><td><code>npx harness-offload install cursor</code></td></tr>
+              <tr><td>Qwen Code</td><td><span class="depth guard">Reads · shell · guide</span></td><td>your configured model</td><td><code>npx harness-offload install qwen</code></td></tr>
+              <tr><td>Windsurf / Devin</td><td><span class="depth full">Reads · output · guide</span></td><td>claude:haiku (needs Claude Code)</td><td><code>npx harness-offload install devin</code></td></tr>
+              <tr><td>Cline, Zed, Continue, Goose, Kiro, VS Code</td><td><span class="depth tools">MCP tools</span></td><td>your configured model</td><td><code>npx harness-offload install mcp</code></td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p class="source">Amp (experimental plugin) and Aider (conventions file) are covered too. Verified end to end in Claude Code, OpenCode, Pi, Codex, Copilot CLI, Crush and Qwen Code.</p>
+      </div>
+    </div>
+  </section>
+
+  <section class="band" id="plans" aria-labelledby="plans-h">
+    <div class="wrap plans">
+      <div class="slip">
+        <h3 id="plans-h">Paid for by a plan you already have</h3>
+        <dl class="plan-rows">
+          <div><dt class="label">Default</dt><dd>@host · your harness’s own small model</dd></div>
+          <div><dt class="label">OpenCode</dt><dd>Zen, Go, ChatGPT, GitHub Copilot logins</dd></div>
+          <div><dt class="label">Agent CLIs</dt><dd>claude:haiku · codex:gpt-6-luna · gemini:flash-lite · pi: · cursor:</dd></div>
+          <div><dt class="label">API keys</dt><dd>openrouter: · groq: · deepseek: · mistral: · anthropic: · google:</dd></div>
+          <div><dt class="label">Local</dt><dd>ollama:qwen3:8b · lmstudio: · vllm:</dd></div>
+          <div><dt class="label">Fallback</dt><dd>a second backend takes over when the first hits its limit</dd></div>
+        </dl>
+      </div>
+      <div class="aside">
+        <p><strong>Out of the box, each harness reads with its own cheapest model.</strong> In Claude Code that is a lean <code>claude -p</code> with Haiku: no plugins, no MCP servers, a short system prompt of its own.</p>
+        <p>The saving is in your main session: the big material never enters its context, so the conversation stays short and every later turn costs less. Worker calls still count toward that plan’s limits, at the small model’s rate.</p>
+        <p>Run <code>offload setup</code> to pick other backends, add an API key or a local model, and choose a fallback.</p>
+      </div>
+    </div>
+  </section>
+
+  <section class="band" aria-labelledby="rules-h">
+    <div class="wrap">
+      <div class="band-head"><h2 id="rules-h">Careful with your code</h2></div>
+      <dl class="rules">
+        <div><dt>Fails open</dt><dd>If a backend is missing, slow or out of quota, the hooks step aside and your agent’s tools work as before.</dd></div>
+        <div><dt>Secrets stay home</dt><dd><code>.env</code>, keys and certificates are never sent, links to them included, and credentials in output are masked.</dd></div>
+        <div><dt>Answers are checked</dt><dd>A citation must quote text within three lines of where it points. Anything else is marked unverified.</dd></div>
+      </dl>
+    </div>
+  </section>
+
+  <section class="close" aria-labelledby="close-h">
+    <div class="wrap">
+      <div class="slip">
+        <div class="close-main">
+          <h2 id="close-h">Install it once. It works in every harness you use.</h2>
+          <pre class="cmd" id="cmd-all">npm i -g harness-offload
+offload setup</pre>
+          <div class="links"><a href="https://github.com/OWNER/harness-offload">Source on GitHub</a><a href="https://github.com/OWNER/harness-offload/blob/main/docs/hosts.md">Per-harness notes</a><a href="https://github.com/OWNER/harness-offload/blob/main/SECURITY.md">Security model</a></div>
+        </div>
+        <button class="copy" type="button" id="copy-all">Copy command</button>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <div class="wrap">
+    <span>Harness Offload · MIT licence</span>
+    <span>Works with bash and jq; Node 18+ for the setup wizard and MCP server.</span>
+  </div>
+</footer>
+
+<script>
+(() => {
+  const esc = (s) => s.replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" })[c]);
+  const mark = (s) => `<span class="mark">${esc(s)}</span>`;
+  const ok = '<span class="check">✓ checked</span>';
+  const KINDS = {
+    file: {
+      ask: "Read ledger.ts — 919 lines, about 9,666 tokens",
+      held: "An outline of the file and three cheaper options, about 40 lines",
+      by: "@host → claude:haiku, on your Claude plan",
+      answer: `MAX_BATCH is 500 ${mark("ledger.ts:L5")} ${ok}. applyLateFee charges 2.5% ${mark("ledger.ts:L6")} ${ok} and carries a TODO to cap the fee at 50.00 ${mark("ledger.ts:L415")} ${ok}. LedgerReconciler starts at ${mark("ledger.ts:L676")}. <span class="dim">453 tokens.</span>`,
+      kept: 9213,
+    },
+    log: {
+      ask: "npm test — 2,323 lines of output, about 32,771 tokens",
+      held: "The command ran; its output became a digest with the full log kept on disk",
+      by: "@host → claude:haiku, on your Claude plan",
+      answer: `2 failed, 1,898 passed. ${mark("inventory.test.ts:41")} commit refuses an expired reservation: expected the promise to reject with "expired". ${mark("pricing.test.ts:88")} 10% bulk tier at 100 units: expected 1080.00 to equal 1071.36. <span class="dim">659 tokens, verbatim error lines included.</span>`,
+      kept: 32112,
+    },
+    two: {
+      ask: "Read inventory.ts and inventory.test.ts — 138 lines, about 1,230 tokens",
+      held: "Nothing: small files pass straight through. Here the agent asked offload directly",
+      by: "@host → claude:haiku, on your Claude plan",
+      answer: `The tests cover reserve and commit ${mark("inventory.test.ts:L17")} ${ok} ${mark("inventory.test.ts:L34")} ${ok}. release, restock, needsReorder and expireStale have none. reserve throws OutOfStockError when free stock is short ${mark("inventory.ts:L43")} ${ok}. <span class="dim">544 tokens.</span>`,
+      kept: 686,
+    },
+  };
+  const fields = document.getElementById("fields");
+  const stamp = document.getElementById("stamp");
+  const kept = document.getElementById("kept");
+  const tabs = [...document.querySelectorAll(".kinds [role=tab]")];
+  const fmt = new Intl.NumberFormat("en-US");
+
+  function show(kind, animate) {
+    const k = KINDS[kind];
+    for (const dd of fields.querySelectorAll("dd")) {
+      const f = dd.dataset.f;
+      if (f === "answer") dd.innerHTML = k.answer;
+      else dd.textContent = k[f];
+      if (animate) { dd.classList.remove("typed"); void dd.offsetWidth; dd.classList.add("typed"); }
+    }
+    kept.textContent = fmt.format(k.kept);
+    if (animate) { stamp.classList.remove("press"); void stamp.offsetWidth; stamp.classList.add("press"); }
+    for (const t of tabs) {
+      const on = t.dataset.kind === kind;
+      t.setAttribute("aria-selected", String(on));
+      t.tabIndex = on ? 0 : -1;
+      if (on) fields.setAttribute("aria-labelledby", t.id);
+    }
+  }
+  tabs.forEach((t, i) => {
+    t.addEventListener("click", () => show(t.dataset.kind, true));
+    t.addEventListener("keydown", (e) => {
+      if (e.key !== "ArrowRight" && e.key !== "ArrowLeft") return;
+      const n = tabs[(i + (e.key === "ArrowRight" ? 1 : tabs.length - 1)) % tabs.length];
+      n.focus();
+      show(n.dataset.kind, true);
+    });
+  });
+  show("file", false);
+
+  const INSTALL = {
+    claude: ["/plugin marketplace add OWNER/harness-offload\n/plugin install harness-offload@harness-offload", "Type both lines in Claude Code. No Node needed: by default it reads with Haiku on your own plan."],
+    codex: ["npx harness-offload install codex", "Then open /hooks in Codex and trust the Harness Offload hooks."],
+    cursor: ["npx harness-offload install cursor", "Then run Developer: Reload Window."],
+    gemini: ["npx harness-offload install gemini", "Installs a Gemini CLI extension with hooks and MCP tools."],
+    copilot: ["npx harness-offload install copilot", "Copilot loads the Claude Code plugin; start a new session."],
+    opencode: ["npx harness-offload install opencode", "Works with OpenCode 1.x and 2.x."],
+    pi: ["npx harness-offload install pi", "Adds offload_read, offload_explore and offload_run as Pi tools."],
+    qwen: ["npx harness-offload install qwen", "Qwen converts the plugin into an extension."],
+    crush: ["npx harness-offload install crush", "Adds hooks and a guide to ~/.config/crush/crush.json."],
+    kilo: ["npx harness-offload install kilo", "Kilo uses the OpenCode plugin."],
+    devin: ["npx harness-offload install devin", "Devin Desktop reads Claude Code plugins."],
+    amp: ["npx harness-offload install amp", "Then run plugins: reload in Amp. This integration is experimental."],
+    mcp: ["npx harness-offload install mcp", "Prints a ready config for Cline, Zed, Continue, Goose, Kiro, VS Code and Claude Desktop."],
+  };
+  const sel = document.getElementById("harness");
+  const cmd = document.getElementById("cmd");
+  const after = document.getElementById("after");
+  function pick() {
+    const [c, note] = INSTALL[sel.value];
+    cmd.textContent = c;
+    after.textContent = note;
+  }
+  sel.addEventListener("change", pick);
+  pick();
+
+  function copyFrom(btn, src) {
+    btn.addEventListener("click", async () => {
+      const text = src.textContent;
+      try {
+        await navigator.clipboard.writeText(text);
+        btn.textContent = "Copied";
+      } catch {
+        const r = document.createRange();
+        r.selectNodeContents(src);
+        const s = getSelection();
+        s.removeAllRanges();
+        s.addRange(r);
+        btn.textContent = "Selected — press Ctrl+C";
+      }
+      setTimeout(() => (btn.textContent = "Copy command"), 1800);
+    });
+  }
+  copyFrom(document.getElementById("copy"), cmd);
+  copyFrom(document.getElementById("copy-all"), document.getElementById("cmd-all"));
+})();
+</script>
+</body>
+</html>

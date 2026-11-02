@@ -14,6 +14,7 @@ export const OUTLINE_JSON = ${JSON.stringify(JSON.parse(read("config/outline.jso
 export const CONNECTORS_JSON = ${JSON.stringify(JSON.parse(read("config/connectors.json")))} as const;
 export const PROMPT_TEXT = ${JSON.stringify(prompts, null, 2)} as const;
 export const PLUGIN_VERSION = ${JSON.stringify(JSON.parse(read(".claude-plugin/plugin.json")).version)};
+export const DASHBOARD_HTML = ${JSON.stringify(readFileSync(join(here, "..", "src", "ui", "dashboard.html"), "utf8"))};
 `;
 mkdirSync(join(here, "..", "src", "generated"), { recursive: true });
 writeFileSync(join(here, "..", "src", "generated", "assets.ts"), out);

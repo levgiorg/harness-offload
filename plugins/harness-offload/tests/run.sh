@@ -47,6 +47,9 @@ chmod +x "$HERE/stub-opencode" "$OFFLOAD" "$PLUGIN"/hooks/* 2>/dev/null
 P="$T/proj"; mkdir -p "$P"; cd "$P" || exit 1
 export CO_PROJECT_DIR="$P"
 
+HAVE_TS_NODE=false
+command -v node >/dev/null 2>&1 && [ -f "$PLUGIN/dist/cli.js" ] && HAVE_TS_NODE=true
+
 # Fixtures
 awk 'BEGIN { for (i = 1; i <= 1200; i++) printf "export function fn%d(a: number): number { return a + %d }\n", i, i }' > big.ts
 seq 1 40 > small.txt
@@ -298,6 +301,11 @@ out=$("$OFFLOAD" stats)
 expect_has "stats: aggregates" "$out" "delegations:"
 out=$("$OFFLOAD" doctor 2>&1)
 expect_has "doctor runs" "$out" "worker agents load"
+if [ "$HAVE_TS_NODE" = true ]; then
+  out=$("$OFFLOAD" dashboard --out "$T/dash.html" 2>&1)
+  expect_eq "dashboard: prints the report path" "$out" "$T/dash.html"
+  expect_has "dashboard: report embeds this machine's stats" "$(cat "$T/dash.html")" '"kind":"read"'
+fi
 
 # ------------------------------------------------------- agent connectors
 section "agent connectors (stub claude/codex/gemini/cursor-agent/pi)"

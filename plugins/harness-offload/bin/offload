@@ -38,6 +38,7 @@ offload — delegate bulk I/O to cheap OpenCode models (keeps it out of Claude's
 
   offload doctor [--ping] [--reset]     Check setup; --ping makes a tiny live call per model.
   offload stats [--days N]              Delegations and estimated Claude tokens saved.
+  offload dashboard [--open] [--sample] HTML report of the same (needs Node 18+).
   offload statusline                    One short line for status bars.
   offload config [show|path|init|set KEY VALUE|trust] [--project]
 
@@ -731,6 +732,7 @@ main() {
     doctor)          cmd_doctor "$@" ;;
     stats)           cmd_stats "$@" ;;
     statusline)      cmd_statusline ;;
+    dashboard)       co_ts_run dashboard "$@" || die "dashboard needs Node.js 18+ (the report is built by the bundled TypeScript CLI)" "$CO_E_NOOC" ;;
     config)          cmd_config "$@" ;;
     *) co_err "unknown command: $cmd"; usage >&2; return "$CO_E_USAGE" ;;
   esac

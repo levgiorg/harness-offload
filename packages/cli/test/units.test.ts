@@ -104,3 +104,16 @@ describe("redact (same vectors as the bash suite)", () => {
     expect(out).toContain("@db.example.com/app");
   });
 });
+
+describe("dashboard", () => {
+  test("embeds the rows safely and renders the report shell", async () => {
+    const { renderDashboard, sampleStats } = await import("../src/commands/dashboard.ts");
+    const html = renderDashboard([{ ts: 1, kind: "digest", label: "</script><img src=x onerror=alert(1)>", saved_tokens: 10 }], { source: "/tmp/stats.jsonl" });
+    expect(html).toContain("Harness Offload report");
+    expect(html).not.toContain("</script><img");
+    expect(html).toContain("\\u003c/script>");
+    const rows = sampleStats(1_800_000_000);
+    expect(rows.length).toBeGreaterThan(100);
+    expect(rows.every((r) => typeof r.ts === "number" && r.kind)).toBe(true);
+  });
+});

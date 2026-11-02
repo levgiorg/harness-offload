@@ -58,7 +58,440 @@ var __esm = (fn, res, err) => () => {
 };
 
 // src/generated/assets.ts
-var DEFAULTS_JSON, OUTLINE_JSON, CONNECTORS_JSON, PROMPT_TEXT, PLUGIN_VERSION = "0.2.0";
+var DEFAULTS_JSON, OUTLINE_JSON, CONNECTORS_JSON, PROMPT_TEXT, PLUGIN_VERSION = "0.2.0", DASHBOARD_HTML = `<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Offload Report</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<style>
+/* Layout: a carbon-blue header band with the period filter, one summary line, the daily chart, breakdown tables side by side, then the latest delegations */
+:root {
+  --shell: #2140b8;
+  --on-shell: #f4f7ff;
+  --on-shell-2: #cdd7ff;
+  --bg: #eef1f9;
+  --panel: #fbfcff;
+  --line: #d6ddef;
+  --grid: #e3e8f5;
+  --text: #161a26;
+  --text-2: #4a5373;
+  --accent: #2140b8;
+  --accent-hover: #3555d6;
+  --ok: #1b7348;
+  --bad: #c81e36;
+  --warn: #8a5300;
+  --font: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --mono: ui-monospace, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --shell: #13205e; --on-shell: #eef1ff; --on-shell-2: #a9b8f2; --bg: #0b1230; --panel: #141c40; --line: #2a3566;
+    --grid: #1f2a55; --text: #e9edff; --text-2: #a7b2dc; --accent: #5f79ec; --accent-hover: #7a90f2; --ok: #2a9f6a;
+    --bad: #ec4f64; --warn: #e0a347; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --shell: #13205e; --on-shell: #eef1ff; --on-shell-2: #a9b8f2; --bg: #0b1230; --panel: #141c40; --line: #2a3566;
+  --grid: #1f2a55; --text: #e9edff; --text-2: #a7b2dc; --accent: #5f79ec; --accent-hover: #7a90f2; --ok: #2a9f6a;
+  --bad: #ec4f64; --warn: #e0a347; color-scheme: dark;
+}
+*, *::before, *::after { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--text); font: 400 15px/1.5 var(--font); }
+::selection { background: var(--accent); color: var(--panel); }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.gutter { padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+.wrap { max-width: 76rem; margin: 0 auto; }
+h1, h2 { margin: 0; text-wrap: balance; }
+
+header.band { background: var(--shell); color: var(--on-shell); padding-block: 1.1rem 1.2rem; }
+header .wrap { display: flex; flex-wrap: wrap; gap: 0.75rem 2rem; align-items: center; justify-content: space-between; }
+header h1 { font-size: 1.15rem; font-weight: 700; letter-spacing: -0.01em; }
+header .meta { color: var(--on-shell-2); font-size: 0.8rem; margin-top: 0.15rem; overflow-wrap: anywhere; }
+.period { display: inline-flex; margin: 0; padding: 0; min-inline-size: 0; border: 1px solid var(--on-shell-2); border-radius: 6px; overflow: hidden; }
+.period input { position: absolute; opacity: 0; pointer-events: none; }
+.period label { padding: 0.4rem 0.8rem; font-size: 0.85rem; font-weight: 600; cursor: pointer; color: var(--on-shell); transition: background-color 150ms ease-out; }
+.period label:not(:first-of-type) { border-left: 1px solid var(--on-shell-2); }
+.period label:hover { background: rgb(255 255 255 / 0.12); }
+.period input:checked + label { background: var(--on-shell); color: var(--shell); }
+.period input:focus-visible + label { outline: 2px solid var(--on-shell); outline-offset: -4px; }
+
+.notice { background: var(--panel); border-bottom: 1px solid var(--line); padding-block: 0.6rem; font-size: 0.85rem; color: var(--text-2); }
+.notice strong { color: var(--warn); }
+
+main { padding-block: 1.5rem 3rem; }
+.stack { display: grid; gap: 1.5rem; }
+.summary { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 1px; background: var(--line); border: 1px solid var(--line); border-radius: 8px; overflow: hidden; margin: 0; }
+.summary > div { background: var(--panel); padding: 0.9rem 1.1rem; display: grid; gap: 0.15rem; min-width: 0; }
+.summary dt { font-size: 0.8rem; color: var(--text-2); }
+.summary dd { margin: 0; font-size: 1.6rem; font-weight: 650; font-variant-numeric: tabular-nums; letter-spacing: -0.01em; }
+.summary .sub { font-size: 0.8rem; color: var(--text-2); font-variant-numeric: tabular-nums; }
+
+.panel { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 1rem 1.1rem 1.1rem; min-width: 0; }
+.panel-head { display: flex; flex-wrap: wrap; gap: 0.5rem 1rem; align-items: baseline; justify-content: space-between; margin-bottom: 0.75rem; }
+.panel h2 { font-size: 0.95rem; font-weight: 650; }
+.panel .hint { font-size: 0.8rem; color: var(--text-2); }
+.chart { position: relative; }
+.chart svg { display: block; width: 100%; height: 240px; overflow: visible; }
+.chart .bar { fill: var(--accent); transition: fill 120ms ease-out; }
+.chart .hit { fill: transparent; cursor: default; }
+.chart .hit:hover + .bar, .chart .hit:focus + .bar, .chart g.on .bar { fill: var(--accent-hover); }
+.chart .gridline { stroke: var(--grid); stroke-width: 1; }
+.chart .axis { fill: var(--text-2); font: 400 11px var(--font); font-variant-numeric: tabular-nums; }
+.tip { position: absolute; pointer-events: none; background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 0.45rem 0.6rem; font-size: 0.8rem; box-shadow: 0 6px 18px -8px rgb(0 0 0 / 0.35); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.tip strong { display: block; font-size: 0.95rem; }
+.tip span { color: var(--text-2); }
+details.table-view { margin-top: 0.6rem; font-size: 0.85rem; }
+details.table-view summary { cursor: pointer; color: var(--text-2); }
+
+.split { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1.5rem; }
+.scroll { overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; font-size: 0.875rem; }
+th { text-align: left; font-weight: 600; font-size: 0.78rem; color: var(--text-2); padding: 0.45rem 0.6rem; border-bottom: 1px solid var(--line); white-space: nowrap; }
+td { padding: 0.5rem 0.6rem; border-bottom: 1px solid var(--grid); vertical-align: top; }
+tbody tr:hover td { background: color-mix(in srgb, var(--accent) 5%, transparent); }
+.num { text-align: right; }
+.mono { font-family: var(--mono); font-size: 0.82rem; white-space: nowrap; }
+.split table { min-width: 30rem; }
+#recent { min-width: 52rem; }
+.more { margin-top: 0.75rem; font: 600 0.85rem/1 var(--font); color: var(--accent); background: transparent; border: 1px solid var(--line); border-radius: 6px; padding: 0.5rem 0.8rem; cursor: pointer; }
+.more:hover { border-color: var(--accent); }
+.what { max-width: 26rem; overflow-wrap: anywhere; }
+.muted { color: var(--text-2); }
+
+.chip { display: inline-flex; align-items: center; gap: 0.3rem; padding: 0.12rem 0.45rem; border-radius: 4px; font-size: 0.78rem; font-weight: 600; white-space: nowrap; border: 1px solid currentColor; }
+.chip svg { width: 12px; height: 12px; flex: none; }
+.chip.ok { color: var(--ok); }
+.chip.bad { color: var(--bad); }
+.chip.none { color: var(--text-2); border-color: var(--line); font-weight: 500; }
+
+.empty { padding: 2rem 1rem; text-align: left; display: grid; gap: 0.5rem; max-width: 40rem; }
+.empty h2 { font-size: 1.05rem; }
+.empty code { font-family: var(--mono); background: var(--bg); padding: 0.1rem 0.35rem; border-radius: 4px; }
+
+footer { padding-block: 0 2rem; font-size: 0.8rem; color: var(--text-2); }
+
+@media (max-width: 900px) {
+  .summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .split { grid-template-columns: minmax(0, 1fr); }
+}
+@media (max-width: 420px) {
+  .summary dd { font-size: 1.35rem; }
+}
+@media (prefers-reduced-motion: reduce) {
+  * { transition: none !important; }
+}
+</style>
+</head>
+<body>
+<header class="band gutter">
+  <div class="wrap">
+    <div>
+      <h1>Harness Offload report</h1>
+      <div class="meta" id="meta"></div>
+    </div>
+    <fieldset class="period" aria-label="Period">
+      <input type="radio" name="p" id="p1" value="1"><label for="p1">24 hours</label>
+      <input type="radio" name="p" id="p7" value="7"><label for="p7">7 days</label>
+      <input type="radio" name="p" id="p30" value="30"><label for="p30">30 days</label>
+      <input type="radio" name="p" id="p0" value="0"><label for="p0">All</label>
+    </fieldset>
+  </div>
+</header>
+<div class="notice gutter" id="sample" hidden><div class="wrap"><strong>Example data.</strong> These figures were generated for illustration and are not anyone’s real usage. Run <span class="mono">offload dashboard</span> without <span class="mono">--sample</span> for your own.</div></div>
+
+<main class="gutter">
+  <div class="wrap stack">
+    <dl class="summary" id="summary" aria-label="Summary for the selected period"></dl>
+
+    <section class="panel" aria-labelledby="chart-h">
+      <div class="panel-head">
+        <h2 id="chart-h">Tokens kept out of your agent’s context</h2>
+        <span class="hint" id="chart-hint"></span>
+      </div>
+      <div class="chart" id="chart"></div>
+      <details class="table-view"><summary>Show as a table</summary><div class="scroll"><table id="chart-table"></table></div></details>
+    </section>
+
+    <div class="split">
+      <section class="panel" aria-labelledby="kind-h">
+        <div class="panel-head"><h2 id="kind-h">By kind</h2><span class="hint">reads, digests, exploration, writing</span></div>
+        <div class="scroll"><table id="by-kind"></table></div>
+      </section>
+      <section class="panel" aria-labelledby="model-h">
+        <div class="panel-head"><h2 id="model-h">By model</h2><span class="hint">who did the reading</span></div>
+        <div class="scroll"><table id="by-model"></table></div>
+      </section>
+    </div>
+
+    <section class="panel" aria-labelledby="recent-h">
+      <div class="panel-head"><h2 id="recent-h">Latest delegations</h2><span class="hint" id="hooks-line"></span></div>
+      <div class="scroll"><table id="recent"></table></div>
+      <button type="button" class="more" id="more" hidden></button>
+    </section>
+  </div>
+</main>
+<footer class="gutter"><div class="wrap" id="foot"></div></footer>
+
+<script id="offload-data" type="application/json">/*__OFFLOAD_DATA__*/null</script>
+<script>
+(() => {
+  const DATA = JSON.parse(document.getElementById("offload-data").textContent) || { rows: [], source: "", generated: Math.floor(Date.now() / 1000), version: "", days: 0 };
+  const all = (DATA.rows || []).filter((r) => r && typeof r.ts === "number");
+  const nf = new Intl.NumberFormat("en-US");
+  const compact = (n) => (Math.abs(n) >= 1e6 ? (n / 1e6).toFixed(n >= 1e7 ? 0 : 1) + "M" : Math.abs(n) >= 1e4 ? Math.round(n / 1e3) + "K" : nf.format(Math.round(n)));
+  const el = (tag, attrs = {}, kids = []) => {
+    const e = document.createElement(tag);
+    for (const [k, v] of Object.entries(attrs)) {
+      if (k === "text") e.textContent = v;
+      else if (k === "class") e.className = v;
+      else e.setAttribute(k, v);
+    }
+    for (const c of kids) e.append(c);
+    return e;
+  };
+  const SVGNS = "http://www.w3.org/2000/svg";
+  const svg = (tag, attrs = {}) => {
+    const e = document.createElementNS(SVGNS, tag);
+    for (const [k, v] of Object.entries(attrs)) e.setAttribute(k, String(v));
+    return e;
+  };
+  const ICON = {
+    ok: '<svg viewBox="0 0 12 12" aria-hidden="true"><path d="M2.2 6.3 4.8 8.8 9.8 3.4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+    bad: '<svg viewBox="0 0 12 12" aria-hidden="true"><path d="M6 1.6 11 10.4H1z" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/><path d="M6 4.6v2.6M6 8.7v.1" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>',
+  };
+  const chip = (cls, text) => {
+    const c = el("span", { class: \`chip \${cls}\` });
+    if (ICON[cls]) c.insertAdjacentHTML("afterbegin", ICON[cls]);
+    c.append(document.createTextNode(text));
+    return c;
+  };
+  const KIND = { read: "Read", digest: "Command digest", explore: "Explore", write: "Write", ask: "Ask", summarize: "Summarize" };
+  const kindName = (r) => (r.kind === "digest" && r.source ? \`\${KIND.digest} (\${r.source})\` : KIND[r.kind] || r.kind);
+  const worker = (r) => (Number(r.worker_tokens_in) || 0) + (Number(r.worker_tokens_out) || 0);
+  const kept = (r) => Math.max(0, Number(r.saved_tokens) || 0);
+  const failed = (r) => r.model_ok === false;
+
+  document.getElementById("meta").textContent = \`\${DATA.sample ? "example data" : DATA.source || "stats"} · generated \${new Date(DATA.generated * 1000).toLocaleString()}\`;
+  document.getElementById("sample").hidden = !DATA.sample;
+  document.getElementById("foot").textContent = \`Harness Offload \${DATA.version || ""} · estimates are bytes ÷ 4 of what stayed out of context; cache effects and extra turns are not counted.\`;
+
+  const now = DATA.generated || Math.floor(Date.now() / 1000);
+  const hasRecent = all.some((r) => r.ts >= now - 30 * 86400);
+  let days = DATA.days || (hasRecent ? 30 : 0);
+  const radio = document.querySelector(\`.period input[value="\${days}"]\`) || document.getElementById("p0");
+  radio.checked = true;
+  for (const r of document.querySelectorAll(".period input")) r.addEventListener("change", () => { days = Number(r.value); render(); });
+
+  function render() {
+    const since = days ? now - days * 86400 : -Infinity;
+    const rows = all.filter((r) => r.ts >= since);
+    const del = rows.filter((r) => r.kind !== "hook");
+    const hooks = rows.filter((r) => r.kind === "hook");
+    summary(del);
+    chart(del);
+    byKind(del);
+    byModel(del);
+    recent(del, hooks);
+  }
+
+  function summary(del) {
+    const s = document.getElementById("summary");
+    s.replaceChildren();
+    const ok = del.reduce((a, r) => a + (Number(r.cites_ok) || 0), 0);
+    const bad = del.reduce((a, r) => a + (Number(r.cites_bad) || 0), 0);
+    const fails = del.filter(failed).length;
+    const items = [
+      ["Kept out of context", compact(del.reduce((a, r) => a + kept(r), 0)), "tokens (estimated)"],
+      ["Worker tokens", compact(del.reduce((a, r) => a + worker(r), 0)), "read and written by cheap models"],
+      ["Delegations", nf.format(del.length), !del.length ? "none yet" : fails ? \`\${fails} without a model summary\` : "all completed"],
+      ["Citations checked", ok + bad ? \`\${Math.round((ok / (ok + bad)) * 100)}%\` : "—", ok + bad ? \`\${nf.format(ok)} of \${nf.format(ok + bad)} quotes found in the file\` : "no cited answers yet"],
+    ];
+    for (const [label, value, sub] of items) s.append(el("div", {}, [el("dt", { text: label }), el("dd", { text: value }), el("span", { class: "sub", text: sub })]));
+  }
+
+  function buckets(del) {
+    const hourly = days === 1;
+    const span = hourly ? 3600 : 86400;
+    let start;
+    if (days) start = now - days * 86400;
+    else start = del.length ? Math.min(...del.map((r) => r.ts)) : now - 7 * 86400;
+    const weekly = !hourly && (now - start) / 86400 > 120;
+    const step = weekly ? 7 * 86400 : span;
+    const floor = (t) => {
+      const d = new Date(t * 1000);
+      if (hourly) d.setMinutes(0, 0, 0);
+      else d.setHours(0, 0, 0, 0);
+      return Math.floor(d.getTime() / 1000);
+    };
+    const first = floor(start);
+    const out = [];
+    for (let t = first; t <= now; t += step) out.push({ t, kept: 0, n: 0, worker: 0 });
+    for (const r of del) {
+      const i = Math.min(out.length - 1, Math.max(0, Math.floor((r.ts - first) / step)));
+      if (!out[i]) continue;
+      out[i].kept += kept(r);
+      out[i].n += 1;
+      out[i].worker += worker(r);
+    }
+    const fmt = hourly ? (t) => new Date(t * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : weekly ? (t) => "week of " + new Date(t * 1000).toLocaleDateString([], { month: "short", day: "numeric" }) : (t) => new Date(t * 1000).toLocaleDateString([], { month: "short", day: "numeric" });
+    return { out, fmt, unit: hourly ? "per hour" : weekly ? "per week" : "per day" };
+  }
+
+  function niceMax(v) {
+    if (v <= 0) return 1000;
+    const p = Math.pow(10, Math.floor(Math.log10(v)));
+    for (const m of [1, 1.2, 1.5, 2, 2.5, 3, 4, 5, 6, 8, 10]) if (m * p >= v) return m * p;
+    return 10 * p;
+  }
+
+  function chart(del) {
+    const host = document.getElementById("chart");
+    host.replaceChildren();
+    const { out, fmt, unit } = buckets(del);
+    document.getElementById("chart-hint").textContent = \`estimated tokens, \${unit}\`;
+    const W = Math.max(320, host.clientWidth || 800);
+    const H = 240, L = 44, R = 8, T = 10, B = 26;
+    const max = niceMax(Math.max(0, ...out.map((b) => b.kept)));
+    const s = svg("svg", { viewBox: \`0 0 \${W} \${H}\`, role: "img", "aria-label": \`Bar chart of tokens kept out of context \${unit}\` });
+    const y = (v) => T + (H - T - B) * (1 - v / max);
+    for (let i = 0; i <= 4; i++) {
+      const v = (max / 4) * i;
+      s.append(svg("line", { class: "gridline", x1: L, x2: W - R, y1: y(v), y2: y(v) }));
+      const t = svg("text", { class: "axis", x: L - 6, y: y(v) + 4, "text-anchor": "end" });
+      t.textContent = compact(v);
+      s.append(t);
+    }
+    const slot = (W - L - R) / Math.max(1, out.length);
+    const bw = Math.max(2, Math.min(24, slot - 2));
+    const tip = el("div", { class: "tip", hidden: "" });
+    const labelEvery = Math.ceil(out.length / Math.max(2, Math.floor((W - L - R) / 64)));
+    out.forEach((b, i) => {
+      const cx = L + slot * i + slot / 2;
+      const g = svg("g", {});
+      const hit = svg("rect", { class: "hit", x: L + slot * i, y: T, width: slot, height: H - T - B, tabindex: 0, role: "img", "aria-label": \`\${fmt(b.t)}: \${nf.format(b.kept)} tokens kept, \${b.n} delegations\` });
+      g.append(hit);
+      if (b.kept > 0) {
+        const h = Math.max(2, H - B - y(b.kept));
+        const x = cx - bw / 2, top = H - B - h, r = Math.min(4, bw / 2, h);
+        // rounded data end, square at the baseline
+        g.append(svg("path", { class: "bar", d: \`M\${x},\${H - B} V\${top + r} Q\${x},\${top} \${x + r},\${top} H\${x + bw - r} Q\${x + bw},\${top} \${x + bw},\${top + r} V\${H - B} Z\` }));
+      }
+      if (i % labelEvery === 0) {
+        const t = svg("text", { class: "axis", x: cx, y: H - 8, "text-anchor": "middle" });
+        t.textContent = fmt(b.t);
+        s.append(t);
+      }
+      const show = () => {
+        g.classList.add("on");
+        tip.replaceChildren(el("strong", { text: \`\${nf.format(b.kept)} tokens kept\` }), el("span", { text: \`\${fmt(b.t)} · \${b.n} delegation\${b.n === 1 ? "" : "s"} · \${compact(b.worker)} worker tokens\` }));
+        tip.hidden = false;
+        const left = Math.min(Math.max(0, (cx / W) * host.clientWidth - tip.offsetWidth / 2), host.clientWidth - tip.offsetWidth);
+        tip.style.left = \`\${left}px\`;
+        tip.style.top = \`\${Math.max(0, (y(b.kept) / H) * 240 - tip.offsetHeight - 8)}px\`;
+      };
+      const hide = () => { g.classList.remove("on"); tip.hidden = true; };
+      hit.addEventListener("pointerenter", show);
+      hit.addEventListener("pointerleave", hide);
+      hit.addEventListener("focus", show);
+      hit.addEventListener("blur", hide);
+      s.append(g);
+    });
+    s.append(svg("line", { class: "gridline", x1: L, x2: W - R, y1: H - B, y2: H - B }));
+    host.append(s, tip);
+    const tb = document.getElementById("chart-table");
+    tb.replaceChildren(el("thead", {}, [el("tr", {}, [el("th", { text: "Period" }), el("th", { class: "num", text: "Tokens kept" }), el("th", { class: "num", text: "Delegations" }), el("th", { class: "num", text: "Worker tokens" })])]));
+    const body = el("tbody");
+    for (const b of out) body.append(el("tr", {}, [el("td", { text: fmt(b.t) }), el("td", { class: "num", text: nf.format(b.kept) }), el("td", { class: "num", text: nf.format(b.n) }), el("td", { class: "num", text: nf.format(b.worker) })]));
+    tb.append(body);
+  }
+
+  function group(del, keyOf) {
+    const m = new Map();
+    for (const r of del) {
+      const k = keyOf(r);
+      const g = m.get(k) || { k, n: 0, kept: 0, worker: 0, secs: 0, fails: 0 };
+      g.n++; g.kept += kept(r); g.worker += worker(r); g.secs += Number(r.seconds) || 0; g.fails += failed(r) ? 1 : 0;
+      m.set(k, g);
+    }
+    return [...m.values()].sort((a, b) => b.kept - a.kept);
+  }
+
+  function table(id, head, rows, emptyText) {
+    const t = document.getElementById(id);
+    t.replaceChildren();
+    if (!rows.length) {
+      t.append(el("tbody", {}, [el("tr", {}, [el("td", { class: "muted", text: emptyText })])]));
+      return;
+    }
+    t.append(el("thead", {}, [el("tr", {}, head.map(([h, cls]) => el("th", { class: cls || "", text: h })))]));
+    const body = el("tbody");
+    for (const r of rows) body.append(el("tr", {}, r.map(([v, cls]) => { const td = el("td", { class: cls || "" }); td.append(v instanceof Node ? v : document.createTextNode(String(v))); return td; })));
+    t.append(body);
+  }
+
+  const failCell = (n) => (n ? chip("bad", \`\${n} failed\`) : el("span", { class: "muted", text: "–" }));
+
+  function byKind(del) {
+    table("by-kind", [["Kind"], ["Count", "num"], ["Kept", "num"], ["Avg time", "num"], ["Failures"]],
+      group(del, kindName).map((g) => [[g.k], [nf.format(g.n), "num"], [compact(g.kept), "num"], [\`\${(g.secs / g.n).toFixed(1)} s\`, "num"], [failCell(g.fails)]]), "No delegations in this period.");
+  }
+
+  function byModel(del) {
+    table("by-model", [["Model"], ["Count", "num"], ["Kept", "num"], ["Worker tokens", "num"], ["Failures"]],
+      group(del, (r) => r.model || "(no model: deterministic digest)").map((g) => [[g.k, "mono"], [nf.format(g.n), "num"], [compact(g.kept), "num"], [compact(g.worker), "num"], [failCell(g.fails)]]), "No delegations in this period.");
+  }
+
+  function citeCell(r) {
+    const ok = Number(r.cites_ok) || 0, bad = Number(r.cites_bad) || 0;
+    if (bad) return chip("bad", \`\${bad} unverified\`);
+    if (ok) return chip("ok", \`\${ok} verified\`);
+    return chip("none", "—");
+  }
+
+  function recent(del, hooks) {
+    const hl = document.getElementById("hooks-line");
+    const ev = new Map();
+    for (const h of hooks) ev.set(h.event || "hook", (ev.get(h.event || "hook") || 0) + 1);
+    hl.textContent = ev.size ? "hooks: " + [...ev].map(([k, v]) => \`\${k.replace(/_/g, " ")} \${nf.format(v)}\`).join(" · ") : "";
+    if (!all.some((r) => r.kind !== "hook")) {
+      const t = document.getElementById("recent");
+      t.replaceChildren();
+      const box = el("div", { class: "empty" }, [
+        el("h2", { text: "Nothing delegated yet" }),
+        el("p", { text: "Each read, digest or search that goes to a cheap model shows up here. Try one in a project:" }),
+        el("p", {}, [el("code", { text: 'offload read -q "what does this module export?" src/big-file.ts' })]),
+        el("p", { class: "muted", text: "Inside your agent the hooks do this for you when it reaches for a huge file or a long command output." }),
+      ]);
+      const td = el("td");
+      td.append(box);
+      t.append(el("tbody", {}, [el("tr", {}, [td])]));
+      return;
+    }
+    const sorted = [...del].sort((a, b) => b.ts - a.ts);
+    const rows = showAll ? sorted : sorted.slice(0, 25);
+    const more = document.getElementById("more");
+    more.hidden = sorted.length <= 25;
+    more.textContent = showAll ? "Show the latest 25" : \`Show all \${nf.format(sorted.length)}\`;
+    table("recent", [["When"], ["Kind"], ["What"], ["Model"], ["Kept", "num"], ["Time", "num"], ["Citations"]],
+      rows.map((r) => {
+        const d = new Date(r.ts * 1000);
+        const when = el("span", { title: d.toLocaleString(), text: d.toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }) });
+        return [[when], [kindName(r)], [r.label || (r.files ? \`\${r.files} file(s)\` : "—"), "what"], [r.model || (failed(r) ? "no model summary" : "—"), "mono"], [nf.format(kept(r)), "num"], [\`\${Number(r.seconds) || 0} s\`, "num"], [citeCell(r)]];
+      }), "No delegations in this period.");
+  }
+
+  let showAll = false;
+  document.getElementById("more").addEventListener("click", () => { showAll = !showAll; render(); });
+  render();
+  let rt;
+  addEventListener("resize", () => { clearTimeout(rt); rt = setTimeout(render, 120); });
+})();
+</script>
+</body>
+</html>
+`;
 var init_assets = __esm(() => {
   DEFAULTS_JSON = { enabled: true, backend: "opencode", endpoints: {}, agents: {}, hosts: { codex: { call: "mcp" }, cursor: { call: "mcp" } }, models: { default: "@host", read: "", explore: "", summarize: "", write: "", ask: "", fallback: ["@default"] }, variants: { read: "", explore: "", summarize: "", write: "", ask: "" }, opencode: { bin: "opencode", timeout_seconds: 180, max_stream_errors: 2, keep_sessions: false, disable_claude_code_compat: true }, read: { max_input_bytes: 1500000, max_files: 60, verify_citations: true }, explore: { max_steps: 40 }, digest: { threshold_lines: 150, threshold_bytes: 12000, use_model: true, max_model_input_bytes: 400000, key_lines: 30, tail_lines: 15 }, hooks: { read_guard: "block", read_threshold_lines: 600, read_threshold_tokens: 6000, read_max_chunk_lines: 600, bash_read_guard: true, summarize_bash_output: true, bash_output_threshold_lines: 250, bash_output_threshold_bytes: 20000, digest_timeout_seconds: 90, bash_never_summarize: "^[[:space:]]*(sudo[[:space:]]+)?(cat|bat|nl|head|tail|less|more|sed|awk|grep|egrep|fgrep|rg|ag|ack|jq|yq|diff|wc|ls|tree|find|fd|stat|file|echo|printf|offload|git[[:space:]]+(diff|show|blame|status|log))([[:space:]]|$)", autowrap: false, autowrap_pattern: "^[[:space:]]*((npm|pnpm|yarn|bun)[[:space:]]+(run[[:space:]]+)?(test|build|lint|install|ci|typecheck)|npx[[:space:]]+(jest|vitest|tsc|eslint|playwright)|(jest|vitest|pytest|tox|tsc|eslint|ruff|mypy)([[:space:]]|$)|go[[:space:]]+(test|build|vet)|cargo[[:space:]]+(test|build|check|clippy)|(mvn|mvnw|\\./mvnw|gradle|\\./gradlew)([[:space:]]|$)|make([[:space:]]|$)|pip[[:space:]]+install|docker[[:space:]]+(build|compose[[:space:]]+build)|terraform[[:space:]]+plan)", subagents: true, ignore_globs: [] }, privacy: { secret_globs: [".env", ".env.*", "*.pem", "*.key", "*.p12", "*.pfx", "*.jks", "*.keystore", "id_rsa*", "id_ecdsa*", "id_ed25519*", ".npmrc", ".pypirc", ".netrc", "credentials", "credentials.*", "secrets.*", "*.tfvars", "*.tfstate"], secret_allow_globs: ["*.example", "*.sample", "*.template", "*.dist"], redact: true }, state_dir: "", log_retention_days: 7 };
   OUTLINE_JSON = { _comment: "Symbol-outline regexes (POSIX ERE), shared by the bash and TypeScript engines. Matched with grep -E / converted to JS RegExp.", languages: [{ exts: ["ts", "tsx", "js", "jsx", "mjs", "cjs", "mts", "cts", "vue", "svelte"], regex: "^[[:space:]]*(export[[:space:]]+)?(default[[:space:]]+)?(declare[[:space:]]+)?(abstract[[:space:]]+)?(async[[:space:]]+)?(function\\*?|class|interface|type|enum|namespace|module)[[:space:]]+[A-Za-z_$]|^[[:space:]]*(export[[:space:]]+)?(const|let|var)[[:space:]]+[A-Za-z_$][A-Za-z0-9_$]*[[:space:]]*(:[^=]*)?=[[:space:]]*(async[[:space:]]+)?(\\(|function|[A-Za-z_$][A-Za-z0-9_$]*[[:space:]]*=>)|^[[:space:]]{2,4}((public|private|protected|static|async|readonly|override|get|set)[[:space:]]+)*[A-Za-z_$#][A-Za-z0-9_$]*[[:space:]]*(<[^>]*>)?\\([^;]*\\)[[:space:]]*(:[^=;{]*)?\\{|^[[:space:]]*(describe|it|test)(\\.[a-z]+)?\\(" }, { exts: ["py", "pyi"], regex: "^[[:space:]]*(async[[:space:]]+)?def[[:space:]]+[A-Za-z_]|^[[:space:]]*class[[:space:]]+[A-Za-z_]" }, { exts: ["go"], regex: "^func[[:space:]]|^type[[:space:]]+[A-Za-z_][A-Za-z0-9_]*[[:space:]]|^(var|const)[[:space:]]+\\(" }, { exts: ["rs"], regex: "^[[:space:]]*(pub(\\([^)]*\\))?[[:space:]]+)?(async[[:space:]]+)?(unsafe[[:space:]]+)?(fn|struct|enum|trait|impl|mod|macro_rules!|type)[[:space:]<]" }, { exts: ["java", "kt", "kts", "scala", "cs", "groovy", "swift", "dart"], regex: "^[[:space:]]*(@[A-Za-z]+[[:space:]]+)*((public|private|protected|internal|open|override|abstract|final|static|sealed|data|suspend|async|virtual|partial)[[:space:]]+)*(class|interface|enum|record|struct|object|fun|func|extension|protocol)[[:space:]]+[A-Za-z_]|^[[:space:]]*((public|private|protected|internal|static|final|abstract|synchronized|override|async|virtual)[[:space:]]+)+[][A-Za-z_<>,.?[:space:]]+[[:space:]]+[A-Za-z_][A-Za-z0-9_]*[[:space:]]*\\(" }, { exts: ["rb", "rake"], regex: "^[[:space:]]*(def|class|module)[[:space:]]" }, { exts: ["php"], regex: "^[[:space:]]*((public|private|protected|static|abstract|final)[[:space:]]+)*(function|class|interface|trait|enum)[[:space:]]+[A-Za-z_]" }, { exts: ["c", "h", "cc", "cpp", "cxx", "hpp", "hh", "m", "mm"], regex: "^[A-Za-z_][A-Za-z0-9_:<>,*&[:space:]]*[[:space:]*&]+[A-Za-z_~][A-Za-z0-9_:~]*[[:space:]]*\\([^;]*$|^(typedef[[:space:]]+)?(struct|class|enum|union|namespace)[[:space:]]+[A-Za-z_]|^#define[[:space:]]+[A-Z_]" }, { exts: ["sh", "bash", "zsh"], regex: "^[[:space:]]*(function[[:space:]]+)?[A-Za-z_][A-Za-z0-9_:-]*[[:space:]]*\\(\\)[[:space:]]*\\{?|^[[:space:]]*function[[:space:]]+[A-Za-z_]" }, { exts: ["md", "mdx", "markdown", "rst", "adoc"], regex: "^#{1,4}[[:space:]]" }, { exts: ["yml", "yaml"], regex: "^[A-Za-z_][A-Za-z0-9_.-]*:|^  [A-Za-z_][A-Za-z0-9_.-]*:[[:space:]]*$" }, { exts: ["toml", "ini", "cfg"], regex: "^\\[" }, { exts: ["sql"], regex: "^[[:space:]]*(create|alter|CREATE|ALTER)[[:space:]]+" }, { exts: ["json"], regex: '^  "[^"]+"[[:space:]]*:' }], default: "^[[:space:]]*(export[[:space:]]+)?(pub[[:space:]]+)?(async[[:space:]]+)?(def|fn|func|function|class|interface|struct|enum|trait|impl|module|type)[[:space:]]+[A-Za-z_]|^#{1,3}[[:space:]]" };
@@ -2424,11 +2857,92 @@ var init_ui = __esm(() => {
   };
 });
 
+// src/commands/dashboard-template.ts
+var init_dashboard_template = __esm(() => {
+  init_assets();
+});
+
+// src/commands/dashboard.ts
+var exports_dashboard = {};
+__export(exports_dashboard, {
+  cmdDashboard: () => cmdDashboard
+});
+import { existsSync as existsSync9, writeFileSync as writeFileSync7 } from "node:fs";
+import { join as join10 } from "node:path";
+function sampleStats(now = Math.floor(Date.now() / 1000)) {
+  const rows = [];
+  let seed = 7;
+  const rnd = () => (seed = seed * 16807 % 2147483647) / 2147483647;
+  const models = ["claude:haiku", "claude:haiku", "claude:haiku", "opencode-go/glm-5.3-flash", "codex:gpt-6-luna"];
+  const reads = ["src/billing/ledger.ts", "src/api/routes.ts", "docs/architecture.md", "packages/core/src/index.ts", "migrations/"];
+  const cmds = ["npm test", "pnpm build", "cargo test", "pytest -q", "npm run lint"];
+  for (let d = 29;d >= 0; d--) {
+    const day = now - d * 86400;
+    const n = Math.round(2 + rnd() * 9 * (d % 7 === 5 || d % 7 === 6 ? 0.3 : 1));
+    for (let i = 0;i < n; i++) {
+      const ts = day - Math.floor(rnd() * 30000);
+      const model = models[Math.floor(rnd() * models.length)];
+      const pick = rnd();
+      if (pick < 0.45) {
+        const bin = 20000 + Math.floor(rnd() * 120000);
+        const bout = 900 + Math.floor(rnd() * 2400);
+        const bad = rnd() < 0.08 ? 1 : 0;
+        rows.push({ ts, kind: "read", model, label: reads[Math.floor(rnd() * reads.length)], bytes_in: bin, bytes_out: bout, saved_tokens: Math.floor((bin - bout) / 4), seconds: 4 + Math.floor(rnd() * 14), cites_ok: 1 + Math.floor(rnd() * 5), cites_bad: bad, worker_tokens_in: Math.floor(bin / 3.6), worker_tokens_out: 120 + Math.floor(rnd() * 400) });
+      } else if (pick < 0.8) {
+        const bin = 30000 + Math.floor(rnd() * 200000);
+        const ok = rnd() > 0.05;
+        rows.push({ ts, kind: "digest", source: rnd() < 0.6 ? "hook" : "run", model: ok ? model : "", model_ok: ok, label: cmds[Math.floor(rnd() * cmds.length)], bytes_in: bin, bytes_out: 2600, saved_tokens: Math.floor((bin - 2600) / 4), seconds: 3 + Math.floor(rnd() * 9), worker_tokens_in: ok ? Math.floor(bin / 4.2) : 0, worker_tokens_out: ok ? 200 + Math.floor(rnd() * 300) : 0 });
+      } else if (pick < 0.95) {
+        rows.push({ ts, kind: "explore", model, label: "where is the retry policy configured?", bytes_out: 1800, saved_tokens: 6000 + Math.floor(rnd() * 22000), seconds: 18 + Math.floor(rnd() * 40), cites_ok: 2 + Math.floor(rnd() * 4), cites_bad: rnd() < 0.15 ? 1 : 0, worker_tokens_in: 20000 + Math.floor(rnd() * 60000), worker_tokens_out: 600 + Math.floor(rnd() * 900) });
+      } else {
+        rows.push({ ts, kind: "write", model, label: "tests/test_pricing.py", lines: 120, seconds: 22, saved_tokens: 1400, worker_tokens_in: 5200, worker_tokens_out: 1800 });
+      }
+      if (rnd() < 0.5)
+        rows.push({ ts: ts - 5, kind: "hook", event: rnd() < 0.7 ? "read_blocked" : "bash_dump_blocked" });
+    }
+  }
+  return rows.sort((a, b) => a.ts - b.ts);
+}
+function renderDashboard(rows, opts) {
+  const data = { rows, source: opts.source, sample: Boolean(opts.sample), generated: Math.floor(Date.now() / 1000), version: VERSION, days: opts.days ?? 0 };
+  const json = JSON.stringify(data).replace(/</g, "\\u003c");
+  return DASHBOARD_HTML.replace("/*__OFFLOAD_DATA__*/null", json);
+}
+async function cmdDashboard(argv) {
+  const { opts } = parseFlags(argv, { out: { alias: ["-o"], value: true }, open: {}, sample: {}, days: { value: true } });
+  const sample = Boolean(opts.sample);
+  const source = join10(stateDir(), "stats.jsonl");
+  const rows = sample ? sampleStats() : readStats();
+  const out = str(opts.out) || join10(stateDir(), sample ? "dashboard-sample.html" : "dashboard.html");
+  const days = Number(str(opts.days)) || 0;
+  writeFileSync7(out, renderDashboard(rows, { source: sample ? "example data" : source, sample, days }));
+  process.stdout.write(`${out}
+`);
+  if (!sample && !existsSync9(source))
+    process.stderr.write(`offload: no activity recorded yet; the report shows how to start
+`);
+  if (opts.open) {
+    const [cmd, args] = process.platform === "darwin" ? ["open", [out]] : process.platform === "win32" ? ["cmd", ["/c", "start", "", out]] : ["xdg-open", [out]];
+    const r = await runProcess(cmd, args, { timeoutMs: 1e4 });
+    if (r.code !== 0)
+      process.stderr.write(`offload: open it in a browser: ${out}
+`);
+  }
+  return 0;
+}
+var init_dashboard = __esm(() => {
+  init_args();
+  init_assets2();
+  init_proc();
+  init_state();
+  init_dashboard_template();
+});
+
 // src/hooks/logic.ts
-import { existsSync as existsSync9, readFileSync as readFileSync11, statSync as statSync8 } from "node:fs";
-import { basename as basename3, delimiter as delimiter2, isAbsolute as isAbsolute4, join as join10, resolve as resolve3 } from "node:path";
+import { existsSync as existsSync10, readFileSync as readFileSync11, statSync as statSync8 } from "node:fs";
+import { basename as basename3, delimiter as delimiter2, isAbsolute as isAbsolute4, join as join11, resolve as resolve3 } from "node:path";
 import { fileURLToPath } from "node:url";
-import { writeFileSync as writeFileSync7 } from "node:fs";
+import { writeFileSync as writeFileSync8 } from "node:fs";
 function callStyle(host) {
   if (host === "pi")
     return "mcp";
@@ -2484,12 +2998,12 @@ function cliCommand() {
     return cliCache;
   if (process.env.OFFLOAD_CLI_COMMAND)
     return cliCache = process.env.OFFLOAD_CLI_COMMAND;
-  const onPath = (process.env.PATH ?? "").split(delimiter2).some((d) => d && (existsSync9(join10(d, "offload")) || existsSync9(join10(d, "offload.cmd"))));
+  const onPath = (process.env.PATH ?? "").split(delimiter2).some((d) => d && (existsSync10(join11(d, "offload")) || existsSync10(join11(d, "offload.cmd"))));
   if (onPath)
     return cliCache = "offload";
   try {
     const js = fileURLToPath(new URL("./cli.js", import.meta.url));
-    if (existsSync9(js))
+    if (existsSync10(js))
       return cliCache = `node ${shquote(js)}`;
   } catch {}
   return cliCache = "offload";
@@ -2519,7 +3033,7 @@ function readGuard(host, cwd, file, offset, limit) {
   if (!enabled2() || cfgStr("hooks.read_guard", "block") === "off" || !file)
     return;
   const p = isAbsolute4(file) ? file : resolve3(cwd, file);
-  if (!existsSync9(p) || !statSync8(p).isFile())
+  if (!existsSync10(p) || !statSync8(p).isFile())
     return;
   if (ignored(file) || notForOffload(p))
     return;
@@ -2578,7 +3092,7 @@ function bashGuard(host, cwd, command) {
       continue;
     const clean = a.replace(/["']/g, "");
     const abs = isAbsolute4(clean) ? clean : resolve3(cwd, clean);
-    if (prog === "sed" && !range && !existsSync9(abs))
+    if (prog === "sed" && !range && !existsSync10(abs))
       range = clean;
     else
       files.push(clean);
@@ -2588,7 +3102,7 @@ function bashGuard(host, cwd, command) {
   const maxTokens = cfgInt("hooks.read_threshold_tokens", 6000);
   for (const f of files) {
     const p = isAbsolute4(f) ? f : resolve3(cwd, f);
-    if (!existsSync9(p) || !statSync8(p).isFile() || ignored(f) || notForOffload(p))
+    if (!existsSync10(p) || !statSync8(p).isFile() || ignored(f) || notForOffload(p))
       continue;
     const lines = fileLines(p);
     const tokens = estTokens(fileBytes(p));
@@ -2635,7 +3149,7 @@ async function postBash(opts) {
   }
   let text = opts.output;
   let compact = false;
-  if (opts.persistedPath && existsSync9(opts.persistedPath)) {
+  if (opts.persistedPath && existsSync10(opts.persistedPath)) {
     text = readFileSync11(opts.persistedPath, "utf8");
     compact = true;
   }
@@ -2646,7 +3160,7 @@ async function postBash(opts) {
     return;
   const noModel = !await available();
   const log = newLogPath(cmd);
-  writeFileSync7(log, text);
+  writeFileSync8(log, text);
   return digest(log, cmd, "0", opts.description ?? "", "hook", undefined, { noModel, compact, budgetSec: cfgInt("hooks.digest_timeout_seconds", 90) });
 }
 function sessionGuide(host, cliPath = cliCommand()) {
@@ -2684,9 +3198,9 @@ var exports_demo = {};
 __export(exports_demo, {
   cmdDemo: () => cmdDemo
 });
-import { mkdtempSync, writeFileSync as writeFileSync8 } from "node:fs";
+import { mkdtempSync, writeFileSync as writeFileSync9 } from "node:fs";
 import { tmpdir } from "node:os";
-import { join as join11 } from "node:path";
+import { join as join12 } from "node:path";
 function ledger() {
   const acct = ["cash", "inventory", "receivables", "payables", "payroll", "tax", "shipping", "returns", "warranty", "discounts"];
   const out = ["// Ledger operations for the warehouse back office.", 'import { Money, add, mul } from "./money";', 'import { Account, Entry, Journal } from "./model";', "", "export const MAX_BATCH = 500;", "export const LATE_FEE_RATE = 0.025;", ""];
@@ -2712,11 +3226,11 @@ function ciLog() {
 `;
 }
 async function cmdDemo() {
-  const dir = mkdtempSync(join11(tmpdir(), "offload-demo-"));
-  const file = join11(dir, "ledger.ts");
-  const log = join11(dir, "ci.log");
-  writeFileSync8(file, ledger());
-  writeFileSync8(log, ciLog());
+  const dir = mkdtempSync(join12(tmpdir(), "offload-demo-"));
+  const file = join12(dir, "ledger.ts");
+  const log = join12(dir, "ci.log");
+  writeFileSync9(file, ledger());
+  writeFileSync9(log, ciLog());
   process.chdir(dir);
   const lines = fileLines(file);
   const tokens = estTokens(fileBytes(file));
@@ -4331,40 +4845,40 @@ var init_dist4 = __esm(() => {
 });
 
 // src/hosts/assets.ts
-import { existsSync as existsSync10 } from "node:fs";
-import { dirname as dirname4, join as join12, resolve as resolve4 } from "node:path";
+import { existsSync as existsSync11 } from "node:fs";
+import { dirname as dirname4, join as join13, resolve as resolve4 } from "node:path";
 import { fileURLToPath as fileURLToPath2 } from "node:url";
 function marketplaceRoot() {
   const candidates = [
     process.env.OFFLOAD_MARKETPLACE_DIR,
-    join12(here(), "..", "assets", "marketplace"),
-    join12(here(), "..", "..", "..", "assets", "marketplace"),
+    join13(here(), "..", "assets", "marketplace"),
+    join13(here(), "..", "..", "..", "assets", "marketplace"),
     resolve4(here(), "..", "..", ".."),
     resolve4(here(), "..", "..", "..", "..")
   ].filter(Boolean);
   for (const c of candidates)
-    if (existsSync10(join12(c, ".claude-plugin", "marketplace.json")) && existsSync10(join12(c, "plugins", "harness-offload")))
+    if (existsSync11(join13(c, ".claude-plugin", "marketplace.json")) && existsSync11(join13(c, "plugins", "harness-offload")))
       return c;
   throw new Error("cannot find the bundled plugin files (set OFFLOAD_MARKETPLACE_DIR)");
 }
 function packageRoot() {
-  for (const c of [join12(here(), ".."), join12(here(), "..", "..")])
-    if (existsSync10(join12(c, "package.json")) && existsSync10(join12(c, "dist")))
+  for (const c of [join13(here(), ".."), join13(here(), "..", "..")])
+    if (existsSync11(join13(c, "package.json")) && existsSync11(join13(c, "dist")))
       return resolve4(c);
   return resolve4(here(), "..");
 }
-var here = () => dirname4(fileURLToPath2(import.meta.url)), pluginDir = () => join12(marketplaceRoot(), "plugins", "harness-offload"), distFile = (name) => join12(packageRoot(), "dist", name);
+var here = () => dirname4(fileURLToPath2(import.meta.url)), pluginDir = () => join13(marketplaceRoot(), "plugins", "harness-offload"), distFile = (name) => join13(packageRoot(), "dist", name);
 var init_assets3 = () => {};
 
 // src/hosts/install.ts
-import { cpSync, existsSync as existsSync11, mkdirSync as mkdirSync4, readFileSync as readFileSync12, rmSync as rmSync3, writeFileSync as writeFileSync9 } from "node:fs";
+import { cpSync, existsSync as existsSync12, mkdirSync as mkdirSync4, readFileSync as readFileSync12, rmSync as rmSync3, writeFileSync as writeFileSync10 } from "node:fs";
 import { homedir as homedir2 } from "node:os";
-import { join as join13 } from "node:path";
+import { join as join14 } from "node:path";
 import { pathToFileURL } from "node:url";
 async function mcpCommand() {
   if (await which("harness-offload"))
     return { command: "harness-offload", args: ["mcp"] };
-  return { command: isWin3 ? process.execPath : "node", args: [join13(pluginDir(), "dist", "cli.js"), "mcp"] };
+  return { command: isWin3 ? process.execPath : "node", args: [join14(pluginDir(), "dist", "cli.js"), "mcp"] };
 }
 async function mcpRecipes() {
   const { command, args } = await mcpCommand();
@@ -4391,7 +4905,7 @@ async function mcpRecipes() {
   };
 }
 function crushDir() {
-  return process.env.CRUSH_GLOBAL_CONFIG || join13(process.env.XDG_CONFIG_HOME || join13(home(), ".config"), "crush");
+  return process.env.CRUSH_GLOBAL_CONFIG || join14(process.env.XDG_CONFIG_HOME || join14(home(), ".config"), "crush");
 }
 async function detectHosts() {
   const out = {};
@@ -4399,7 +4913,7 @@ async function detectHosts() {
     if (h === "mcp")
       out[h] = true;
     else if (h === "cursor")
-      out[h] = existsSync11(join13(home(), ".cursor")) || Boolean(await which("cursor-agent")) || Boolean(await which("cursor"));
+      out[h] = existsSync12(join14(home(), ".cursor")) || Boolean(await which("cursor-agent")) || Boolean(await which("cursor"));
     else
       out[h] = Boolean(await which(h === "opencode" ? cfgStr("opencode.bin", "opencode") : HOST_BIN[h]));
   }
@@ -4412,10 +4926,10 @@ async function exec2(cmd, args) {
   return { ok: r.code === 0, text: `${cmd} ${args.join(" ")}${r.code === 0 ? "" : `  → exit ${r.code}: ${tail}`}` };
 }
 function winCommand() {
-  return `${JSON.stringify(process.execPath)} ${JSON.stringify(join13(pluginDir(), "dist", "cli.js"))}`;
+  return `${JSON.stringify(process.execPath)} ${JSON.stringify(join14(pluginDir(), "dist", "cli.js"))}`;
 }
 function rewriteForWindows(file, from) {
-  if (!isWin3 || !existsSync11(file))
+  if (!isWin3 || !existsSync12(file))
     return;
   const j = JSON.parse(readFileSync12(file, "utf8"));
   const walk = (v) => {
@@ -4430,29 +4944,29 @@ function rewriteForWindows(file, from) {
   const out = walk(j);
   for (const srv of Object.values(out.mcpServers ?? {})) {
     srv.command = process.execPath;
-    srv.args = [join13(pluginDir(), "dist", "cli.js"), "mcp"];
+    srv.args = [join14(pluginDir(), "dist", "cli.js"), "mcp"];
   }
-  writeFileSync9(file, JSON.stringify(out, null, 2) + `
+  writeFileSync10(file, JSON.stringify(out, null, 2) + `
 `);
 }
 function geminiExtension(dir, launcher) {
-  const src = join13(pluginDir(), "hosts", "gemini");
-  mkdirSync4(join13(dir, "hooks"), { recursive: true });
-  const ext = JSON.parse(readFileSync12(join13(src, "gemini-extension.json"), "utf8"));
+  const src = join14(pluginDir(), "hosts", "gemini");
+  mkdirSync4(join14(dir, "hooks"), { recursive: true });
+  const ext = JSON.parse(readFileSync12(join14(src, "gemini-extension.json"), "utf8"));
   ext.mcpServers.offload.command = launcher;
-  writeFileSync9(join13(dir, "gemini-extension.json"), JSON.stringify(ext, null, 2) + `
+  writeFileSync10(join14(dir, "gemini-extension.json"), JSON.stringify(ext, null, 2) + `
 `);
-  const hooks = JSON.parse(readFileSync12(join13(src, "hooks", "hooks.json"), "utf8"));
+  const hooks = JSON.parse(readFileSync12(join14(src, "hooks", "hooks.json"), "utf8"));
   for (const groups of Object.values(hooks.hooks)) {
     for (const g of groups)
       for (const h of g.hooks)
         h.command = String(h.command).replace('"${extensionPath}/../../bin/offload-ts"', JSON.stringify(launcher));
   }
-  writeFileSync9(join13(dir, "hooks", "hooks.json"), JSON.stringify(hooks, null, 2) + `
+  writeFileSync10(join14(dir, "hooks", "hooks.json"), JSON.stringify(hooks, null, 2) + `
 `);
-  cpSync(join13(src, "GEMINI.md"), join13(dir, "GEMINI.md"));
-  rewriteForWindows(join13(dir, "hooks", "hooks.json"), /"[^"]*offload-ts"/g);
-  rewriteForWindows(join13(dir, "gemini-extension.json"), /"[^"]*offload-ts"/g);
+  cpSync(join14(src, "GEMINI.md"), join14(dir, "GEMINI.md"));
+  rewriteForWindows(join14(dir, "hooks", "hooks.json"), /"[^"]*offload-ts"/g);
+  rewriteForWindows(join14(dir, "gemini-extension.json"), /"[^"]*offload-ts"/g);
 }
 async function install(host, opts = {}) {
   const steps = [];
@@ -4460,7 +4974,7 @@ async function install(host, opts = {}) {
   if (bin && !await which(bin) && !["cursor", "mcp", "aider"].includes(host)) {
     return [{ ok: false, text: `${HOST_LABELS[host]} not found on PATH (${bin}); install it first.` }];
   }
-  const launcher = join13(pluginDir(), "bin", "offload-ts");
+  const launcher = join14(pluginDir(), "bin", "offload-ts");
   switch (host) {
     case "claude": {
       const root = marketplaceRoot();
@@ -4483,21 +4997,21 @@ async function install(host, opts = {}) {
       break;
     }
     case "cursor": {
-      const dest = join13(home(), ".cursor", "plugins", "local", "harness-offload");
+      const dest = join14(home(), ".cursor", "plugins", "local", "harness-offload");
       if (opts.dryRun)
         return [{ ok: true, text: `copy ${pluginDir()} → ${dest}` }];
       rmSync3(dest, { recursive: true, force: true });
-      mkdirSync4(join13(dest, ".."), { recursive: true });
+      mkdirSync4(join14(dest, ".."), { recursive: true });
       cpSync(pluginDir(), dest, { recursive: true });
-      rewriteForWindows(join13(dest, "hosts", "cursor", "hooks.json"), /"\$\{CURSOR_PLUGIN_ROOT\}\/bin\/offload-ts"/g);
-      rewriteForWindows(join13(dest, "hosts", "cursor", "mcp.json"), /\$\{CURSOR_PLUGIN_ROOT\}\/bin\/offload-ts/g);
+      rewriteForWindows(join14(dest, "hosts", "cursor", "hooks.json"), /"\$\{CURSOR_PLUGIN_ROOT\}\/bin\/offload-ts"/g);
+      rewriteForWindows(join14(dest, "hosts", "cursor", "mcp.json"), /\$\{CURSOR_PLUGIN_ROOT\}\/bin\/offload-ts/g);
       steps.push({ ok: true, text: `installed local plugin → ${dest}` });
       steps.push({ ok: true, text: "in Cursor: Developer: Reload Window (CLI: cursor-agent picks it up on the next run)" });
       record(host, { dir: dest });
       break;
     }
     case "gemini": {
-      const dest = join13(home(), ".gemini", "extensions", "harness-offload");
+      const dest = join14(home(), ".gemini", "extensions", "harness-offload");
       if (opts.dryRun)
         return [{ ok: true, text: `write Gemini extension → ${dest}` }];
       rmSync3(dest, { recursive: true, force: true });
@@ -4526,22 +5040,22 @@ async function install(host, opts = {}) {
     }
     case "crush": {
       const dir = crushDir();
-      const file = join13(dir, "crush.json");
-      const guide = join13(stateDir(), "crush-guide.md");
+      const file = join14(dir, "crush.json");
+      const guide = join14(stateDir(), "crush-guide.md");
       const cmd = isWin3 ? winCommand() : JSON.stringify(launcher);
       if (opts.dryRun)
         return [{ ok: true, text: `add hooks + context path to ${file}` }];
       let cfg = {};
-      if (existsSync11(file)) {
+      if (existsSync12(file)) {
         try {
           cfg = JSON.parse(readFileSync12(file, "utf8"));
         } catch {
           return [{ ok: false, text: `${file} is not plain JSON; add the hooks by hand (see docs/hosts.md#crush)` }];
         }
-        writeFileSync9(`${file}.bak-harness-offload`, readFileSync12(file));
+        writeFileSync10(`${file}.bak-harness-offload`, readFileSync12(file));
       }
       await Promise.resolve().then(() => init_logic());
-      writeFileSync9(guide, sessionGuide("crush", isWin3 ? winCommand() : JSON.stringify(join13(pluginDir(), "bin", "offload"))) + `
+      writeFileSync10(guide, sessionGuide("crush", isWin3 ? winCommand() : JSON.stringify(join14(pluginDir(), "bin", "offload"))) + `
 `);
       const ours = (h) => h?.name === "harness-offload";
       cfg.hooks ??= {};
@@ -4553,7 +5067,7 @@ async function install(host, opts = {}) {
         ctx.push(guide);
       cfg.options.global_context_paths = ctx;
       mkdirSync4(dir, { recursive: true });
-      writeFileSync9(file, JSON.stringify(cfg, null, 2) + `
+      writeFileSync10(file, JSON.stringify(cfg, null, 2) + `
 `);
       steps.push({ ok: true, text: `added hooks and the guide (${guide}) to ${file}` });
       record(host, { file, guide });
@@ -4569,12 +5083,12 @@ async function install(host, opts = {}) {
     }
     case "opencode": {
       const major = await opencodeMajor();
-      const dir = join13(home(), ".config", "opencode", major >= 2 ? "plugins" : "plugin");
-      const file = join13(dir, "harness-offload.js");
+      const dir = join14(home(), ".config", "opencode", major >= 2 ? "plugins" : "plugin");
+      const file = join14(dir, "harness-offload.js");
       if (opts.dryRun)
         return [{ ok: true, text: `write ${file} (OpenCode v${major})` }];
       mkdirSync4(dir, { recursive: true });
-      writeFileSync9(file, `// Harness Offload for OpenCode (generated by \`offload install opencode\`)
+      writeFileSync10(file, `// Harness Offload for OpenCode (generated by \`offload install opencode\`)
 export { default } from ${JSON.stringify(pathToFileURL(distFile("opencode.js")).href)};
 `);
       steps.push({ ok: true, text: `wrote ${file} (OpenCode v${major})` });
@@ -4582,12 +5096,12 @@ export { default } from ${JSON.stringify(pathToFileURL(distFile("opencode.js")).
       break;
     }
     case "kilo": {
-      const dir = join13(home(), ".config", "kilo", "plugin");
-      const file = join13(dir, "harness-offload.js");
+      const dir = join14(home(), ".config", "kilo", "plugin");
+      const file = join14(dir, "harness-offload.js");
       if (opts.dryRun)
         return [{ ok: true, text: `write ${file}` }];
       mkdirSync4(dir, { recursive: true });
-      writeFileSync9(file, `// Harness Offload for Kilo Code (generated by \`offload install kilo\`)
+      writeFileSync10(file, `// Harness Offload for Kilo Code (generated by \`offload install kilo\`)
 export { default } from ${JSON.stringify(pathToFileURL(distFile("opencode.js")).href)};
 `);
       steps.push({ ok: true, text: `wrote ${file}` });
@@ -4595,12 +5109,12 @@ export { default } from ${JSON.stringify(pathToFileURL(distFile("opencode.js")).
       break;
     }
     case "amp": {
-      const dir = join13(process.env.XDG_CONFIG_HOME || join13(home(), ".config"), "amp", "plugins");
-      const file = join13(dir, "harness-offload.ts");
+      const dir = join14(process.env.XDG_CONFIG_HOME || join14(home(), ".config"), "amp", "plugins");
+      const file = join14(dir, "harness-offload.ts");
       if (opts.dryRun)
         return [{ ok: true, text: `write ${file}` }];
       mkdirSync4(dir, { recursive: true });
-      writeFileSync9(file, `// Harness Offload for Amp (generated by \`offload install amp\`; experimental)
+      writeFileSync10(file, `// Harness Offload for Amp (generated by \`offload install amp\`; experimental)
 export { default } from ${JSON.stringify(pathToFileURL(distFile("amp.js")).href)};
 `);
       steps.push({ ok: true, text: `wrote ${file} — in Amp run "plugins: reload" (experimental: built from Amp's plugin API docs)` });
@@ -4615,12 +5129,12 @@ export { default } from ${JSON.stringify(pathToFileURL(distFile("amp.js")).href)
       break;
     }
     case "aider": {
-      const file = join13(stateDir(), "aider-conventions.md");
+      const file = join14(stateDir(), "aider-conventions.md");
       if (opts.dryRun)
         return [{ ok: true, text: `write ${file}` }];
       await Promise.resolve().then(() => init_logic());
-      const cli = isWin3 ? winCommand() : JSON.stringify(join13(pluginDir(), "bin", "offload"));
-      writeFileSync9(file, `# Harness Offload
+      const cli = isWin3 ? winCommand() : JSON.stringify(join14(pluginDir(), "bin", "offload"));
+      writeFileSync10(file, `# Harness Offload
 
 ${sessionGuide("aider", cli)}
 
@@ -4653,7 +5167,7 @@ async function uninstall(host) {
       break;
     case "cursor":
     case "gemini": {
-      const dir = host === "cursor" ? join13(home(), ".cursor", "plugins", "local", "harness-offload") : join13(home(), ".gemini", "extensions", "harness-offload");
+      const dir = host === "cursor" ? join14(home(), ".cursor", "plugins", "local", "harness-offload") : join14(home(), ".gemini", "extensions", "harness-offload");
       rmSync3(dir, { recursive: true, force: true });
       steps.push({ ok: true, text: `removed ${dir}` });
       break;
@@ -4665,19 +5179,19 @@ async function uninstall(host) {
       steps.push(await exec2("qwen", ["extensions", "uninstall", "harness-offload"]));
       break;
     case "crush": {
-      const file = join13(crushDir(), "crush.json");
+      const file = join14(crushDir(), "crush.json");
       try {
         const cfg = JSON.parse(readFileSync12(file, "utf8"));
         const ours = (h) => h?.name === "harness-offload";
         for (const ev of Object.keys(cfg.hooks ?? {}))
           cfg.hooks[ev] = cfg.hooks[ev].filter((h) => !ours(h));
-        const guide = join13(stateDir(), "crush-guide.md");
+        const guide = join14(stateDir(), "crush-guide.md");
         if (Array.isArray(cfg.options?.global_context_paths)) {
           cfg.options.global_context_paths = cfg.options.global_context_paths.filter((p) => p !== guide);
           if (JSON.stringify(cfg.options.global_context_paths) === JSON.stringify(CRUSH_DEFAULT_CONTEXT))
             delete cfg.options.global_context_paths;
         }
-        writeFileSync9(file, JSON.stringify(cfg, null, 2) + `
+        writeFileSync10(file, JSON.stringify(cfg, null, 2) + `
 `);
         steps.push({ ok: true, text: `removed Harness Offload hooks and guide from ${file}` });
       } catch {
@@ -4690,21 +5204,21 @@ async function uninstall(host) {
       break;
     case "opencode":
       for (const d of ["plugins", "plugin"]) {
-        const f = join13(home(), ".config", "opencode", d, "harness-offload.js");
-        if (existsSync11(f)) {
+        const f = join14(home(), ".config", "opencode", d, "harness-offload.js");
+        if (existsSync12(f)) {
           rmSync3(f, { force: true });
           steps.push({ ok: true, text: `removed ${f}` });
         }
       }
       break;
     case "kilo": {
-      const f = join13(home(), ".config", "kilo", "plugin", "harness-offload.js");
+      const f = join14(home(), ".config", "kilo", "plugin", "harness-offload.js");
       rmSync3(f, { force: true });
       steps.push({ ok: true, text: `removed ${f}` });
       break;
     }
     case "amp": {
-      const f = join13(process.env.XDG_CONFIG_HOME || join13(home(), ".config"), "amp", "plugins", "harness-offload.ts");
+      const f = join14(process.env.XDG_CONFIG_HOME || join14(home(), ".config"), "amp", "plugins", "harness-offload.ts");
       rmSync3(f, { force: true });
       steps.push({ ok: true, text: `removed ${f}` });
       break;
@@ -4713,7 +5227,7 @@ async function uninstall(host) {
       steps.push(await exec2("devin", ["plugins", "uninstall", "harness-offload"]));
       break;
     case "aider": {
-      const f = join13(stateDir(), "aider-conventions.md");
+      const f = join14(stateDir(), "aider-conventions.md");
       rmSync3(f, { force: true });
       steps.push({ ok: true, text: `removed ${f} (drop it from ~/.aider.conf.yml if you added it)` });
       break;
@@ -4726,14 +5240,14 @@ async function uninstall(host) {
 }
 function installedHosts() {
   try {
-    const all = JSON.parse(readFileSync12(join13(stateDir(), "installs.json"), "utf8"));
+    const all = JSON.parse(readFileSync12(join14(stateDir(), "installs.json"), "utf8"));
     return Object.keys(all).filter((h) => HOSTS.includes(h));
   } catch {
     return [];
   }
 }
 var HOSTS, HOST_LABELS, HOST_BIN, CRUSH_DEFAULT_CONTEXT, home = () => process.env.OFFLOAD_HOME || homedir2(), record = (host, data) => {
-  const f = join13(stateDir(), "installs.json");
+  const f = join14(stateDir(), "installs.json");
   let all = {};
   try {
     all = JSON.parse(readFileSync12(f, "utf8"));
@@ -4742,7 +5256,7 @@ var HOSTS, HOST_LABELS, HOST_BIN, CRUSH_DEFAULT_CONTEXT, home = () => process.en
     delete all[host];
   else
     all[host] = data;
-  writeFileSync9(f, JSON.stringify(all, null, 2) + `
+  writeFileSync10(f, JSON.stringify(all, null, 2) + `
 `);
 }, isWin3;
 var init_install = __esm(() => {
@@ -4778,7 +5292,7 @@ var exports_setup = {};
 __export(exports_setup, {
   cmdSetup: () => cmdSetup
 });
-import { chmodSync as chmodSync2, mkdirSync as mkdirSync5, readFileSync as readFileSync13, writeFileSync as writeFileSync10 } from "node:fs";
+import { chmodSync as chmodSync2, mkdirSync as mkdirSync5, readFileSync as readFileSync13, writeFileSync as writeFileSync11 } from "node:fs";
 import { dirname as dirname5 } from "node:path";
 async function detectBackends() {
   const out = [];
@@ -4820,7 +5334,7 @@ function storeKey(name, key) {
   } catch {}
   all[name] = key;
   mkdirSync5(dirname5(f), { recursive: true });
-  writeFileSync10(f, JSON.stringify(all, null, 2) + `
+  writeFileSync11(f, JSON.stringify(all, null, 2) + `
 `, { mode: 384 });
   try {
     chmodSync2(f, 384);
@@ -28198,6 +28712,7 @@ var HELP = () => `${banner()}
     offload write --spec S --ref FILE [--context FILE] [--out PATH] [--check 'CMD']
     offload ask [--stdin|-f FILE] QUESTION  one-off question to the cheap model
     offload outline FILE                    symbol outline with line numbers (no model)
+    offload dashboard [--open] [--sample]   HTML report of what was kept out of context
 
   ${color.bold("Set up")}
     offload setup                           interactive wizard: backends, keys, models, hosts
@@ -28256,6 +28771,8 @@ async function main(argv) {
     case "outline":
       cmdOutline(rest);
       return 0;
+    case "dashboard":
+      return (await Promise.resolve().then(() => (init_dashboard(), exports_dashboard))).cmdDashboard(rest);
     case "doctor":
       return cmdDoctor(rest);
     case "stats":
