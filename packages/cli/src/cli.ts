@@ -21,7 +21,8 @@ const HELP = () => `${banner()}
   ${color.bold("Set up")}
     offload setup                           interactive wizard: backends, keys, models, hosts
     offload demo                            10-second tour, no model calls
-    offload install <host> | uninstall <host>   claude · codex · cursor · gemini · pi · opencode · kilo · devin · mcp
+    offload install <host> | uninstall <host>   claude · codex · cursor · gemini · copilot · qwen · crush
+                                            pi · opencode · kilo · amp · devin · aider · mcp
     offload sync                            refresh every installed integration (after an upgrade)
     offload doctor [--ping] [--reset]       check everything; --ping makes one tiny call per model
     offload models [BACKEND...]             list models your backends offer
@@ -31,7 +32,8 @@ const HELP = () => `${banner()}
     offload mcp                             run as an MCP server (stdio)
 
   ${color.bold("Models")} are written BACKEND:MODEL — e.g. ${color.cyan("openrouter:qwen/qwen3-coder")}, ${color.cyan("ollama:qwen3:8b")},
-  ${color.cyan("pi:openai-codex/gpt-5.4-mini")}; a bare ${color.cyan("provider/model")} means OpenCode.
+  ${color.cyan("pi:openai-codex/gpt-6-luna")}; a bare ${color.cyan("provider/model")} means OpenCode;
+  ${color.cyan("@host")} (the default) is your harness's own small model on your own plan.
 
   Common options: -m/--model REF (one-off override), --allow-secrets
   Exit codes: 0 ok · 2 usage · 10 quota · 11 auth · 12 timeout · 13 unknown model · 14 worker error

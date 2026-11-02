@@ -117,3 +117,17 @@ describe("dashboard", () => {
     expect(rows.every((r) => typeof r.ts === "number" && r.kind)).toBe(true);
   });
 });
+
+describe("dashboard cooldowns", () => {
+  test("cooldown files are shown under their real model ids", async () => {
+    const { mkdirSync, writeFileSync, readFileSync } = await import("node:fs");
+    const { sandbox, cli } = await import("./helpers.ts");
+    const s = sandbox();
+    mkdirSync(join(s.dir, "state", "cooldowns"), { recursive: true });
+    writeFileSync(join(s.dir, "state", "stats.jsonl"), JSON.stringify({ ts: Math.floor(Date.now() / 1000), kind: "read", model: "openrouter:qwen/qwen3-coder", saved_tokens: 5 }) + "\n");
+    writeFileSync(join(s.dir, "state", "cooldowns", "openrouter_qwen_qwen3-coder"), `${Math.floor(Date.now() / 1000) + 300} rate-limit/quota\n`);
+    const out = join(s.dir, "d.html");
+    expect(cli(["dashboard", "--out", out], { env: s.env }).code).toBe(0);
+    expect(readFileSync(out, "utf8")).toContain('"cooldowns":[{"model":"openrouter:qwen/qwen3-coder"');
+  });
+});

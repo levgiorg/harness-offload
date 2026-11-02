@@ -181,6 +181,16 @@ p { margin: 0; }
   -webkit-mask-size: 180px 180px;
   mask-size: 180px 180px;
 }
+.stamp { position: relative; border-color: transparent; }
+.stamp::before {
+  content: "";
+  position: absolute;
+  inset: -3px;
+  border: 3px double var(--stamp);
+  border-radius: 6px;
+  filter: url(#ink-edge);
+  pointer-events: none;
+}
 .stamp b { font: 850 1.65rem/1 var(--font-display); font-stretch: 85%; letter-spacing: 0; font-variant-numeric: tabular-nums; }
 .stamp.press { animation: press 300ms cubic-bezier(0.22, 1, 0.36, 1); }
 @keyframes press { from { transform: rotate(-4deg) scale(1.35); opacity: 0; filter: blur(2px); } to { transform: rotate(-4deg) scale(1); opacity: 1; filter: blur(0); } }
@@ -218,6 +228,7 @@ p { margin: 0; }
   padding: 0.6rem 0.7rem;
   width: 100%;
 }
+.cmd .ln { display: block; padding-left: 1.4em; text-indent: -1.4em; }
 .cmd {
   position: relative;
   margin: 0;
@@ -227,7 +238,7 @@ p { margin: 0; }
   font: 400 0.9rem/1.55 var(--font-type);
   color: var(--type);
   white-space: pre-wrap;
-  overflow-wrap: anywhere;
+  overflow-wrap: break-word;
 }
 .scroll, .cmd { scrollbar-width: thin; scrollbar-color: var(--rule) transparent; }
 .copy {
@@ -356,6 +367,12 @@ footer .wrap { display: flex; flex-wrap: wrap; gap: 0.5rem 2rem; justify-content
 </style>
 </head>
 <body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
+  <filter id="ink-edge" x="-5%" y="-5%" width="110%" height="110%">
+    <feTurbulence type="fractalNoise" baseFrequency="0.6" numOctaves="2" seed="3" result="t"/>
+    <feDisplacementMap in="SourceGraphic" in2="t" scale="2.6" xChannelSelector="R" yChannelSelector="G"/>
+  </filter>
+</svg>
 <header class="topline">
   <div class="wrap">
     <a class="wordmark" href="#top" id="top">Harness Offload</a>
@@ -450,7 +467,7 @@ offload setup</pre>
     <div class="wrap">
       <div class="band-head">
         <h2 id="measured-h">Measured on real files</h2>
-        <p>Tokens the agent would have read, against what Harness Offload handed back to it. Real worker model; bash-engine figures (the TypeScript engine was within a few tokens).</p>
+        <p>Tokens the agent would have read, against what Harness Offload handed back to it. Real worker model; bash-engine figures (both engines' runs are in docs/VALIDATION.md).</p>
       </div>
       <div class="slip ledger">
         <div class="scroll">
@@ -643,7 +660,8 @@ offload setup</pre>
   const after = document.getElementById("after");
   function pick() {
     const [c, note] = INSTALL[sel.value];
-    cmd.textContent = c;
+    cmd.dataset.copy = c;
+    cmd.replaceChildren(...c.split("\n").map((line) => Object.assign(document.createElement("span"), { className: "ln", textContent: line })));
     after.textContent = note;
   }
   sel.addEventListener("change", pick);
@@ -651,7 +669,7 @@ offload setup</pre>
 
   function copyFrom(btn, src) {
     btn.addEventListener("click", async () => {
-      const text = src.textContent;
+      const text = src.dataset.copy || src.textContent;
       try {
         await navigator.clipboard.writeText(text);
         btn.textContent = "Copied";

@@ -63,7 +63,7 @@ CLI, OpenCode, Windsurf, and anything that speaks MCP.
 
 ### M7 Raise the bar (added during the night)
 - [x] Real-model validation pass with the new fixtures (benchmark.sh via Pi/claude-agent; record in docs/VALIDATION.md).
-- [ ] Beautiful CLI polish: `--json` everywhere it makes sense, consistent colors in read/explore footers on TTY only, `offload stats` sparkline.
+- [x] Beautiful CLI polish: `offload stats --json` + 14-day sparkline in both engines (parity test), `doctor --json` (TS), help lists every host.
 - [ ] Context-aware thresholds (estimate the agent's context size from transcript_path; raise/lower the guard).
 - [ ] `offload serve`: warm OpenCode server to cut the 1.5–3 s start-up per call. (deferred — see DECISIONS #14)
 - [x] More hosts: Kilo Code ✓, GitHub Copilot CLI ✓, Crush ✓, Qwen Code ✓ (formats verified in the real CLIs), Amp (experimental).
@@ -78,7 +78,7 @@ CLI, OpenCode, Windsurf, and anything that speaks MCP.
 - [x] **All known harnesses**: Copilot CLI ✓ (real e2e), Qwen Code ✓ (real e2e), Crush ✓ (real e2e), Amp ✓ (experimental, simulated API), Aider ✓ (conventions file), Cline/Zed/Continue/Goose/Kiro/VS Code/Claude Desktop ✓ (`offload install mcp` snippets) — each with install + doc section.
 - [x] Out of the box: `models.default = "@host"`, fallback `["@default"]`; `-m MODEL` is exact (no fallback). Real check: bash engine + real `claude` CLI on the plan → Haiku read, 5/5 citations verified.
 - [x] Security review findings #2–#12 (explore sandbox, DoS caps, fail-open in-process plugins, env side effects, process lifecycle, verify caps, redaction gaps, Windows spawning).
-- [ ] Any UI (landing page/docs site, stats dashboard) must use the **impeccable** skill (github: pbakaus/impeccable) and Claude Code's design skills (artifact-design etc.). Plan: `offload dashboard` local stats page + a landing page in `site/`.
+- [x] Any UI (landing page/docs site, stats dashboard) must use the **impeccable** skill (github: pbakaus/impeccable) and Claude Code's design skills (artifact-design etc.). Plan: `offload dashboard` local stats page + a landing page in `site/`. Done: both built per the skill's playbooks (PRODUCT.md, direction contracts, craft floor, dataviz checks, two inspection rounds, fresh finish reviewer × 2 rounds, DESIGN.md). Open for the owner: the skipped direction roll and a real stamp-impression asset.
 
 ## Loop protocol (every iteration, including the 30-minute /loop wake-ups)
 1. Read GOALS.md, the tail of PROGRESS.md and DECISIONS.md; `git log --oneline | head`.

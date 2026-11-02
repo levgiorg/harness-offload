@@ -160,7 +160,8 @@ tbody tr:hover td { background: color-mix(in srgb, var(--accent) 5%, transparent
 .num { text-align: right; }
 .mono { font-family: var(--mono); font-size: 0.82rem; white-space: nowrap; }
 td.mono { padding-top: calc(0.5rem + 1px); }
-.split .mono { white-space: normal; overflow-wrap: anywhere; }
+.split .mono, #cool .mono { white-space: normal; overflow-wrap: normal; word-break: normal; }
+.mono .id { white-space: normal; overflow-wrap: normal; }
 .split table { min-width: 30rem; }
 #recent { min-width: 52rem; }
 .more { margin-top: 0.75rem; font: 600 0.85rem/1 var(--font); color: var(--accent); background: transparent; border: 1px solid var(--line); border-radius: 6px; padding: 0.5rem 0.8rem; cursor: pointer; }
@@ -177,7 +178,7 @@ td.mono { padding-top: calc(0.5rem + 1px); }
 
 .empty { padding: 2rem 1rem; text-align: left; display: grid; gap: 0.5rem; max-width: 40rem; }
 .empty h2 { font-size: 1.05rem; }
-.empty code { font-family: var(--mono); background: var(--bg); padding: 0.1rem 0.35rem; border-radius: 4px; }
+.empty code { font-family: var(--mono); background: var(--bg); padding: 0.1rem 0.35rem; border-radius: 4px; overflow-wrap: break-word; }
 
 footer { padding-block: 0 2rem; font-size: 0.8rem; color: var(--text-2); }
 
@@ -189,7 +190,7 @@ footer { padding-block: 0 2rem; font-size: 0.8rem; color: var(--text-2); }
   #recent tr { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0.2rem 0.75rem; padding-block: 0.7rem; border-bottom: 1px solid var(--grid); }
   #recent td { border: 0; padding: 0; text-align: left; min-width: 0; }
   #recent td.what, #recent td.mono { grid-column: 1 / -1; }
-  #recent td.mono { white-space: normal; overflow-wrap: anywhere; color: var(--text-2); }
+  #recent td.mono { white-space: normal; overflow-wrap: normal; color: var(--text-2); }
   .split table { min-width: 0; }
   .split .opt { display: none; }
 }
@@ -254,6 +255,7 @@ footer { padding-block: 0 2rem; font-size: 0.8rem; color: var(--text-2); }
     <section class="panel" aria-labelledby="recent-h">
       <div class="panel-head"><h2 id="recent-h">Latest delegations</h2><span class="hint" id="hooks-line"></span></div>
       <div class="scroll"><table id="recent"></table></div>
+      <div class="empty" id="recent-empty" hidden></div>
       <button type="button" class="more" id="more" hidden></button>
     </section>
   </div>
@@ -293,6 +295,15 @@ footer { padding-block: 0 2rem; font-size: 0.8rem; color: var(--text-2); }
     c.append(document.createTextNode(text));
     return c;
   };
+  /** A model id that may wrap only after "/" or ":" (never inside a name). */
+  const modelId = (id) => {
+    const span = el("span", { class: "id" });
+    String(id).split(/(?<=[/:])/).forEach((part, i) => {
+      if (i) span.append(document.createElement("wbr"));
+      span.append(document.createTextNode(part));
+    });
+    return span;
+  };
   const KIND = { read: "Read", digest: "Command digest", explore: "Explore", write: "Write", ask: "Ask", summarize: "Summarize" };
   const kindName = (r) => (r.kind === "digest" && r.source ? \`\${KIND.digest} (\${r.source})\` : KIND[r.kind] || r.kind);
   const worker = (r) => (Number(r.worker_tokens_in) || 0) + (Number(r.worker_tokens_out) || 0);
@@ -312,8 +323,11 @@ footer { padding-block: 0 2rem; font-size: 0.8rem; color: var(--text-2); }
 
   function cool() {
     const list = (DATA.cooldowns || []).filter((c) => c.until > now);
-    table("cool", [["Model"], ["Reason"], ["Back in", "num"]],
-      list.map((c) => [[c.model, "mono"], [c.reason], [\`\${Math.max(1, Math.round((c.until - now) / 60))} min\`, "num"]]),
+    table("cool", [["Model and reason"], ["Back in", "num"]],
+      list.map((c) => {
+        const cell = el("div", {}, [modelId(c.model), el("div", { class: "muted", text: c.reason })]);
+        return [[cell, "mono"], [\`\${Math.max(1, Math.round((c.until - now) / 60))} min\`, "num"]];
+      }),
       "No model is cooling down. offload doctor --reset clears cooldowns.");
   }
 
@@ -482,7 +496,7 @@ footer { padding-block: 0 2rem; font-size: 0.8rem; color: var(--text-2); }
 
   function byModel(del) {
     table("by-model", [["Model"], ["Count", "num"], ["Kept", "num"], ["Worker tokens", "num opt"], ["Failures"]],
-      group(del, (r) => r.model || "(no model: deterministic digest)").map((g) => [[g.k, "mono"], [nf.format(g.n), "num"], [compact(g.kept), "num"], [compact(g.worker), "num opt"], [failCell(g.fails)]]), "No delegations in this period.");
+      group(del, (r) => r.model || "(no model: deterministic digest)").map((g) => [[modelId(g.k), "mono"], [nf.format(g.n), "num"], [compact(g.kept), "num"], [compact(g.worker), "num opt"], [failCell(g.fails)]]), "No delegations in this period.");
   }
 
   function citeCell(r) {
@@ -497,18 +511,19 @@ footer { padding-block: 0 2rem; font-size: 0.8rem; color: var(--text-2); }
     const ev = new Map();
     for (const h of hooks) ev.set(h.event || "hook", (ev.get(h.event || "hook") || 0) + 1);
     hl.textContent = ev.size ? "hooks: " + [...ev].map(([k, v]) => \`\${k.replace(/_/g, " ")} \${nf.format(v)}\`).join(" · ") : "";
-    if (!all.some((r) => r.kind !== "hook")) {
-      const t = document.getElementById("recent");
+    const t = document.getElementById("recent");
+    const empty = document.getElementById("recent-empty");
+    const none = !all.some((r) => r.kind !== "hook");
+    t.hidden = none;
+    empty.hidden = !none;
+    if (none) {
       t.replaceChildren();
-      const box = el("div", { class: "empty" }, [
+      empty.replaceChildren(
         el("h2", { text: "Nothing delegated yet" }),
         el("p", { text: "Each read, digest or search that goes to a cheap model shows up here. Try one in a project:" }),
         el("p", {}, [el("code", { text: 'offload read -q "what does this module export?" src/big-file.ts' })]),
         el("p", { class: "muted", text: "Inside your agent the hooks do this for you when it reaches for a huge file or a long command output." }),
-      ]);
-      const td = el("td");
-      td.append(box);
-      t.append(el("tbody", {}, [el("tr", {}, [td])]));
+      );
       return;
     }
     const sorted = [...del].sort((a, b) => b.ts - a.ts);
@@ -520,7 +535,7 @@ footer { padding-block: 0 2rem; font-size: 0.8rem; color: var(--text-2); }
       rows.map((r) => {
         const d = new Date(r.ts * 1000);
         const when = el("span", { title: d.toLocaleString(), text: d.toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }) });
-        return [[when], [kindName(r)], [r.label || (r.files ? \`\${r.files} file(s)\` : "—"), "what"], [r.model || (failed(r) ? "no model summary" : "—"), "mono"], [nf.format(kept(r)), "num"], [\`\${Number(r.seconds) || 0} s\`, "num"], [citeCell(r)]];
+        return [[when], [kindName(r)], [r.label || (r.files ? \`\${r.files} file(s)\` : "—"), "what"], [r.model ? modelId(r.model) : failed(r) ? "no model summary" : "—", "mono"], [nf.format(kept(r)), "num"], [\`\${Number(r.seconds) || 0} s\`, "num"], [citeCell(r)]];
       }), "No delegations in this period.");
   }
 
@@ -2973,7 +2988,12 @@ async function cmdDashboard(argv) {
   const out = str(opts.out) || join10(stateDir(), sample ? "dashboard-sample.html" : "dashboard.html");
   const days = Number(str(opts.days)) || 0;
   const now = Math.floor(Date.now() / 1000);
-  const cooldowns = sample ? [{ model: "opencode-go_glm-5.3-flash", until: now + 212, reason: "rate-limit/quota" }] : listCooldowns();
+  const known = new Set(rows.map((r) => String(r.model ?? "")).filter(Boolean));
+  for (const t of TASKS)
+    for (const m of modelChain(t))
+      known.add(m);
+  const unsanitise = (f) => [...known].find((m) => m.replace(/[^A-Za-z0-9._-]/g, "_") === f) ?? f;
+  const cooldowns = sample ? [{ model: "opencode-go/glm-5.3-flash", until: now + 212, reason: "rate-limit/quota" }] : listCooldowns().map((c) => ({ ...c, model: unsanitise(c.model) }));
   writeFileSync7(out, renderDashboard(rows, { source: sample ? "example data" : source, sample, days, cooldowns }));
   process.stdout.write(`${out}
 `);
@@ -2992,6 +3012,7 @@ async function cmdDashboard(argv) {
 var init_dashboard = __esm(() => {
   init_args();
   init_assets2();
+  init_engine();
   init_proc();
   init_state();
   init_dashboard_template();
@@ -28776,7 +28797,8 @@ var HELP = () => `${banner()}
   ${color.bold("Set up")}
     offload setup                           interactive wizard: backends, keys, models, hosts
     offload demo                            10-second tour, no model calls
-    offload install <host> | uninstall <host>   claude · codex · cursor · gemini · pi · opencode · kilo · devin · mcp
+    offload install <host> | uninstall <host>   claude · codex · cursor · gemini · copilot · qwen · crush
+                                            pi · opencode · kilo · amp · devin · aider · mcp
     offload sync                            refresh every installed integration (after an upgrade)
     offload doctor [--ping] [--reset]       check everything; --ping makes one tiny call per model
     offload models [BACKEND...]             list models your backends offer
@@ -28786,7 +28808,8 @@ var HELP = () => `${banner()}
     offload mcp                             run as an MCP server (stdio)
 
   ${color.bold("Models")} are written BACKEND:MODEL — e.g. ${color.cyan("openrouter:qwen/qwen3-coder")}, ${color.cyan("ollama:qwen3:8b")},
-  ${color.cyan("pi:openai-codex/gpt-5.4-mini")}; a bare ${color.cyan("provider/model")} means OpenCode.
+  ${color.cyan("pi:openai-codex/gpt-6-luna")}; a bare ${color.cyan("provider/model")} means OpenCode;
+  ${color.cyan("@host")} (the default) is your harness's own small model on your own plan.
 
   Common options: -m/--model REF (one-off override), --allow-secrets
   Exit codes: 0 ok · 2 usage · 10 quota · 11 auth · 12 timeout · 13 unknown model · 14 worker error

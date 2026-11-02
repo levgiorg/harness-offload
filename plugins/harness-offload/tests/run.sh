@@ -301,6 +301,9 @@ out=$("$OFFLOAD" stats)
 expect_has "stats: aggregates" "$out" "delegations:"
 out=$("$OFFLOAD" doctor 2>&1)
 expect_has "doctor runs" "$out" "worker agents load"
+n_del=$(jq -s 'map(select(.kind != "hook")) | length' "$OFFLOAD_STATE_DIR/stats.jsonl")
+expect_eq "stats --json: delegations match the log" "$("$OFFLOAD" stats --json | jq -r .delegations)" "$n_del"
+expect_has "stats: 14-day sparkline" "$("$OFFLOAD" stats)" "last 14 days"
 if [ "$HAVE_TS_NODE" = true ]; then
   out=$("$OFFLOAD" dashboard --out "$T/dash.html" 2>&1)
   expect_eq "dashboard: prints the report path" "$out" "$T/dash.html"

@@ -37,7 +37,7 @@ offload — delegate bulk I/O to cheap OpenCode models (keeps it out of Claude's
   offload outline FILE                  Symbol outline with line numbers (no model call).
 
   offload doctor [--ping] [--reset]     Check setup; --ping makes a tiny live call per model.
-  offload stats [--days N]              Delegations and estimated Claude tokens saved.
+  offload stats [--days N] [--json]     Delegations and estimated tokens saved (14-day sparkline).
   offload dashboard [--open] [--sample] HTML report of the same (needs Node 18+).
   offload statusline                    One short line for status bars.
   offload config [show|path|init|set KEY VALUE|trust] [--project]
@@ -597,16 +597,31 @@ EOF
 # ----------------------------------------------------------------- stats
 
 cmd_stats() {
-  local days=0
+  local days=0 json=false
   while [ $# -gt 0 ]; do
     case "$1" in
       --days) need "$@"; days="$2"; shift 2 ;;
+      --json) json=true; shift ;;
       *) die "stats: unknown option $1" ;;
     esac
   done
+  case "$days" in ''|*[!0-9]*) die "stats: --days takes a number" ;; esac
   local f
   f="$(co_state_dir)/stats.jsonl"
   [ -s "$f" ] || { echo "No offload activity recorded yet ($f)."; return 0; }
+  if $json; then
+    # same shape as the TypeScript engine's --json
+    jq -s --argjson days "$days" '
+      (now - ($days * 86400)) as $since
+      | map(select($days == 0 or .ts >= $since) | select(.kind != "hook"))
+      | def sum(f): map(f // 0) | add // 0;
+        {delegations: length, saved_tokens: sum(.saved_tokens), worker_tokens_in: sum(.worker_tokens_in),
+         worker_tokens_out: sum(.worker_tokens_out),
+         by_kind: (group_by(.kind + (if .source then ":" + .source else "" end))
+           | map({key: (.[0].kind + (if .[0].source then ":" + .[0].source else "" end)), value: {count: length, saved_tokens: sum(.saved_tokens)}})
+           | from_entries)}' "$f"
+    return 0
+  fi
   jq -rs --argjson days "$days" '
     (now - ($days * 86400)) as $since
     | map(select($days == 0 or .ts >= $since))
@@ -621,6 +636,11 @@ cmd_stats() {
       "  kind           count   saved≈tok   avg s   model-failures",
       ($del | group_by(.kind + (if .source then ":" + .source else "" end))[] |
         "  \((.[0].kind + (if .[0].source then ":" + .[0].source else "" end)) | .[0:13] | . + (" " * (13 - length)))  \(length | tostring | (" " * (6 - length)) + .)   \(sum(.saved_tokens) | floor | fmt | (" " * (9 - length)) + .)   \((sum(.seconds) / length * 10 | floor) / 10 | tostring | (" " * (5 - length)) + .)   \(map(select(.model_ok == false)) | length)"),
+      "",
+      ((now / 86400 | floor) as $today
+        | [range(13; -1; -1) as $i | ($today - $i) as $d | $del | map(select((.ts / 86400 | floor) == $d)) | sum(.saved_tokens)] as $per
+        | ([$per[], 1] | max) as $max
+        | "  last 14 days  " + ($per | map(if . == 0 then "·" else ([9601 + ([7, (. / $max * 7.999 | floor)] | min)] | implode) end) | join("")) + "  (today \($per[13] | floor | fmt) tok)"),
       "",
       "  hook events: \($all | map(select(.kind == "hook")) | group_by(.event) | map("\(.[0].event)=\(length)") | join("  "))",
       "  citations: \($del | sum(.cites_ok)) verified, \($del | sum(.cites_bad)) unverified"

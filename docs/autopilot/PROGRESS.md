@@ -58,3 +58,5 @@
 - docs/VALIDATION.md: 2026-11-02 section (real Claude plan via @host in both engines; Copilot/Crush/Qwen runs).
 - tests/mock_openai.py gained a scripted tool-call mode; tests/e2e-hosts.sh runs the real Copilot CLI, Crush and Qwen Code against it in throwaway homes: 9/9. Manual + weekly workflow hosts-e2e.yml.
 - Impeccable finish review (fresh reviewer): fix on both surfaces; fix batch applied (dark paper, ink-masked stamp, CHECKED impressions, red reserved, stacked phone records, cooldowns panel, square stamp chips, empty-period message); recaptured; verdict pass pending.
+- UI verdict pass (2nd round): fix on both; the three regressions it found (phone empty state, a false sentence about the TS engine, cooldown file names) fixed and checked in one recapture; per the playbook's two-round budget the remaining taste/process items (direction roll, stamp asset) go to the owner. DESIGN.md written.
+- Bash `offload stats --json` and sparkline (parity with TS; conformance 240/240 ×2). bun 52/52.

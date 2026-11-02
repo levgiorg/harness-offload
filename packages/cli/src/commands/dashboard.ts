@@ -4,7 +4,8 @@
 import { existsSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { parseFlags, str } from "../args.ts";
-import { VERSION } from "../assets.ts";
+import { TASKS, VERSION } from "../assets.ts";
+import { modelChain } from "../engine.ts";
 import { runProcess } from "../proc.ts";
 import { listCooldowns, readStats, stateDir } from "../state.ts";
 import { DASHBOARD_TEMPLATE } from "./dashboard-template.ts";
@@ -62,7 +63,13 @@ export async function cmdDashboard(argv: string[]): Promise<number> {
   const out = str(opts.out) || join(stateDir(), sample ? "dashboard-sample.html" : "dashboard.html");
   const days = Number(str(opts.days)) || 0;
   const now = Math.floor(Date.now() / 1000);
-  const cooldowns = sample ? [{ model: "opencode-go_glm-5.3-flash", until: now + 212, reason: "rate-limit/quota" }] : listCooldowns();
+  // cooldown files are named by sanitised model refs: map them back to the refs we know
+  const known = new Set<string>(rows.map((r) => String(r.model ?? "")).filter(Boolean));
+  for (const t of TASKS) for (const m of modelChain(t)) known.add(m);
+  const unsanitise = (f: string) => [...known].find((m) => m.replace(/[^A-Za-z0-9._-]/g, "_") === f) ?? f;
+  const cooldowns = sample
+    ? [{ model: "opencode-go/glm-5.3-flash", until: now + 212, reason: "rate-limit/quota" }]
+    : listCooldowns().map((c) => ({ ...c, model: unsanitise(c.model) }));
   writeFileSync(out, renderDashboard(rows, { source: sample ? "example data" : source, sample, days, cooldowns }));
   process.stdout.write(`${out}\n`);
   if (!sample && !existsSync(source)) process.stderr.write("offload: no activity recorded yet; the report shows how to start\n");
