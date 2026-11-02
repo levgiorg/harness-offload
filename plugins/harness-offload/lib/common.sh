@@ -197,10 +197,10 @@ CO_CONFIG_PROGRAM='
     elif type == "null" then empty
     elif type == "string" and contains("\n") then ["CO_T\($n)", "a"]
     else ["CO_T\($n)", "s"], ["CO_K\($n)", tostring] end;
-  ($d | obj // {}) as $def
+  ($d | obj // {}) as $dflt
   | (if $upath == "" then null else ($u | obj) end) as $user
   | (if $ppath == "" then null else ($pr | obj) end) as $projv
-  | ($def * ($user // {})) as $base
+  | ($dflt * ($user // {})) as $base
   | (if $projv == null then $base
      else ([$projv] as $p | $base | (PROJECT_FILTER)) end) as $merged
   | ($merged
@@ -457,6 +457,7 @@ co_state_dir() {
 # Appends one JSON object (built by the caller with jq -nc) to stats.jsonl.
 co_stats_append() {
   local d
+  [ -n "$1" ] || return 0
   d=$(co_state_dir)
   printf '%s\n' "$1" >> "$d/stats.jsonl" 2>/dev/null || true
 }

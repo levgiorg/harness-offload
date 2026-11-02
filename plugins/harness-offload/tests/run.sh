@@ -150,6 +150,8 @@ rm -f "$OFFLOAD_CONFIG" "$P/.harness-offload.json" "$T/PWNED"
 section "helpers"
 . "$PLUGIN/lib/common.sh"; . "$PLUGIN/lib/outline.sh"; . "$PLUGIN/lib/digest.sh"; . "$PLUGIN/lib/opencode.sh"
 CO_CONFIG=""; co_config_load
+fast=$(OFFLOAD_NO_CONFIG_CACHE=1 bash -c '. "$1/lib/common.sh"; co_config_load_slow() { echo SLOW; }; co_config_load' _ "$PLUGIN")
+expect_not "config: the one-pass loader compiles on this jq ($(jq --version))" "$fast" "SLOW"
 co_is_secret_path ".env" && ok "secret: .env" || bad "secret: .env"
 co_is_secret_path "config/prod.pem" && ok "secret: *.pem" || bad "secret: *.pem"
 co_is_secret_path ".env.example" && bad "secret: .env.example is allowed" || ok "secret: .env.example is allowed"
@@ -298,6 +300,8 @@ out=$(OFFLOAD_MODEL=stub/auth "$OFFLOAD" run -- sh -c 'i=0; while [ $i -lt 400 ]
 expect_has "run: model failure still gives a deterministic digest" "$out" "L401: Error: nope"
 out=$(awk 'BEGIN { for (i = 1; i <= 400; i++) print "row " i }' | "$OFFLOAD" summarize -q "anything odd?" --no-model)
 expect_has "summarize: stdin" "$out" "400 lines"
+expect_has "summarize: digest is recorded in stats" "$(tail -1 "$OFFLOAD_STATE_DIR/stats.jsonl")" '"source":"summarize"'
+expect_eq "stats: no blank or broken lines" "$(jq -Rr 'fromjson? // "BAD" | select(. == "BAD")' "$OFFLOAD_STATE_DIR/stats.jsonl" | wc -l | tr -d ' ')" 0
 out=$("$OFFLOAD" stats)
 expect_has "stats: aggregates" "$out" "delegations:"
 out=$("$OFFLOAD" doctor 2>&1)

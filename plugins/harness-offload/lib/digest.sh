@@ -149,11 +149,11 @@ co_digest() {
   cat "$keyf.out"
   rm -f "$keyf.out"
 
-  co_stats_append "$(jq -nc --arg src "$source" --arg model "${CO_OC_MODEL:-}" --arg label "$label" \
+  co_stats_append "$(jq -nc --arg src "$source" --arg model "${CO_OC_MODEL:-}" --arg lbl "$label" \
     --argjson bin "$bytes" --argjson bout "$out_bytes" --argjson secs "$(co_elapsed "$t0")" \
     --argjson ok "$([ -n "$summary" ] && echo true || echo false)" \
     --argjson tin "${CO_OC_TOKENS_IN:-0}" --argjson tout "${CO_OC_TOKENS_OUT:-0}" \
-    '{ts: now | floor, kind: "digest", source: $src, label: $label, model: $model, bytes_in: $bin, bytes_out: $bout,
+    '{ts: now | floor, kind: "digest", source: $src, label: $lbl, model: $model, bytes_in: $bin, bytes_out: $bout,
       saved_tokens: ((($bin - $bout) / 4) | floor | if . < 0 then 0 else . end), seconds: $secs, model_ok: $ok,
       worker_tokens_in: $tin, worker_tokens_out: $tout}')"
   co_prune_logs
