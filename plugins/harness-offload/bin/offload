@@ -39,7 +39,7 @@ offload — delegate bulk I/O to cheap OpenCode models (keeps it out of Claude's
   offload doctor [--ping] [--reset]     Check setup; --ping makes a tiny live call per model.
   offload stats [--days N]              Delegations and estimated Claude tokens saved.
   offload statusline                    One short line for status bars.
-  offload config [show|path|init|set KEY VALUE] [--project]
+  offload config [show|path|init|set KEY VALUE|trust] [--project]
 
 Common options: -m/--model PROVIDER/MODEL (one-off override), --allow-secrets.
 Exit codes: 0 ok · 2 usage · 10 quota/rate limit · 11 auth · 12 timeout · 13 unknown model
@@ -500,6 +500,8 @@ cmd_doctor() {
       echo "  - config $f (not present)"
     fi
   done
+  local ign; ign=$(co_project_config_ignored)
+  [ -n "$ign" ] && echo "  $warn project config keys ignored (untrusted repo): $ign — \`offload config trust\` if this repo is yours"
   co_cfg_bool '.enabled' true || echo "  $warn offload is disabled (enabled=false or OFFLOAD_DISABLE=1): hooks pass everything through"
 
   rm -f "$(co_state_dir)/opencode-version" 2>/dev/null; CO_OC_MAJOR=""   # doctor always re-detects
@@ -628,7 +630,19 @@ cmd_config() {
       echo "# defaults: $CO_ROOT/config/defaults.json"
       echo "# user:     $(co_user_config_path)$([ -f "$(co_user_config_path)" ] || echo ' (absent)')"
       echo "# project:  $(co_project_config_path)$([ -f "$(co_project_config_path)" ] || echo ' (absent)')"
-      printf '%s\n' "$CO_CONFIG" | jq . ;;
+      local ign; ign=$(co_project_config_ignored)
+      [ -n "$ign" ] && echo "# project keys ignored (untrusted repo; \`offload config trust\` to allow): $ign"
+      # API keys stay out of terminals and logs
+      printf '%s\n' "$CO_CONFIG" | jq '(.endpoints // {}) |= with_entries(if (.value | type) == "object" and .value.api_key then .value.api_key = "***" else . end)' ;;
+    trust)
+      local dir cur
+      dir=$(co_project_dir)
+      target=$(co_user_config_path)
+      mkdir -p "$(dirname "$target")"
+      cur='{}'; [ -f "$target" ] && cur=$(cat "$target")
+      printf '%s' "$cur" | jq -e 'type == "object"' >/dev/null 2>&1 || die "config trust: $target is not valid JSON; fix it first"
+      (umask 077; printf '%s' "$cur" | jq --arg d "$dir" '.trusted_projects = (((.trusted_projects // []) + [$d]) | unique)' > "$target.tmp") && mv "$target.tmp" "$target"
+      echo "trusted $dir: its .harness-offload.json may now set binaries, endpoints and privacy options" ;;
     path)
       echo "$target" ;;
     init)
@@ -660,10 +674,10 @@ EOF
       cur='{}'
       [ -f "$target" ] && cur=$(cat "$target")
       printf '%s' "$cur" | jq -e 'type == "object"' >/dev/null 2>&1 || die "config set: $target is not valid JSON; fix it first"
-      printf '%s' "$cur" | jq --arg k "$key" --arg v "$val" '
-        setpath($k | split("."); ($v | try fromjson catch $v))' > "$target.tmp" && mv "$target.tmp" "$target"
+      (umask 077; printf '%s' "$cur" | jq --arg k "$key" --arg v "$val" '
+        setpath($k | split("."); ($v | try fromjson catch $v))' > "$target.tmp") && mv "$target.tmp" "$target"
       echo "set $key = $val in $target" ;;
-    *) die "config: unknown subcommand $sub (show|path|init|set)" ;;
+    *) die "config: unknown subcommand $sub (show|path|init|set|trust)" ;;
   esac
 }
 

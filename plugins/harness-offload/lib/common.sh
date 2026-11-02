@@ -97,9 +97,40 @@ co_project_config_path() {
   printf '%s/.harness-offload.json' "$(co_project_dir)"
 }
 
-# Loads defaults <- user config <- project config <- env overrides into
-# CO_CONFIG (a JSON string). Broken user files are reported and skipped,
-# never fatal: a typo in a config must not wedge Claude's tools.
+# A repository's .harness-offload.json is not trusted like the user's own
+# config: a cloned repo must not pick binaries to execute, endpoints to send
+# API keys to, or switch privacy guards off. Unless the project directory is
+# listed in the user config's trusted_projects, only these keys apply, and
+# privacy.secret_globs can only grow. (Twin: SAFE_PROJECT_KEYS in config.ts.)
+CO_PROJECT_FILTER='
+  . as $base | $p[0] as $proj | ($proj | if type == "object" then . else {} end) as $proj
+  | if (($base.trusted_projects // []) | map(select(. == $dir)) | length) > 0 then $base * $proj
+    else
+      ($proj | with_entries(select(.key == "models" or .key == "variants" or .key == "read" or .key == "explore"
+        or .key == "digest" or .key == "hooks" or .key == "enabled" or .key == "log_retention_days"))) as $safe
+    | (($proj.opencode // {}) | if type == "object" then with_entries(select(.key == "timeout_seconds" or .key == "max_stream_errors")) else {} end) as $oc
+    | (($proj.privacy // {}) | if type == "object" then (.secret_globs // []) else [] end | if type == "array" then map(select(type == "string")) else [] end) as $globs
+    | ($base * $safe * {opencode: $oc}) | .privacy.secret_globs = ((.privacy.secret_globs // []) + $globs)
+    end'
+
+# Keys of the project config that were ignored (for doctor).
+co_project_config_ignored() {
+  local proj
+  proj=$(co_project_config_path)
+  [ -f "$proj" ] || return 0
+  co_config_load
+  if printf '%s' "$CO_CONFIG" | jq -e --arg d "$(co_project_dir)" '(.trusted_projects // []) | map(select(. == $d)) | length > 0' >/dev/null 2>&1; then return 0; fi
+  jq -r 'if type != "object" then empty else
+      ([keys[] | select(. != "models" and . != "variants" and . != "read" and . != "explore" and . != "digest"
+        and . != "hooks" and . != "enabled" and . != "log_retention_days" and . != "opencode" and . != "privacy")]
+      + ((.opencode // {}) | if type == "object" then [keys[] | select(. != "timeout_seconds" and . != "max_stream_errors") | "opencode." + .] else [] end)
+      + ((.privacy // {}) | if type == "object" then [keys[] | select(. != "secret_globs") | "privacy." + .] else [] end))
+      | join(", ") end' "$proj" 2>/dev/null
+}
+
+# Loads defaults <- user config <- project config (filtered) <- env
+# overrides into CO_CONFIG (a JSON string). Broken files are reported and
+# skipped, never fatal: a typo in a config must not wedge Claude's tools.
 CO_CONFIG=""
 co_config_load() {
   [ -n "$CO_CONFIG" ] && return 0
@@ -108,17 +139,23 @@ co_config_load() {
   proj=$(co_project_config_path)
   for f in "$user" "$proj"; do
     [ -f "$f" ] || continue
-    if jq -e 'type == "object"' "$f" >/dev/null 2>&1; then
-      files="$files
-$f"
-    else
+    if ! jq -e 'type == "object"' "$f" >/dev/null 2>&1; then
       co_err "ignoring invalid JSON config: $f"
+      [ "$f" = "$proj" ] && proj=""
+      continue
     fi
+    [ "$f" = "$user" ] && files="$files
+$f"
   done
+  [ -f "$proj" ] || proj=""
   local merged
   # shellcheck disable=SC2086
   merged=$(printf '%s\n' "$files" | while IFS= read -r f; do cat "$f"; echo; done |
     jq -s 'reduce .[] as $c ({}; . * $c)') || merged=$(cat "$CO_ROOT/config/defaults.json")
+  if [ -n "$proj" ]; then
+    merged=$(printf '%s' "$merged" | jq --slurpfile p "$proj" --arg dir "$(co_project_dir)" "$CO_PROJECT_FILTER" 2>/dev/null) ||
+      merged=$(printf '%s\n' "$files" | while IFS= read -r f; do cat "$f"; echo; done | jq -s 'reduce .[] as $c ({}; . * $c)')
+  fi
 
   # Environment overrides — handy for one-off runs and for tests.
   # OFFLOAD_MIN_LINES is a shortcut for hooks.read_threshold_lines.

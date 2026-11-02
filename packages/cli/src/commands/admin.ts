@@ -1,11 +1,11 @@
 import { existsSync } from "node:fs";
 import { parseFlags, str } from "../args.ts";
 import { TASKS } from "../assets.ts";
-import { cfgStr, loadConfig, readConfigFile, setConfigValue, warnings, writeConfigFile } from "../config.ts";
+import { cfgStr, ignoredProjectKeys, loadConfig, readConfigFile, setConfigValue, warnings, writeConfigFile } from "../config.ts";
 import { modelChain } from "../engine.ts";
 import { allBackendNames, backendFor, parseRef } from "../backends/registry.ts";
 import { opencodeConfig, opencodeMajor } from "../backends/opencode.ts";
-import { projectConfigPath, userConfigPath } from "../paths.ts";
+import { projectConfigPath, projectDir, userConfigPath } from "../paths.ts";
 import { runProcess, which } from "../proc.ts";
 import { clearCooldowns, cooling, readStats, stateDir } from "../state.ts";
 import { fmtInt } from "../text.ts";
@@ -32,6 +32,8 @@ export async function cmdDoctor(argv: string[]): Promise<number> {
     else check("warn", "config not present", f);
   }
   loadConfig();
+  const ign = ignoredProjectKeys();
+  if (ign.length) check("warn", `project config keys ignored (untrusted repo): ${ign.join(", ")} — \`offload config trust\` if this repo is yours`);
   if (cfgStr("enabled") === "false") check("warn", "offload is disabled (enabled=false or OFFLOAD_DISABLE=1)");
   if (opts.reset) {
     clearCooldowns();
@@ -151,8 +153,24 @@ export function cmdConfig(argv: string[]): void {
   switch (sub) {
     case "show":
       process.stdout.write(`# defaults: built in\n# user:     ${userConfigPath()}${existsSync(userConfigPath()) ? "" : " (absent)"}\n# project:  ${projectConfigPath()}${existsSync(projectConfigPath()) ? "" : " (absent)"}\n`);
-      process.stdout.write(JSON.stringify(loadConfig(), null, 2) + "\n");
+      {
+        const ign = ignoredProjectKeys();
+        if (ign.length) process.stdout.write(`# project keys ignored (untrusted repo; \`offload config trust\` to allow): ${ign.join(", ")}\n`);
+        // API keys stay out of terminals and logs
+        const shown = structuredClone(loadConfig()) as Record<string, any>;
+        for (const ep of Object.values<any>(shown.endpoints ?? {})) if (ep && typeof ep === "object" && ep.api_key) ep.api_key = "***";
+        process.stdout.write(JSON.stringify(shown, null, 2) + "\n");
+      }
       return;
+    case "trust": {
+      const cur = readConfigFile(userConfigPath());
+      const list = Array.isArray(cur.trusted_projects) ? (cur.trusted_projects as string[]) : [];
+      const dir = projectDir();
+      if (!list.includes(dir)) list.push(dir);
+      writeConfigFile(userConfigPath(), { ...cur, trusted_projects: list });
+      process.stdout.write(`trusted ${dir}: its .harness-offload.json may now set binaries, endpoints and privacy options\n`);
+      return;
+    }
     case "path":
       process.stdout.write(target + "\n");
       return;
@@ -179,7 +197,7 @@ export function cmdConfig(argv: string[]): void {
       return;
     }
   }
-  process.stderr.write(`offload: config: unknown subcommand ${sub} (show|path|init|set|get)\n`);
+  process.stderr.write(`offload: config: unknown subcommand ${sub} (show|path|init|set|get|trust)\n`);
   throw new ExitError(2);
 }
 

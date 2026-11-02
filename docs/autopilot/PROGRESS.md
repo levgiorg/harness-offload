@@ -26,3 +26,10 @@
 ## 2026-11-02 ~00:10 UTC — renamed to Harness Offload
 - Repo moved to `/home/user/harness-offload` (symlink from the old path), plugin `plugins/harness-offload`, npm `harness-offload` (bins `offload`, `harness-offload`), config `~/.config/harness-offload/`, project file `.harness-offload.json`, marketplace `harness-offload@harness-offload`. Loop re-created with the new path (job ec77080e).
 - All suites green after the rename: bun 31/31, conformance 166/166 ×2 engines, routing 49/49 ×2.
+
+## 2026-11-02 ~08:00 UTC — same subscription (@host), native bash connectors, project-config lockdown
+- `@host`/`@self` model ref: the calling harness's own cheap model (Claude Code → `claude:haiku`, Codex → `codex:gpt-6-luna`, Gemini CLI → `gemini:flash-lite`, Cursor/Pi → defaults). Host from `OFFLOAD_HOST` (set by our hooks/MCP launchers/in-process plugins) or env detection. `host_models` overridable.
+- Bash engine: `lib/agents.sh` — native claude/codex/gemini/cursor-agent/pi workers + OpenAI-compatible/Anthropic HTTP via curl (keys via a header file, never argv). Routing in `co_route`. Claude worker hardened (no settings/MCP/slash commands, own system prompt).
+- Security review (background agent) delivered 12 findings; fixed the critical one: untrusted project config (DECISIONS #18). Rest tracked as tasks.
+- Research agent verified Copilot CLI / Crush / Qwen Code hook surfaces → docs/research/copilot-crush-qwen-amp.md.
+- Verified: conformance 206/206 on both engines (stub agent CLIs, @host, malicious project config), bun 31/31, routing 49/49 ×2.

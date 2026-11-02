@@ -1,7 +1,7 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import { DEFAULTS } from "./assets.ts";
-import { projectConfigPath, userConfigPath } from "./paths.ts";
+import { projectConfigPath, projectDir, userConfigPath } from "./paths.ts";
 
 export type Json = null | boolean | number | string | Json[] | { [k: string]: Json };
 export type Obj = { [k: string]: Json };
@@ -40,13 +40,56 @@ export function resetConfig(): void {
   cache = undefined;
 }
 
+/** Top-level keys a repository's own .harness-offload.json may set. A cloned
+ * repo must not choose binaries to run, endpoints that receive API keys, or
+ * switch privacy guards off; it can only tighten secret_globs. Listing the
+ * project in the user config's trusted_projects lifts this. (Twin:
+ * CO_PROJECT_FILTER in lib/common.sh.) */
+export const SAFE_PROJECT_KEYS = ["models", "variants", "read", "explore", "digest", "hooks", "enabled", "log_retention_days"];
+const SAFE_OPENCODE_KEYS = ["timeout_seconds", "max_stream_errors"];
+
+function isTrustedProject(base: Obj): boolean {
+  const t = base.trusted_projects;
+  return Array.isArray(t) && t.includes(projectDir());
+}
+
+/** Project-config keys ignored because the project is not trusted. */
+export function ignoredProjectKeys(): string[] {
+  const proj = readJsonFile(projectConfigPath());
+  if (!proj) return [];
+  let base: Json = structuredClone(DEFAULTS) as Json;
+  const user = readJsonFile(userConfigPath());
+  if (user) base = deepMerge(base, user);
+  if (isTrustedProject(base as Obj)) return [];
+  const sorted = (o: Obj) => Object.keys(o).sort();
+  const out = sorted(proj).filter((k) => !SAFE_PROJECT_KEYS.includes(k) && k !== "opencode" && k !== "privacy");
+  if (isObj(proj.opencode)) out.push(...sorted(proj.opencode).filter((k) => !SAFE_OPENCODE_KEYS.includes(k)).map((k) => `opencode.${k}`));
+  if (isObj(proj.privacy)) out.push(...sorted(proj.privacy).filter((k) => k !== "secret_globs").map((k) => `privacy.${k}`));
+  return out;
+}
+
+function mergeProject(base: Obj, proj: Obj): Obj {
+  if (isTrustedProject(base)) return deepMerge(base, proj) as Obj;
+  const safe: Obj = {};
+  for (const k of SAFE_PROJECT_KEYS) if (k in proj) safe[k] = proj[k];
+  const oc: Obj = {};
+  if (isObj(proj.opencode)) for (const k of SAFE_OPENCODE_KEYS) if (k in proj.opencode) oc[k] = proj.opencode[k];
+  const out = deepMerge(deepMerge(base, safe), { opencode: oc }) as Obj;
+  const extra = isObj(proj.privacy) && Array.isArray(proj.privacy.secret_globs) ? proj.privacy.secret_globs.filter((g): g is string => typeof g === "string") : [];
+  if (extra.length) {
+    const priv = (isObj(out.privacy) ? out.privacy : {}) as Obj;
+    out.privacy = { ...priv, secret_globs: [...(Array.isArray(priv.secret_globs) ? priv.secret_globs : []), ...extra] };
+  }
+  return out;
+}
+
 export function loadConfig(): Obj {
   if (cache) return cache;
   let merged: Json = structuredClone(DEFAULTS) as Json;
-  for (const p of [userConfigPath(), projectConfigPath()]) {
-    const v = readJsonFile(p);
-    if (v) merged = deepMerge(merged, v);
-  }
+  const user = readJsonFile(userConfigPath());
+  if (user) merged = deepMerge(merged, user);
+  const proj = readJsonFile(projectConfigPath());
+  if (proj) merged = mergeProject(merged as Obj, proj);
   const c = merged as Obj;
   const env = process.env;
   const set = (path: string, value: Json) => setPath(c, path, value);
@@ -128,9 +171,15 @@ export function setConfigValue(key: string, raw: string, project = false): strin
   return file;
 }
 
-export function writeConfigFile(file: string, value: Obj, mode?: number): void {
+/** Config files may hold API keys: owner-only by default. */
+export function writeConfigFile(file: string, value: Obj, mode = 0o600): void {
   mkdirSync(dirname(file), { recursive: true });
-  writeFileSync(file, JSON.stringify(value, null, 2) + "\n", mode ? { mode } : undefined);
+  writeFileSync(file, JSON.stringify(value, null, 2) + "\n", { mode });
+  try {
+    chmodSync(file, mode);
+  } catch {
+    /* not ours to change (e.g. Windows ACLs) */
+  }
   resetConfig();
 }
 

@@ -23,7 +23,7 @@ const HELP = () => `${banner()}
     offload sync                            refresh every installed integration (after an upgrade)
     offload doctor [--ping] [--reset]       check everything; --ping makes one tiny call per model
     offload models [BACKEND...]             list models your backends offer
-    offload config [show|path|init|set KEY VALUE|get] [--project]
+    offload config [show|path|init|set KEY VALUE|get|trust] [--project]
     offload stats [--days N] [--json]       delegations and estimated tokens saved
     offload statusline                      one short line for status bars
     offload mcp                             run as an MCP server (stdio)
