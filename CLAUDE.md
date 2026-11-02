@@ -37,7 +37,7 @@ node packages/cli/scripts/source-hash.mjs --check                 # dist freshne
 - Bash must run on macOS bash 3.2 + BSD tools; no jq regex; `LC_ALL=C` for tr/sed/awk.
 - No real model calls in tests (stubs: `tests/stub-agent`, `tests/mock_openai.py`, `tests/stub-opencode`).
 - No third-party code or references inside source files; credits only in README "Acknowledgements"/LICENSE.
-- GitHub owner is the placeholder `OWNER` until `scripts/set-owner.sh` runs.
+- GitHub owner is `levgiorg` (set by `scripts/set-owner.sh`).
 - Any UI work uses the impeccable skill and the Claude Code design skills (see `docs/design/`).
 - README stays short; details go to `docs/`. Record decisions in `docs/autopilot/DECISIONS.md`.
 

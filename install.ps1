@@ -1,7 +1,7 @@
 # Harness Offload installer for Windows (PowerShell).
-#   irm https://raw.githubusercontent.com/OWNER/harness-offload/main/install.ps1 | iex
+#   irm https://raw.githubusercontent.com/levgiorg/harness-offload/main/install.ps1 | iex
 $ErrorActionPreference = "Stop"
-$repo = "OWNER/harness-offload"
+$repo = "levgiorg/harness-offload"
 if (Get-Command npm -ErrorAction SilentlyContinue) {
   Write-Host "▌ installing harness-offload with npm" -ForegroundColor Cyan
   npm install -g harness-offload

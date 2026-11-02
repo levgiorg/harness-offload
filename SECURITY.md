@@ -43,4 +43,4 @@ Review which providers you use and whether they train on prompts.
   `mcp.run_tool: false` to remove it.
 - Redaction is pattern-based and cannot catch every secret format.
 
-Please report vulnerabilities privately via GitHub Security Advisories on OWNER/harness-offload.
+Please report vulnerabilities privately via GitHub Security Advisories on levgiorg/harness-offload.

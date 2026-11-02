@@ -27,6 +27,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.4
       - run: bun install --frozen-lockfile
       - run: bun run gen
       - run: bun build src/cli.ts --compile --minify --target=${{ matrix.target }} --outfile ../../dist/${{ matrix.name }}
@@ -42,6 +44,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.4
       - uses: actions/setup-node@v4
         with:
           node-version: 22

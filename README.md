@@ -5,7 +5,7 @@
 **Keep huge files, long logs and repo-wide searches out of your coding agent's context.**<br>
 A small model on the plan you already pay for reads them and hands back the answer, with every line reference checked.
 
-[![ci](https://github.com/OWNER/harness-offload/actions/workflows/ci.yml/badge.svg)](https://github.com/OWNER/harness-offload/actions/workflows/ci.yml)
+[![ci](https://github.com/levgiorg/harness-offload/actions/workflows/ci.yml/badge.svg)](https://github.com/levgiorg/harness-offload/actions/workflows/ci.yml)
 [![npm](https://img.shields.io/npm/v/harness-offload)](https://www.npmjs.com/package/harness-offload)
 [![license: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
@@ -22,7 +22,7 @@ Claude Code · Codex · Gemini CLI · Copilot CLI · Cursor · OpenCode · Pi ·
 **Claude Code** — needs only `bash` and `jq`:
 
 ```text
-/plugin marketplace add OWNER/harness-offload
+/plugin marketplace add levgiorg/harness-offload
 /plugin install harness-offload@harness-offload
 ```
 

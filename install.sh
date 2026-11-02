@@ -1,11 +1,11 @@
 #!/bin/sh
 # Harness Offload installer (macOS / Linux / WSL).
-#   curl -fsSL https://raw.githubusercontent.com/OWNER/harness-offload/main/install.sh | sh
+#   curl -fsSL https://raw.githubusercontent.com/levgiorg/harness-offload/main/install.sh | sh
 # Installs the `offload` CLI: via npm when Node ≥18 is available, otherwise a
 # standalone binary from the latest GitHub release into ~/.local/bin. Then
 # run `offload setup`.
 set -eu
-REPO="OWNER/harness-offload"
+REPO="levgiorg/harness-offload"
 BIN_DIR="${OFFLOAD_BIN_DIR:-$HOME/.local/bin}"
 
 say() { printf '\033[36m▌\033[0m %s\n' "$*"; }

@@ -10,7 +10,7 @@
     "displayName": "Harness Offload",
     "shortDescription": "Offload big reads, logs and exploration to cheap models",
     "longDescription": "Harness Offload blocks full reads of huge files (with an outline and options), digests long command output, and gives Codex MCP tools that delegate reading, exploring, log digesting and boilerplate to cheap worker models — OpenCode, OpenRouter, Ollama, Pi, Gemini and more.",
-    "developerName": "OWNER",
+    "developerName": "levgiorg",
     "category": "Developer Tools",
     "capabilities": ["Read", "CLI"],
     "defaultPrompt": ["Check my Harness Offload setup.", "Explore this repo with Harness Offload: where is auth handled?", "Run the tests through Harness Offload and summarize failures."],

@@ -3,7 +3,7 @@
   "displayName": "Harness Offload",
   "version": "0.2.0",
   "description": "Keep bulk I/O out of Cursor's context: large reads, noisy command output and codebase exploration go to cheap worker models you already pay for.",
-  "author": { "name": "OWNER" },
+  "author": { "name": "George Levis" },
   "keywords": ["token-optimization", "delegation", "context", "mcp"],
   "rules": "./hosts/cursor/rules",
   "skills": "./hosts/codex/skills",

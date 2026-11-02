@@ -25,7 +25,7 @@
 - Verified in real hosts: Claude Code, OpenCode v1/v2, Pi, Codex, Copilot CLI, Crush, Qwen Code.
 
 ## Constraints
-- MIT, open source; GitHub owner is a placeholder `OWNER` until publication.
+- MIT, open source; GitHub owner is a placeholder `levgiorg` until publication.
 - CLI `offload` (alias `harness-offload`); npm `harness-offload`. Works with bash + jq; Node for some paths.
 - Never invent customers, prices, star counts or benchmarks.
 

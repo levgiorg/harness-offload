@@ -1,9 +1,9 @@
 # Every change needs a review from the maintainers (set with scripts/set-owner.sh).
-* @OWNER
+* @levgiorg
 
 # Security-sensitive areas
-/SECURITY.md                                @OWNER
-/plugins/harness-offload/lib/               @OWNER
-/packages/cli/src/backends/                 @OWNER
-/packages/cli/src/secrets.ts                @OWNER
-/.github/workflows/                         @OWNER
+/SECURITY.md                                @levgiorg
+/plugins/harness-offload/lib/               @levgiorg
+/packages/cli/src/backends/                 @levgiorg
+/packages/cli/src/secrets.ts                @levgiorg
+/.github/workflows/                         @levgiorg

@@ -258,8 +258,9 @@ mkdir -p linkdir; printf 'hello\n' > linkdir/ok.txt; ln -sf ../.env linkdir/env-
 out=$(STUB_PROMPT="$T/prompt-links" "$OFFLOAD" read -q "what?" linkdir 2>&1)
 expect_not "read DIR: links inside are not followed" "$(cat "$T/prompt-links")" "SECRET=abc"
 expect_has "read DIR: regular files still sent" "$(cat "$T/prompt-links")" "hello"
-cp .env .ENV 2>/dev/null; "$OFFLOAD" read -q "what?" .ENV >/dev/null 2>&1; expect_eq "read: secret names match case-insensitively" "$?" 16
-rm -rf notes-link.md linkdir .ENV
+# own dir: on a case-insensitive FS (macOS) .ENV is .env, and removing it would delete the fixture
+mkdir -p casedir; cp .env casedir/.ENV; "$OFFLOAD" read -q "what?" casedir/.ENV >/dev/null 2>&1; expect_eq "read: secret names match case-insensitively" "$?" 16
+rm -rf notes-link.md linkdir casedir
 expect_has "read: question last" "$(tail -n 1 "$T/prompt")" "<question>what does fn3 do?</question>"
 out=$(STUB_PROMPT="$T/prompt" "$OFFLOAD" read -q "q" big.ts:10-12 2>&1)
 expect_has "read: file:START-END range" "$(cat "$T/prompt")" 'lines="10-12" total_lines="1200"'
@@ -417,7 +418,8 @@ if command -v python3 >/dev/null 2>&1 && command -v curl >/dev/null 2>&1; then
   HPORT=$(( 20000 + $$ % 20000 ))
   MOCK_PORT=$HPORT MOCK_LOG="$T/http-mock.log" python3 "$HERE/mock_openai.py" > "$T/http-mock.out" 2>&1 &
   HPID=$!
-  for _ in 1 2 3 4 5 6 7 8 9 10; do curl -s --noproxy '*' -m 1 "http://127.0.0.1:$HPORT/v1/models" >/dev/null 2>&1 && break; sleep 0.3; done
+  # up to ~15 s: python3 can take seconds to start on a cold macOS runner
+  i=0; while [ $i -lt 50 ]; do curl -s --noproxy '*' -m 1 "http://127.0.0.1:$HPORT/v1/models" >/dev/null 2>&1 && break; sleep 0.3; i=$((i + 1)); done
   jq -n --arg u "http://127.0.0.1:$HPORT/v1" '{endpoints: {mock: {type: "openai", base_url: $u}}}' > "$OFFLOAD_CONFIG"
   # non-explore HTTP needs no TypeScript CLI in the bash engine (curl)
   out=$(OFFLOAD_TS_CLI=false NO_PROXY='127.0.0.1,localhost' "$OFFLOAD" ask -m mock:echo "hello http" 2>&1); rc=$?

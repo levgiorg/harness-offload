@@ -1,6 +1,6 @@
 {
   "name": "harness-offload",
-  "owner": { "name": "OWNER" },
+  "owner": { "name": "George Levis" },
   "description": "Harness Offload: delegate bulk I/O from Claude Code to cheap OpenCode models.",
   "plugins": [
     {

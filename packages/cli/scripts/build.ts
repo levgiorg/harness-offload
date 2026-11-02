@@ -25,6 +25,10 @@ for (const r of [res, res2]) {
   }
 }
 const { chmodSync, readFileSync, writeFileSync, cpSync, rmSync, mkdirSync } = await import("node:fs");
+const { resolve } = await import("node:path");
+// Absolute paths: Bun on Windows rejects rmSync on "../.."-relative directories (EINVAL).
+const pkgDir = resolve(import.meta.dir, "..");
+const repoDir = resolve(pkgDir, "..", "..");
 // Bun keeps the source shebang too; make sure there is exactly one.
 const out = readFileSync("dist/cli.js", "utf8").replace(/^(#!.*\n)+/, "#!/usr/bin/env node\n");
 writeFileSync("dist/cli.js", out);
@@ -38,7 +42,7 @@ chmodSync("dist/offload-node", 0o755);
 // Cursor copy plugins into caches; hooks and MCP find ./dist/cli.js there).
 {
   const { sourceHash } = await import("./source-hash.mjs");
-  const pdist = "../../plugins/harness-offload/dist";
+  const pdist = resolve(repoDir, "plugins/harness-offload/dist");
   rmSync(pdist, { recursive: true, force: true });
   mkdirSync(pdist, { recursive: true });
   for (const f of ["cli.js", "pi.js", "opencode.js", "amp.js"]) cpSync(`dist/${f}`, `${pdist}/${f}`);
@@ -47,8 +51,12 @@ chmodSync("dist/offload-node", 0o755);
 }
 // assets/marketplace: the Claude-format marketplace (plugin + host files) that
 // `offload install` registers with Claude Code, Codex, Cursor, Gemini, Devin.
-rmSync("assets/marketplace", { recursive: true, force: true });
-mkdirSync("assets/marketplace/.claude-plugin", { recursive: true });
-cpSync("../../.claude-plugin/marketplace.json", "assets/marketplace/.claude-plugin/marketplace.json");
-cpSync("../../plugins/harness-offload", "assets/marketplace/plugins/harness-offload", { recursive: true, filter: (p) => !p.includes("/tests") });
+const market = resolve(pkgDir, "assets/marketplace");
+rmSync(market, { recursive: true, force: true });
+mkdirSync(`${market}/.claude-plugin`, { recursive: true });
+cpSync(resolve(repoDir, ".claude-plugin/marketplace.json"), `${market}/.claude-plugin/marketplace.json`);
+cpSync(resolve(repoDir, "plugins/harness-offload"), `${market}/plugins/harness-offload`, {
+  recursive: true,
+  filter: (p) => !/[\\/]tests([\\/]|$)/.test(p),
+});
 console.log("built dist/cli.js, dist/pi.js, dist/opencode.js, plugins/harness-offload/dist, assets/marketplace");
