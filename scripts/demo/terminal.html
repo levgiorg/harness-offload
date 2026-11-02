@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Harness Offload demo</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,500..850&family=JetBrains+Mono:wght@400;700&display=swap">
+<style>
+/* A terminal replay of real outputs (scripts/demo/session.json), recorded frame by frame into docs/assets/demo.gif */
+:root {
+  --field: #2140b8; --term: #0e1533; --text: #e6ebff; --dim: #8d9ad0; --prompt: #9db4ff;
+  --block: #ff7083; --ok: #62d9a0; --mark: #ffd27a; --paper: #f4f7ff; --ink: #15297a;
+  --mono: "JetBrains Mono", ui-monospace, Menlo, monospace;
+  --display: "Archivo", "Helvetica Neue", Arial, sans-serif;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--field); }
+#win { width: 1200px; height: 680px; padding: 22px; background: var(--field); display: grid; grid-template-rows: minmax(0, 1fr) auto; gap: 14px; }
+.term { background: var(--term); border-radius: 10px; box-shadow: 0 18px 40px -18px rgb(5 10 40 / 0.7); padding: 16px 22px 18px; overflow: hidden; display: grid; grid-template-rows: auto minmax(0, 1fr); gap: 12px; }
+.bar { display: flex; gap: 8px; align-items: center; }
+.bar i { width: 11px; height: 11px; border-radius: 50%; background: #2a3566; }
+.bar span { margin-left: 10px; font: 500 13px/1 var(--display); color: var(--dim); letter-spacing: 0.02em; }
+pre { margin: 0; font: 400 15px/1.55 var(--mono); font-variant-ligatures: none; color: var(--text); white-space: pre-wrap; overflow-wrap: anywhere; }
+.cmd .p { color: var(--prompt); font-weight: 700; }
+.cmd .a { color: var(--block); font-weight: 700; }
+.cursor { display: inline-block; width: 9px; height: 18px; background: var(--text); vertical-align: -3px; }
+.l-block { color: var(--block); font-weight: 700; }
+.l-ok { color: var(--ok); font-weight: 700; }
+.l-dim { color: var(--dim); }
+.l-key { color: var(--mark); }
+.cite { color: var(--prompt); font-weight: 700; }
+.caption { background: var(--paper); color: var(--ink); border-radius: 6px; padding: 14px 20px; display: flex; gap: 16px; align-items: baseline; }
+.caption b { font: 850 15px/1 var(--display); font-stretch: 70%; letter-spacing: 0.1em; text-transform: uppercase; color: #d1203a; white-space: nowrap; }
+.caption span { font: 600 19px/1.35 var(--display); font-stretch: 100%; }
+.end { display: grid; place-content: center; text-align: center; gap: 18px; height: 100%; }
+.end h1 { margin: 0; font: 850 64px/1 var(--display); font-stretch: 118%; letter-spacing: -0.03em; color: var(--paper); }
+.end p { margin: 0; font: 500 22px/1.4 var(--display); color: #cdd7ff; }
+.end code { font: 400 20px/1.5 var(--mono); color: var(--paper); background: rgb(255 255 255 / 0.12); padding: 10px 16px; border-radius: 6px; }
+</style>
+</head>
+<body>
+<div id="win"></div>
+<script>
+const esc = (s) => s.replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" })[c]);
+function paint(line) {
+  let cls = "";
+  if (/^offload: A full Read/.test(line)) cls = "l-block";
+  else if (/^\[offload /.test(line)) cls = "l-ok";
+  else if (/^──/.test(line)) cls = "l-dim";
+  else if (/^L\d+:/.test(line)) cls = "l-key";
+  let html = esc(line).replace(/(src\/[\w./-]+:L?\d+(?:[-:]L?\d+)?)/g, '<span class="cite">$1</span>');
+  return cls ? `<span class="${cls}">${html}</span>` : html;
+}
+window.show = (session, scene, typed, lines, cursor) => {
+  const win = document.getElementById("win");
+  if (scene < 0) {
+    win.innerHTML = `<div class="term"><div class="bar"><i></i><i></i><i></i></div><div class="end">
+      <h1>Harness Offload</h1>
+      <p>Keep the bulk off your agent’s desk — on a plan you already pay for.</p>
+      <div><code>/plugin install harness-offload@harness-offload</code></div></div></div>
+      <div class="caption"><b>Real outputs</b><span>claude:haiku via @host · 7 of 7 citations checked · 919 lines kept out of context</span></div>`;
+    return;
+  }
+  const s = session.scenes[scene];
+  const prompt = s.prompt === "agent" ? '<span class="a">agent ›</span>' : '<span class="p">$</span>';
+  const cmd = esc(s.command.slice(0, typed));
+  const out = s.output.slice(0, lines).map(paint).join("\n");
+  win.innerHTML = `<div class="term"><div class="bar"><i></i><i></i><i></i><span>~/acme — ${s.prompt === "agent" ? "your coding agent" : "zsh"}</span></div>
+    <pre><span class="cmd">${prompt} ${cmd}${cursor ? '<span class="cursor"></span>' : ""}</span>${lines ? "\n\n" + out : ""}</pre></div>
+    <div class="caption"><b>Step ${scene + 1} of 3</b><span>${esc(s.caption)}</span></div>`;
+};
+</script>
+</body>
+</html>

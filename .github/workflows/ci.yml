@@ -4,14 +4,21 @@ on:
   push:
     branches: [main]
   pull_request:
+  merge_group:
 
 permissions:
   contents: read
+
+# a new push to a PR cancels the run it replaces
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 jobs:
   typescript:
     name: TypeScript (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
@@ -43,6 +50,7 @@ jobs:
   bash:
     name: Bash engine + conformance (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
     needs: typescript
     strategy:
       fail-fast: false
@@ -76,6 +84,7 @@ jobs:
   lint:
     name: shellcheck + manifests
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - name: shellcheck
@@ -107,4 +116,23 @@ jobs:
           node plugins/harness-offload/dist/cli.js --version
           OFFLOAD_HOST=claude node plugins/harness-offload/dist/cli.js config show > /dev/null
       - name: Claude Code plugin validation
-        run: npx --yes @anthropic-ai/claude-code plugin validate plugins/harness-offload || echo "::warning::claude plugin validate unavailable"
+        run: npx --yes @anthropic-ai/claude-code plugin validate plugins/harness-offload
+      - name: Shell scripts lint clean at warning level
+        run: |
+          shellcheck -S warning -e SC2034 plugins/harness-offload/bin/offload-ts plugins/harness-offload/tests/e2e-hosts.sh scripts/*.sh
+
+  # The one check to mark as required in branch protection: green only when
+  # every job above passed (skipped or cancelled counts as a failure).
+  ci-ok:
+    name: ci-ok
+    if: always()
+    needs: [typescript, bash, lint]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: All required jobs passed
+        env:
+          NEEDS: ${{ toJSON(needs) }}
+        run: |
+          printf '%s' "$NEEDS" | jq -r 'to_entries[] | "\(.key): \(.value.result)"'
+          printf '%s' "$NEEDS" | jq -e 'to_entries | all(.value.result == "success")' > /dev/null

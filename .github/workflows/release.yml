@@ -52,7 +52,13 @@ jobs:
           merge-multiple: true
       - name: Build npm package
         working-directory: packages/cli
-        run: bun install --frozen-lockfile && bun run build && cp ../../README.md ../../LICENSE .
+        run: |
+          bun install --frozen-lockfile && bun run build && cp ../../LICENSE .
+          # npmjs.com can't resolve repo-relative links: point images and docs at GitHub
+          repo="${GITHUB_REPOSITORY}"
+          sed -E -e "s#src=\"(docs/[^\"]+)\"#src=\"https://raw.githubusercontent.com/$repo/main/\1\"#g" \
+                 -e "s#\]\((docs/[^)]+|SECURITY\.md|CONTRIBUTING\.md|LICENSE)\)#](https://github.com/$repo/blob/main/\1)#g" \
+                 ../../README.md > README.md
       - name: Plugin zip
         run: |
           cd plugins && zip -qr ../dist/harness-offload-plugin.zip harness-offload -x 'harness-offload/tests/*' && cd ..

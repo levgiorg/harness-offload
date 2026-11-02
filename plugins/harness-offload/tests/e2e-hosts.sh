@@ -66,8 +66,10 @@ check() { # check HOST LOG [no-digest]
   if grep -q "offload is installed" "$log" 2>/dev/null; then ok "$host: guide reached the model"; else bad "$host: guide missing"; fi
 }
 
+# node's directory stays on PATH (CI runners keep it outside /usr/local/bin)
+NODE_DIR=$(dirname "$(command -v node)")
 common_env() {
-  printf '%s\n' "PATH=$T/bin:/usr/local/bin:/usr/bin:/bin" "TERM=dumb" "OFFLOAD_MODEL=claude:haiku" \
+  printf '%s\n' "PATH=$T/bin:$NODE_DIR:/usr/local/bin:/usr/bin:/bin" "TERM=dumb" "OFFLOAD_MODEL=claude:haiku" \
     "OFFLOAD_STATE_DIR=$T/state-$1" "OFFLOAD_CONFIG=$T/none.json" "NO_PROXY=127.0.0.1,localhost"
 }
 
@@ -88,7 +90,7 @@ run_copilot() {
     COPILOT_PROVIDER_BASE_URL="http://127.0.0.1:$PORT/v1" COPILOT_PROVIDER_TYPE=openai COPILOT_PROVIDER_API_KEY=x COPILOT_MODEL=mock-model \
     timeout 180 "$bin" -p "please test" --allow-all-tools --no-auto-update --trust-folder >/dev/null 2>&1)
   check copilot "$T/copilot.log"
-  WENV="HOME=$h COPILOT_OFFLINE=true COPILOT_AUTO_UPDATE=false COPILOT_PROVIDER_BASE_URL=http://127.0.0.1:$PORT/v1 COPILOT_PROVIDER_TYPE=openai COPILOT_PROVIDER_API_KEY=x COPILOT_MODEL=mock-model PATH_EXTRA=$(dirname "$bin")"
+  WENV="HOME=$h COPILOT_OFFLINE=true COPILOT_AUTO_UPDATE=false COPILOT_PROVIDER_BASE_URL=http://127.0.0.1:$PORT/v1 COPILOT_PROVIDER_TYPE=openai COPILOT_PROVIDER_API_KEY=x COPILOT_MODEL=mock-model"
   ln -sf "$bin" "$T/bin/copilot"
   worker copilot
 }

@@ -6,7 +6,7 @@ owner="${1:?usage: scripts/set-owner.sh GITHUB_OWNER [DISPLAY_NAME]}"
 display="${2:-$owner}"
 cd "$(dirname "$0")/.."
 files=$(git ls-files | grep -vE '^(scripts/set-owner\.sh|docs/autopilot/)' | while IFS= read -r f; do
-  [ -f "$f" ] && grep -Il 'OWNER' "$f" 2>/dev/null || true
+  [ -f "$f" ] && grep -IlE '(^|[^A-Za-z_])OWNER([^A-Za-z_]|$)' "$f" 2>/dev/null || true
 done)
 [ -z "$files" ] && { echo "no OWNER placeholders left"; exit 0; }
 for f in $files; do
@@ -15,6 +15,9 @@ for f in $files; do
                -e "s#OWNER/harness-offload#$owner/harness-offload#g" \
                -e "s#\"name\": \"OWNER\"#\"name\": \"$display\"#g" \
                -e "s#Copyright (c) \([0-9]*\) OWNER#Copyright (c) \1 $display#g" \
-               -e "s#OWNER#$owner#g" "$f" > "$f.tmp" && cat "$f.tmp" > "$f" && rm -f "$f.tmp"
+               -e "s#\([^A-Za-z_]\)OWNER\([^A-Za-z_]\)#\1$owner\2#g" \
+               -e "s#\([^A-Za-z_]\)OWNER\([^A-Za-z_]\)#\1$owner\2#g" \
+               -e "s#^OWNER\([^A-Za-z_]\)#$owner\1#" -e "s#\([^A-Za-z_]\)OWNER\$#\1$owner#" -e "s#^OWNER\$#$owner#" \
+               "$f" > "$f.tmp" && cat "$f.tmp" > "$f" && rm -f "$f.tmp"
   echo "updated $f"
 done

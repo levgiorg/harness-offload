@@ -65,3 +65,9 @@
 - harness-offload.zip (repo with history, 32 commits) sent; smoke-tested from a fresh unzip: conformance 240/240 with no build step, bundled CLI runs, dist hash current.
 - Private previews published: landing page and a sample report.
 - Remaining unchecked: M4 "beautiful CLI" polish for the bash engine's colors/tables, M7 context-aware thresholds, `offload serve` (deferred). Open owner questions are in the delivery report.
+
+## 2026-11-02 ~07:00 UTC — README, strict CI, handoff (owner request)
+- README rewritten in the style of current agent-tool READMEs (OpenCode, Crush, Gemini CLI): one-line pitch, real-output demo GIF (`scripts/demo/` records it from `session.json`, real Haiku runs), two install blocks, results table, four commands, dashboard screenshot, 4-step "how it works", docs table. Reference moved to docs/backends, commands, configuration, how-it-works, development; harness table merged into docs/hosts.md.
+- CI: concurrency cancel, job timeouts, strict `claude plugin validate`, shellcheck warning level for scripts, single required `ci-ok` gate, merge-queue trigger; hosts-e2e also on PRs touching hooks/connectors/hosts (Node on PATH for runners). CODEOWNERS, `scripts/protect-main.sh`, CONTRIBUTING with the check matrix, PR checklist, set-owner made word-safe (CODEOWNERS), npm README links rewritten to absolute at release.
+- CLAUDE.md (auto-loaded project notes) + docs/HANDOFF.md.
+- Local CI-equivalent green: shellcheck (error + warning), typecheck, bun 52/52, conformance 252/252 ×2, routing 49/49 ×2, dist current, plugin validate; real-harness e2e 16/16.

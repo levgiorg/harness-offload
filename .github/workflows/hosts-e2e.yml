@@ -1,12 +1,27 @@
 name: hosts-e2e
 
 # Real agent harnesses (GitHub Copilot CLI, Crush, Qwen Code) driven by a
-# scripted local mock model — no accounts or API keys. Manual and weekly,
-# because it installs the harnesses from npm.
+# scripted local mock model — no accounts or API keys. Runs on pull requests
+# that touch hooks, connectors or host code, weekly, and on demand.
 on:
   workflow_dispatch:
   schedule:
     - cron: "17 4 * * 1"
+  pull_request:
+    paths:
+      - "plugins/harness-offload/hooks/**"
+      - "plugins/harness-offload/lib/**"
+      - "plugins/harness-offload/bin/**"
+      - "plugins/harness-offload/dist/**"
+      - "plugins/harness-offload/tests/e2e-hosts.sh"
+      - "plugins/harness-offload/tests/mock_openai.py"
+      - "packages/cli/src/backends/**"
+      - "packages/cli/src/commands/hook.ts"
+      - "packages/cli/src/hosts/**"
+
+concurrency:
+  group: hosts-e2e-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: read
@@ -14,6 +29,7 @@ permissions:
 jobs:
   hosts:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4

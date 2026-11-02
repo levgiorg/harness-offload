@@ -1,0 +1,66 @@
+{
+  "scenes": [
+    {
+      "caption": "Your agent reaches for a 919-line file. The hook holds it back and hands it an outline.",
+      "prompt": "agent",
+      "command": "Read src/ledger.ts",
+      "output": [
+        "offload: A full Read would put all of src/ledger.ts into your context (919 lines, ~9,666 tokens; limit 600 lines / 6,000 tokens).",
+        "Pick the cheapest option:",
+        "- Need exact text (to edit/quote)? Read with offset/limit (max 600 lines per call) — outline below; `grep -n PATTERN src/ledger.ts` finds more.",
+        "- Need understanding/facts? Bash: offload read -q \"<specific question>\" src/ledger.ts",
+        "Outline of src/ledger.ts:",
+        "  L31: export function postPayablesAdjustment3(journal: Journal, account: Account, amount: Money): Entry",
+        "  L53: export function postTaxAdjustment5(journal: Journal, account: Account, amount: Money): Entry",
+        "  L64: export function postShippingAdjustment6(journal: Journal, account: Account, amount: Money): Entry",
+        "  L86: export function postWarrantyAdjustment8(journal: Journal, account: Account, amount: Money): Entry",
+        "  …"
+      ],
+      "tone": "block"
+    },
+    {
+      "caption": "Haiku, on your own Claude plan, reads it instead. Every citation is checked against the file.",
+      "prompt": "$",
+      "command": "offload read -q \"What is MAX_BATCH, and what does applyLateFee charge and when?\" src/ledger.ts",
+      "output": [
+        "MAX_BATCH is 500, the cap on journal entries. applyLateFee charges 2.5% of the account balance, but only when the receivable is more than 30 days overdue. It has no cap, despite a TODO.",
+        "",
+        "  - Defined as `export const MAX_BATCH = 500;` (src/ledger.ts:L5).",
+        "  - No fee if `daysOverdue <= 30` (src/ledger.ts:L417 `if (daysOverdue <= 30) return 0 as Money;`). A receivable exactly 30 days overdue gets no fee.",
+        "  - The TODO says `TODO: cap the fee at 50.00` (src/ledger.ts:L415). No cap is implemented in the code shown.",
+        "",
+        "[offload read · claude:haiku · 1 file(s), 919 lines (~11,291 tokens) kept out of your context · 9s · citations: 7 verified, 0 unverified]"
+      ],
+      "tone": "answer"
+    },
+    {
+      "caption": "2,323 lines of CI output become a short digest, with the failing lines kept verbatim.",
+      "prompt": "$",
+      "command": "offload summarize -q \"which tests failed and why?\" ci.log",
+      "output": [
+        "[offload] `ci.log` · 2,323 lines / 129 KB · full log: ~/.local/state/harness-offload/logs/ci.log",
+        "── summary by claude:haiku (cheap model; trust the verbatim lines over it) ──",
+        "STATUS: failure — 2 of 1900 tests failed in 2 of 180 files; npm ci and install succeeded",
+        "",
+        "- `src/inventory.test.ts > commit > refuses an expired reservation`",
+        "  - `AssertionError: expected promise to reject with \"expired\" but it resolved`",
+        "  - at `src/inventory.test.ts:41:51`",
+        "  - Expired reservation was accepted instead of rejected.",
+        "- `src/pricing.test.ts > quote > applies the 10% bulk tier at 100 units`",
+        "  - `AssertionError: expected 1080.00 to equal 1071.36`",
+        "",
+        "── key lines, verbatim (8 distinct) ──",
+        "L1187:  ✗ src/inventory.test.ts > commit > refuses an expired reservation",
+        "L1188:    AssertionError: expected promise to reject with \"expired\" but it resolved",
+        "L1189:     ❯ src/inventory.test.ts:41:51",
+        "L1915:  ✗ src/pricing.test.ts > quote > applies the 10% bulk tier at 100 units",
+        "L1916:    AssertionError: expected 1080.00 to equal 1071.36",
+        "L1917:     ❯ src/pricing.test.ts:88:34",
+        "L2321:  Test Files  2 failed | 178 passed (180)",
+        "L2322:       Tests  2 failed | 1898 passed (1900)"
+      ],
+      "tone": "digest"
+    }
+  ],
+  "note": "Outputs recorded from real runs on 2026-11-02 (worker: claude:haiku via @host); long lines trimmed, temp paths shortened."
+}

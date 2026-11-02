@@ -1,6 +1,26 @@
-# Harness Offload per host
+# Harnesses
 
 What each integration installs, how it talks to the host, and what to know.
+
+| Harness | Install | Read guard | Output digest | Guidance | Tools |
+|---|---|---|---|---|---|
+| **Claude Code** | plugin (`offload install claude`) | ✓ Read + Bash | ✓ | SessionStart | `offload` CLI on PATH |
+| **Codex CLI** | plugin + hooks (`offload install codex`, trust in `/hooks`) | ✓ Bash (Codex reads via shell) | ✓ | SessionStart + skill | MCP tools (Codex sandboxes shell network) |
+| **Cursor** | local plugin (`offload install cursor`) | ✓ Read + Shell | — (Cursor can't replace shell output) | always-on rule | MCP tools |
+| **Gemini CLI** | extension (`offload install gemini`) | ✓ `read_file` + shell | ✓ | GEMINI.md + SessionStart | MCP tools |
+| **Pi** | package (`offload install pi`) | ✓ read + bash | ✓ | system prompt | native `offload_*` tools |
+| **OpenCode** (v1 & v2) | plugin (`offload install opencode`) | ✓ read + shell | ✓ | system prompt | `offload` CLI |
+| **Kilo Code CLI** | plugin (`offload install kilo`) | ✓ read + bash | ✓ | system prompt | `offload` CLI |
+| **GitHub Copilot CLI** | Claude plugin (`offload install copilot`) | ✓ view + bash | ✓ | SessionStart | `offload` CLI (absolute path) |
+| **Qwen Code** | extension converted from the plugin (`offload install qwen`) | ✓ read_file + shell | — (no output replacement) | SessionStart | `offload` CLI |
+| **Crush** | hooks in `crush.json` (`offload install crush`) | ✓ view + bash | ✓ | global context file | `offload` CLI |
+| **Devin Desktop / Windsurf** | Claude plugin (`offload install devin`) | ✓ (Claude hooks) | — | — | `offload` CLI |
+| **Aider** | conventions file (`offload install aider`, then `aider --read …`) | — | — | conventions | `/run offload …` |
+| **MCP clients** (Cline, Zed, Continue, Goose, Kiro, VS Code, Claude Desktop) | `offload install mcp` prints each client's config | — | — | server instructions | MCP tools |
+
+Copilot CLI, Crush and Qwen Code were verified end to end with their real binaries.
+
+
 
 ## Claude Code
 - **Install:** `offload install claude` (= `claude plugin marketplace add <bundled marketplace>` + `claude plugin install harness-offload@harness-offload`), or `/plugin marketplace add OWNER/harness-offload`.
