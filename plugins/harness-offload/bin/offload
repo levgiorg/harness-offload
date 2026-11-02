@@ -541,8 +541,10 @@ cmd_doctor() {
         if cli=$(co_ts_cli); then echo "  $ok $label (via $cli)"; else echo "  $bad $label needs Node.js 18+ or the harness-offload CLI: npm i -g harness-offload"; problems=$((problems + 1)); fi ;;
       *)
         uses_oc=true
-        if [ -z "$CO_RT_MODEL" ]; then
+        if [ -z "$CO_RT_MODEL" ] && [ "$(co_model_chain read | head -n 1)" = "@default" ]; then
           echo "  $warn @default = OpenCode's own default model. Pin a cheap one: offload config set models.default PROVIDER/MODEL (or @host)"
+        elif [ -z "$CO_RT_MODEL" ]; then
+          if co_have_opencode; then echo "  $ok @default = OpenCode's own default model (fallback)"; else echo "  - @default (fallback) needs opencode — skipped when absent"; fi
         elif [ -n "$models_list" ] && ! printf '%s\n' "$models_list" | grep -qxF "$CO_RT_MODEL"; then
           echo "  $bad $label is not in \`opencode models\` (typo, or provider not logged in: opencode auth login)"
           problems=$((problems + 1))

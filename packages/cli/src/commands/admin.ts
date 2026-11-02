@@ -92,7 +92,7 @@ export async function cmdDoctor(argv: string[]): Promise<number> {
   for (const r of refs) {
     const c = cooling(r);
     if (c) check("warn", `${r} cooling down`, `${c} — offload doctor --reset`);
-    if (r === "@default") check("warn", "@default = the backend's own default model", "pin a cheap one: offload setup");
+    if (r === "@default" && modelChain("read")[0] === "@default") check("warn", "@default = the backend's own default model", "pin a cheap one: offload setup");
   }
   if (opts.ping) {
     out.push(section("Live ping"));

@@ -11,12 +11,15 @@ import { Task } from "../assets.ts";
 import { readConfigFile, resetConfig, writeConfigFile } from "../config.ts";
 import { credentialsPath, endpoint, PRESETS } from "../backends/http.ts";
 import { CLI_AGENTS } from "../backends/agents.ts";
-import { backendFor } from "../backends/registry.ts";
+import { backendFor, detectHost } from "../backends/registry.ts";
+import { CONNECTORS } from "../assets.ts";
 import { invoke } from "../engine.ts";
 import { detectHosts, HOST_LABELS, HOSTS, HostName, install } from "../hosts/install.ts";
 import { projectConfigPath, userConfigPath } from "../paths.ts";
 import { workDir } from "../state.ts";
 import { banner, color } from "../ui.ts";
+
+const HOST_MODELS = CONNECTORS.host_models as Record<string, string>;
 
 interface BackendInfo {
   name: string;
@@ -123,11 +126,8 @@ function writeSettings(target: string, models: Partial<Record<Task | "default", 
 }
 
 async function nonInteractive(opts: Record<string, unknown>): Promise<number> {
-  const model = str(opts.model);
-  if (!model) {
-    process.stderr.write("offload setup --yes needs --model BACKEND:MODEL (and optionally --fallback, --hosts, --key NAME=KEY, --guard)\n");
-    return 2;
-  }
+  // default: the calling harness's own plan (claude:haiku in Claude Code, …)
+  const model = str(opts.model) || "@host";
   for (const kv of list(opts.key)) {
     const i = kv.indexOf("=");
     if (i > 0) storeKey(kv.slice(0, i), kv.slice(i + 1));
@@ -166,14 +166,51 @@ export async function cmdSetup(argv: string[]): Promise<number> {
     "Found",
   );
 
-  const chosen = bail(
-    await p.multiselect({
-      message: "Which worker backends should do the cheap work? (space to toggle)",
-      options: backends.map((b) => ({ value: b.name, label: b.label, hint: b.ready ? color.green(b.detail || "ready") : b.detail })),
-      initialValues: backends.filter((b) => b.ready && (b.kind !== "agent" || b.name === "opencode")).map((b) => b.name).slice(0, 3),
-      required: true,
+  // 1. Same subscription as the harness, or other backends?
+  const agentNames = Object.keys(CLI_AGENTS);
+  const readyAgents = backends.filter((b) => b.kind === "agent" && b.ready).map((b) => b.name);
+  const hostLine = foundHosts
+    .map((h) => [h, HOST_MODELS[h]] as const)
+    .filter(([, m]) => m)
+    .map(([h, m]) => `${HOST_LABELS[h as HostName]} ${color.dim("→")} ${m}`)
+    .join(", ");
+  const mode = bail(
+    await p.select({
+      message: "Who should do the cheap work?",
+      options: [
+        { value: "host", label: "My agent's own subscription (@host)", hint: hostLine || "Claude Code → claude:haiku, Codex → codex:gpt-6-luna, Gemini CLI → gemini:flash-lite" },
+        { value: "host+", label: "My agent's own subscription + a fallback from another backend", hint: "used when the plan hits a usage limit" },
+        { value: "pick", label: "Backends I choose", hint: "OpenCode Zen/Go, ChatGPT/Codex, API keys, local models…" },
+      ],
+      initialValue: readyAgents.length || foundHosts.length ? "host" : "pick",
     }),
-  ) as string[];
+  ) as string;
+  if (mode !== "pick") {
+    p.note(
+      [
+        "Each harness delegates to a small, fast model on the plan you already pay for",
+        "(e.g. Claude Code → Haiku via `claude -p`, Codex → gpt-6-luna via `codex exec`).",
+        "",
+        `${color.bold("What you save")}: the big files, logs and searches never enter your main`,
+        "session's context, so it stays short, fast and cheap to continue.",
+        `${color.bold("What it costs")}: worker calls count toward the same plan's usage limits,`,
+        "at the small model's rate. Add a fallback if you hit limits often.",
+      ].join("\n"),
+      "@host — your agent's own plan",
+    );
+  }
+
+  let chosen: string[] = [];
+  if (mode !== "host") {
+    chosen = bail(
+      await p.multiselect({
+        message: mode === "pick" ? "Which worker backends should do the cheap work? (space to toggle)" : "Which backend for the fallback? (space to toggle)",
+        options: backends.map((b) => ({ value: b.name, label: b.label, hint: b.ready ? color.green(b.detail || "ready") : b.detail })),
+        initialValues: backends.filter((b) => b.ready && (!agentNames.includes(b.name) || b.name === "opencode")).map((b) => b.name).slice(0, mode === "pick" ? 3 : 1),
+        required: true,
+      }),
+    ) as string[];
+  }
 
   for (const name of chosen) {
     const b = backends.find((x) => x.name === name)!;
@@ -182,25 +219,33 @@ export async function cmdSetup(argv: string[]): Promise<number> {
       if (key) storeKey(name, key);
     }
     if (b.kind === "agent" && !b.ready) p.log.warn(`${b.label}: ${b.detail}`);
-    if (name === "claude") p.log.warn("The claude backend spends your Claude plan — fine for testing, but it does not save Claude quota.");
   }
   resetConfig();
 
-  s.start("Fetching model lists");
   const candidates: string[] = [];
-  for (const name of chosen) candidates.push(...(await modelsFor(backends.find((x) => x.name === name)!)));
-  s.stop(`${candidates.length} models available`);
+  if (chosen.length) {
+    s.start("Fetching model lists");
+    for (const name of chosen) candidates.push(...(await modelsFor(backends.find((x) => x.name === name)!)));
+    s.stop(`${candidates.length} models available`);
+  }
 
-  const readModel = await pickModel("Model for reading & digesting (fast, cheap, long context)", rank(candidates, CHEAP));
-  const sameExplore = bail(await p.confirm({ message: "Use the same model for codebase exploration?", initialValue: true }));
-  const exploreModel = sameExplore ? readModel : await pickModel("Model for exploration (good at tool calling)", rank(candidates, CHEAP));
-  const writeModel = await pickModel("Model for writing boilerplate/tests (best cheap coder)", rank(candidates, CODER), readModel);
-  const backendOf = (m: string) => (m.includes(":") && !m.includes("/") ? m.split(":")[0] : m.includes(":") ? m.split(":")[0] : "opencode");
-  const others = candidates.filter((m) => backendOf(m) !== backendOf(readModel));
+  let readModel = "@host";
+  let exploreModel = "@host";
+  let writeModel = "@host";
   let fallback: string[] = [];
-  if (others.length) {
-    const fb = bail(await p.select({ message: "Fallback model from a different backend (used when the first hits a quota wall)", options: [{ value: "", label: "no fallback" }, ...rank(others, CHEAP).slice(0, 60).map((m) => ({ value: m, label: m }))] }));
-    if (fb) fallback = [fb as string];
+  if (mode === "pick") {
+    readModel = await pickModel("Model for reading & digesting (fast, cheap, long context)", rank(candidates, CHEAP));
+    const sameExplore = bail(await p.confirm({ message: "Use the same model for codebase exploration?", initialValue: true }));
+    exploreModel = sameExplore ? readModel : await pickModel("Model for exploration (good at tool calling)", rank(candidates, CHEAP));
+    writeModel = await pickModel("Model for writing boilerplate/tests (best cheap coder)", rank(candidates, CODER), readModel);
+    const backendOf = (m: string) => (m.includes(":") ? m.split(":")[0] : "opencode");
+    const others = candidates.filter((m) => backendOf(m) !== backendOf(readModel));
+    if (others.length) {
+      const fb = bail(await p.select({ message: "Fallback model from a different backend (used when the first hits a quota wall)", options: [{ value: "", label: "no fallback" }, ...rank(others, CHEAP).slice(0, 60).map((m) => ({ value: m, label: m }))] }));
+      if (fb) fallback = [fb as string];
+    }
+  } else if (mode === "host+") {
+    fallback = [await pickModel("Fallback model (used when your plan hits a usage limit)", rank(candidates, CHEAP))];
   }
 
   const guard = bail(
@@ -239,7 +284,8 @@ export async function cmdSetup(argv: string[]): Promise<number> {
   }
 
   if (bail(await p.confirm({ message: "Run a live test (one tiny request per model)?", initialValue: true }))) {
-    for (const ref of [...new Set([readModel, exploreModel, writeModel, ...fallback])]) {
+    // @host resolves to the harness running this shell (if any); hooks and MCP set it per harness
+    for (const ref of [...new Set([readModel, exploreModel, writeModel, ...fallback])].filter((r) => r !== "@host" || detectHost())) {
       s.start(`Pinging ${ref}`);
       try {
         const r = await invoke("ask" as Task, "Reply with exactly the word: pong\n", workDir(), ref);

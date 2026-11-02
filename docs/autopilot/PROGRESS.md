@@ -33,3 +33,10 @@
 - Security review (background agent) delivered 12 findings; fixed the critical one: untrusted project config (DECISIONS #18). Rest tracked as tasks.
 - Research agent verified Copilot CLI / Crush / Qwen Code hook surfaces → docs/research/copilot-crush-qwen-amp.md.
 - Verified: conformance 206/206 on both engines (stub agent CLIs, @host, malicious project config), bun 31/31, routing 49/49 ×2.
+
+## 2026-11-02 ~09:00 UTC — self-contained plugin, wizard @host, zero-config default
+- `plugins/harness-offload/dist/` holds the bundled TS CLI (+ pi.js, opencode.js), checked by `source-hash.mjs --check` in CI. Launchers prefer it; paths with spaces handled (`co_ts_run`).
+- `offload setup` first asks "who should do the cheap work?" — own subscription (@host, default), own subscription + fallback, or chosen backends; explains the saving honestly. `--yes` defaults to `@host`. Verified through a pty with a stub `claude`.
+- Doctors (bash + TS) explain @host and check each model's real backend.
+- Defaults: `@host` then `@default`; `-m` exact. Real check with the real Claude CLI (bash engine, no Node needed for the worker): Haiku read of agents.sh, 11 s, 5/5 citations.
+- Suites: conformance 209/209 ×2 engines, routing 49/49 ×2, bun 31/31.

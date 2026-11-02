@@ -31,6 +31,7 @@ input=$(cat)
 [ -n "${STUB_LOG:-}" ] && printf '%s %s\n' "$model" "$agent" >> "$STUB_LOG"
 [ -n "${STUB_PROMPT:-}" ] && printf '%s' "$input" > "$STUB_PROMPT"
 mode="${model#*/}"; mode="${mode%%#*}"
+[ -z "$model" ] && mode=ok   # no -m: OpenCode's own default model
 v2=false; case "$ver" in 2.*|v2*) v2=true ;; esac
 sid="ses_stub0001"
 

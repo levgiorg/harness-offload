@@ -13,9 +13,10 @@ export function modelFor(task: Task): string {
   return cfgStr(`models.${task}`) || cfgStr("models.default");
 }
 
-/** Primary model for the task, then models.fallback, de-duplicated. */
+/** The task's model then models.fallback; an explicit override (-m) is used alone. */
 export function modelChain(task: Task, override?: string): string[] {
-  const first = override || modelFor(task) || "@default";
+  if (override) return [override];
+  const first = modelFor(task) || "@default";
   return [...new Set([first, ...cfgList("models.fallback")].filter(Boolean))];
 }
 

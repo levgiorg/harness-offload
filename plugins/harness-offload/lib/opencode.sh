@@ -62,10 +62,12 @@ co_model_for() {
 }
 
 # Primary model for the task, then models.fallback, de-duplicated. An empty
-# primary means "OpenCode's own default model" and is spelled "@default".
+# primary means "the default backend's own default model" ("@default").
 co_model_chain() {
   local task="$1" override="${2:-}" first
-  first="${override:-$(co_model_for "$task")}"
+  # an explicit override (-m) is used alone, without the fallback chain
+  [ -n "$override" ] && { printf '%s\n' "$override"; return 0; }
+  first=$(co_model_for "$task")
   {
     printf '%s\n' "${first:-@default}"
     co_cfg_list '.models.fallback'

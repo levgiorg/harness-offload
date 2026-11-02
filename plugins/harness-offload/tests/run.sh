@@ -334,6 +334,11 @@ expect_has "@host on Pi → pi default model" "$out" "PI-STUB: p"
 out=$(ag ask -m @host "who?"); rc=$?
 expect_eq "@host with no harness → usage exit 2" "$rc" 2
 expect_has "@host with no harness explains OFFLOAD_HOST" "$out" "OFFLOAD_HOST"
+out=$(OFFLOAD_MODEL= OFFLOAD_HOST=claude ag read -q "q" small.txt)
+expect_has "out of the box, Claude Code reads go to its own plan (claude:haiku)" "$out" "[offload read · claude:haiku"
+out=$(OFFLOAD_MODEL= STUB_ANSWER="oc default" ag ask "no harness"); rc=$?
+expect_eq "out of the box, no harness → falls back to @default (exit 0)" "$rc" 0
+expect_has "out of the box, no harness → OpenCode default model answers" "$out" "oc default"
 printf '{"host_models":{"claude":"claude:sonnet"}}' > "$OFFLOAD_CONFIG"
 out=$(OFFLOAD_HOST=claude ag ask -m @host "override")
 expect_has "config host_models overrides the default" "$out" "[offload ask · claude:sonnet"

@@ -6,13 +6,13 @@
   "hosts": { "codex": { "call": "mcp" }, "cursor": { "call": "mcp" } },
 
   "models": {
-    "default": "",
+    "default": "@host",
     "read": "",
     "explore": "",
     "summarize": "",
     "write": "",
     "ask": "",
-    "fallback": []
+    "fallback": ["@default"]
   },
   "variants": {
     "read": "",
