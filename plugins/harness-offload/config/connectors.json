@@ -128,5 +128,25 @@
     "gemini": "google:gemini-flash-lite-latest",
     "qwen": "dashscope:qwen-flash",
     "copilot": "github:openai/gpt-4.1-mini"
+  },
+  "worker_names": {
+    "_comment": "How offload names a worker for the user, e.g. \"Haiku on your Claude plan\".",
+    "plans": {
+      "claude": "your Claude plan",
+      "codex": "your ChatGPT plan",
+      "gemini": "your Google account",
+      "cursor": "your Cursor plan",
+      "copilot": "your Copilot plan",
+      "qwen": "your Qwen Code login",
+      "pi": "Pi's own login",
+      "crush": "Crush's own setup"
+    },
+    "models": {
+      "haiku": "Haiku",
+      "sonnet": "Sonnet",
+      "opus": "Opus",
+      "flash-lite": "Gemini Flash-Lite",
+      "flash": "Gemini Flash"
+    }
   }
 }

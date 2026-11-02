@@ -1,12 +1,12 @@
 import {
   TASK_CONTRACT
-} from "./chunk-yj9cq959.js";
+} from "./chunk-25ca7170.js";
 import {
-  userConfigPath,
-  projectDir,
+  userConfigPath2,
+  projectDir2,
   cfg,
   isSecretTarget
-} from "./chunk-e63v2s9a.js";
+} from "./chunk-djerf2vs.js";
 
 // src/tasks.ts
 import { existsSync, readFileSync, realpathSync, statSync } from "node:fs";
@@ -38,13 +38,13 @@ function taskSystem(def) {
     if (f.startsWith("~/"))
       f = join(homedir(), f.slice(2));
     else if (!isAbsolute(f))
-      f = join(projectDir(), f);
+      f = join(projectDir2(), f);
     if (!existsSync(f))
       throw new Error(`task ${def.name}: prompt_file not found: ${f}`);
     const real = realpathSync(f);
-    const roots = [projectDir(), dirname(userConfigPath())].filter(existsSync).map((r) => realpathSync(r));
+    const roots = [projectDir2(), dirname(userConfigPath2())].filter(existsSync).map((r) => realpathSync(r));
     if (!roots.some((r) => inside(r, real)))
-      throw new Error(`task ${def.name}: prompt_file must be inside the project or ${dirname(userConfigPath())}`);
+      throw new Error(`task ${def.name}: prompt_file must be inside the project or ${dirname(userConfigPath2())}`);
     if (isSecretTarget(real))
       throw new Error(`task ${def.name}: prompt_file matches privacy.secret_globs`);
     const st = statSync(real);

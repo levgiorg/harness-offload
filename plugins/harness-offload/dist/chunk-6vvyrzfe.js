@@ -1,4 +1,7 @@
 import {
+  CONNECTORS
+} from "./chunk-25ca7170.js";
+import {
   loadConfig,
   cfgStr,
   cfgInt,
@@ -6,38 +9,70 @@ import {
   cfgList,
   matchesAny,
   isSecretTarget
-} from "./chunk-e63v2s9a.js";
+} from "./chunk-djerf2vs.js";
 import {
   fileBytes,
   fileLines,
   estTokens,
   isText,
   fmtInt,
-  shquote,
-  parseRef,
-  backendFor
-} from "./chunk-1t6ndaq6.js";
+  shquote
+} from "./chunk-5at3kbd8.js";
 import {
+  stateDir2,
   appendStats2,
   newLogPath2,
   cooling2
-} from "./chunk-qwa0fbdf.js";
+} from "./chunk-d1jn8t5x.js";
+import {
+  CLI_AGENTS,
+  parseRef,
+  backendFor
+} from "./chunk-fxbkapb7.js";
 import {
   modelChain2
-} from "./chunk-9e09px47.js";
+} from "./chunk-vvzeww8q.js";
 import {
   digest,
   outline2
-} from "./chunk-grfv2v51.js";
+} from "./chunk-xnp9r6tm.js";
 import {
   taskSummary
-} from "./chunk-8sjq7zcc.js";
+} from "./chunk-tb9htz8z.js";
 
 // src/hooks/logic.ts
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { basename, delimiter, isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { writeFileSync } from "node:fs";
+function workerWords2() {
+  let p;
+  try {
+    p = parseRef(modelChain2("read")[0] ?? "@default");
+  } catch {
+    return "a cheap model";
+  }
+  const names = CONNECTORS.worker_names ?? {};
+  const label = names.models?.[p.model] ?? p.model;
+  if (p.backend === "opencode")
+    return p.model ? `${p.model} via OpenCode` : "OpenCode's default model";
+  if (p.backend in CLI_AGENTS)
+    return `${label || "the default model"} on ${names.plans?.[p.backend] ?? p.backend}`;
+  return `${label || "its default model"} via the ${p.backend} API`;
+}
+var PAUSED_MESSAGE2 = "Harness Offload is paused: it found no model to hand work to, so your tools work as usual. /harness-offload:setup sets one up (or run: offload doctor).";
+var welcomeMessage2 = () => `Harness Offload is on: huge file reads and long command output now go to ${workerWords2()} instead of filling this session. Nothing to set up — /harness-offload:setup changes who does the work.`;
+function firstSession2() {
+  const mark = join(stateDir2(), "welcome-shown");
+  if (existsSync(mark))
+    return false;
+  try {
+    writeFileSync(mark, "");
+  } catch {
+    return false;
+  }
+  return true;
+}
 function callStyle(host) {
   if (host === "pi")
     return "mcp";
@@ -237,7 +272,7 @@ async function postBash2(opts) {
   const never = cfgStr("hooks.bash_never_summarize");
   if (never) {
     try {
-      const { posixToJs } = await import("./chunk-s2bgyfpn.js");
+      const { posixToJs } = await import("./chunk-zyxpe3rp.js");
       if (new RegExp(posixToJs(never)).test(last))
         return;
     } catch {
@@ -282,4 +317,4 @@ ${tasks ? `- ${cliPath} task NAME [PATH...] — the user's own tasks: ${tasks}.
 ` : ""}Keep for yourself: debugging reasoning, design decisions, edits (read slices for exact text), small files. Full reads of files over ~${lines} lines may be blocked with an outline and these options; large successful command output may come back as a digest with a log path.`;
 }
 
-export { available2, bigFileMessage2, readGuard2, bashGuard2, postBash2, sessionGuide2 };
+export { workerWords2, PAUSED_MESSAGE2, welcomeMessage2, firstSession2, available2, bigFileMessage2, readGuard2, bashGuard2, postBash2, sessionGuide2 };

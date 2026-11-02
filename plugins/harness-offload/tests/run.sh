@@ -816,8 +816,28 @@ fi
 printf '{"hooks": ' > "$OFFLOAD_CONFIG"
 expect_has "config cache: a broken config is still reported" "$(hook pre-read "$big_read" 2>&1 >/dev/null)" "ignoring invalid JSON config"
 rm -f "$OFFLOAD_CONFIG"
+# first session after install: one line for the user, once, in plain words
+W="$T/welcome-state"
+w1=$(OFFLOAD_STATE_DIR="$W" hook session-start '{"source":"startup"}' | jq -r '.systemMessage // ""')
+w2=$(OFFLOAD_STATE_DIR="$W" hook session-start '{"source":"startup"}' | jq -r '.systemMessage // ""')
+expect_has "session-start: first session tells the user who does the work" "$w1" "Harness Offload is on: huge file reads and long command output now go to stub/ok via OpenCode"
+expect_eq "session-start: the welcome line is shown once" "$w2" ""
+expect_has "session-start: default worker in plain words (Claude plan)" "$(PATH="$AB:$PATH" OFFLOAD_MODEL= OFFLOAD_STATE_DIR="$T/welcome-host" hook session-start '{"source":"startup"}' | jq -r '.systemMessage // ""')" "go to Haiku on your Claude plan instead"
+if $HAVE_TS_NODE && [ -f "$PLUGIN/dist/hook.cjs" ]; then
+  wt=$(printf '{"source":"startup"}' | OFFLOAD_STATE_DIR="$T/welcome-ts" "$PLUGIN/bin/offload-ts" hook claude session-start 2>/dev/null | jq -r '.systemMessage // ""')
+  expect_eq "session-start (TS engine): same welcome line as bash" "$wt" "$w1"
+  # OFFLOAD_ENGINE=ts: the plugin's own hooks and CLI hand over to the TypeScript engine
+  printf '#!/bin/sh\nprintf "%%s " "$@" > "%s/ts-called"\n' "$T" > "$T/fake-ts" && chmod +x "$T/fake-ts"
+  printf '{}' | OFFLOAD_ENGINE=ts OFFLOAD_TS_CLI="$T/fake-ts" "$PLUGIN/hooks/pre-read" >/dev/null 2>&1
+  expect_eq "OFFLOAD_ENGINE=ts: the Read hook is answered by the TypeScript engine" "$(cat "$T/ts-called" 2>/dev/null)" "hook claude pre-read "
+  OFFLOAD_ENGINE=ts OFFLOAD_TS_CLI="$T/fake-ts" "$PLUGIN/bin/offload" doctor >/dev/null 2>&1
+  expect_eq "OFFLOAD_ENGINE=ts: so is the offload command" "$(cat "$T/ts-called" 2>/dev/null)" "doctor "
+  rm -f "$T/ts-called"
+  printf '{}' | OFFLOAD_ENGINE=ts COPILOT_CLI=1 OFFLOAD_TS_CLI="$T/fake-ts" "$PLUGIN/hooks/pre-read" >/dev/null 2>&1
+  expect_eq "OFFLOAD_ENGINE=ts: Copilot keeps the bash hooks (its dialect)" "$([ -e "$T/ts-called" ] && echo ts || echo bash)" bash
+fi
 r=$(OFFLOAD_OPENCODE_BIN=/nonexistent hook session-start '{"source":"startup"}')
-expect_has "session-start: warns user when no backend is available" "$(printf '%s' "$r" | jq -r '.systemMessage')" "no worker backend available"
+expect_has "session-start: tells the user when offload is paused" "$(printf '%s' "$r" | jq -r '.systemMessage')" "Harness Offload is paused"
 
 # ------------------------------------------------------------------ integration
 if $INTEGRATION; then

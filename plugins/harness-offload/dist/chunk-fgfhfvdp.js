@@ -1,34 +1,36 @@
 import {
-  which,
+  which2,
   ExitError2
-} from "./chunk-yj9cq959.js";
+} from "./chunk-25ca7170.js";
 import {
-  userConfigPath,
-  projectConfigPath,
+  userConfigPath2,
+  projectConfigPath2,
   loadConfig,
   getPath,
   cfg,
   cfgStr,
   writeConfigKey
-} from "./chunk-e63v2s9a.js";
+} from "./chunk-djerf2vs.js";
 import {
-  PRESETS,
-  endpoint,
-  apiKey,
+  PRESETS2,
+  endpoint2,
+  apiKey2
+} from "./chunk-5at3kbd8.js";
+import {
+  E
+} from "./chunk-d1jn8t5x.js";
+import {
   CLI_AGENTS,
   detectHost,
   hostModel,
   hostApiModel
-} from "./chunk-1t6ndaq6.js";
-import {
-  E
-} from "./chunk-qwa0fbdf.js";
-import"./chunk-9e09px47.js";
-import"./chunk-grfv2v51.js";
-import"./chunk-1pg3f9m8.js";
+} from "./chunk-fxbkapb7.js";
+import"./chunk-vvzeww8q.js";
+import"./chunk-xnp9r6tm.js";
+import"./chunk-z3nern1b.js";
 import {
   taskNames
-} from "./chunk-8sjq7zcc.js";
+} from "./chunk-tb9htz8z.js";
 
 // src/commands/model.ts
 var SLOTS = ["default", "read", "summarize", "explore", "write", "ask", "fallback"];
@@ -40,7 +42,7 @@ var die = (m) => {
 };
 function knownBackends() {
   const own = Object.keys(cfg("endpoints") ?? {}).sort();
-  return [...new Set(["opencode", ...AGENTS, ...Object.keys(PRESETS).sort(), ...own])];
+  return [...new Set(["opencode", ...AGENTS, ...Object.keys(PRESETS2).sort(), ...own])];
 }
 function lev(a, b) {
   const d = Array.from({ length: a.length + 1 }, (_, i) => [i, ...Array(b.length).fill(0)]);
@@ -76,8 +78,8 @@ async function refCheck(ref) {
     const m = hostApiModel(h);
     if (!m || m.startsWith("@"))
       return { note: `${h} has no API-key backup; this entry is skipped` };
-    const ep = endpoint(m.slice(0, m.indexOf(":")));
-    const key = !ep || /127\.0\.0\.1|localhost/.test(ep.base_url) || apiKey(ep);
+    const ep = endpoint2(m.slice(0, m.indexOf(":")));
+    const key = !ep || /127\.0\.0\.1|localhost/.test(ep.base_url) || apiKey2(ep);
     return { note: key ? `${m} via ${h}'s API key` : `${m} via ${h}'s API key; warning: no key yet (offload key ${ep.name})` };
   }
   if (ref === "@default")
@@ -89,7 +91,7 @@ async function refCheck(ref) {
   const i = ref.indexOf(":");
   if (i >= 0 && !ref.slice(0, i).includes("/")) {
     const prefix = ref.slice(0, i);
-    if (isAgent(prefix) || endpoint(prefix))
+    if (isAgent(prefix) || endpoint2(prefix))
       [backend, model] = [prefix, ref.slice(i + 1)];
     else {
       const near = didYouMean(prefix);
@@ -98,23 +100,23 @@ async function refCheck(ref) {
   }
   if (backend === "opencode") {
     if (model && !model.includes("/")) {
-      if (AGENTS.includes(model) || endpoint(model))
+      if (AGENTS.includes(model) || endpoint2(model))
         return { err: `"${model}" is a backend — write ${model}:MODEL (offload models ${model} lists them)` };
       return { err: `"${ref}" is not a model reference — write BACKEND:MODEL (e.g. openrouter:qwen/qwen3-coder), provider/model for OpenCode, or @host` };
     }
-    const ok = await which(cfgStr("opencode.bin", "opencode"));
+    const ok = await which2(cfgStr("opencode.bin", "opencode"));
     return { note: ok ? "OpenCode" : "OpenCode; warning: opencode is not installed" };
   }
   if (AGENTS.includes(backend)) {
     const bin = cfgStr(`agents.${backend}.bin`, CLI_AGENTS[backend].bin);
     const note = model ? `${backend} CLI` : `${backend} CLI, its default model`;
-    return { note: await which(bin) ? note : `${note}; warning: ${bin} is not installed` };
+    return { note: await which2(bin) ? note : `${note}; warning: ${bin} is not installed` };
   }
-  const ep = endpoint(backend);
+  const ep = endpoint2(backend);
   if (!model)
     return { err: `${backend} needs a model id, e.g. ${backend}:MODEL (offload models ${backend} lists them)` };
   const note = ep.label || backend;
-  return { note: !apiKey(ep) && ep.api_key_env ? `${note}; warning: no API key (export ${ep.api_key_env} or run offload setup)` : note };
+  return { note: !apiKey2(ep) && ep.api_key_env ? `${note}; warning: no API key (export ${ep.api_key_env} or run offload setup)` : note };
 }
 function slotKey(slot) {
   if (SLOTS.includes(slot))
@@ -147,7 +149,7 @@ async function line(slot, key) {
 function badSlot(w) {
   if (isAgent(w))
     die(`model: "${w}" is a backend — write ${w}: for its default model or ${w}:MODEL`);
-  if (endpoint(w))
+  if (endpoint2(w))
     die(`model: "${w}" is a backend — write ${w}:MODEL (offload models ${w} lists them)`);
   return die(`model: "${w}" is neither a task (default, read, summarize, explore, write, ask, fallback, or one of offload tasks) nor a model reference (BACKEND:MODEL, provider/model, @host)`);
 }
@@ -172,7 +174,7 @@ async function cmdModel(argv) {
     else
       args.push(a);
   }
-  const target = project ? projectConfigPath() : userConfigPath();
+  const target = project ? projectConfigPath2() : userConfigPath2();
   let slot = "";
   let key = "";
   let refs = [];

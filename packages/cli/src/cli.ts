@@ -29,8 +29,10 @@ const HELP = () => `${banner()}
     offload key [NAME] [--remove]           store an API key (hidden prompt or stdin; file mode 600)
     offload setup                           interactive wizard: backends, keys, models, hosts
     offload demo                            10-second tour, no model calls
-    offload install <host> | uninstall <host>   claude · codex · cursor · gemini · copilot · qwen · crush
-                                            pi · opencode · kilo · devin · aider · mcp
+    offload install                         set offload up in every agent on this computer (no questions)
+    offload uninstall [--all]               remove it from every agent (--all: settings, keys, stats too)
+    offload install <host> | uninstall <host>   just one: claude · codex · cursor · gemini · copilot · qwen
+                                            crush · pi · opencode · kilo · devin · aider · mcp
     offload sync                            refresh every installed integration (after an upgrade)
     offload doctor [--ping] [--reset]       check everything; --ping makes one tiny call per model
     offload models [BACKEND...]             list models your backends offer

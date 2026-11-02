@@ -1,23 +1,24 @@
 import {
-  runProcess,
-  which
-} from "./chunk-yj9cq959.js";
+  runProcess2,
+  which2
+} from "./chunk-25ca7170.js";
 import {
   cfgStr
-} from "./chunk-e63v2s9a.js";
+} from "./chunk-djerf2vs.js";
 import {
   stateDir2,
   opencodeMajor
-} from "./chunk-qwa0fbdf.js";
+} from "./chunk-d1jn8t5x.js";
 
 // src/hosts/install.ts
-import { cpSync, existsSync as existsSync2, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { homedir } from "node:os";
+import { cpSync as cpSync2, existsSync as existsSync2, mkdirSync as mkdirSync2, readFileSync, rmSync as rmSync2, writeFileSync } from "node:fs";
+import { homedir as homedir2 } from "node:os";
 import { join as join2 } from "node:path";
 import { pathToFileURL } from "node:url";
 
 // src/hosts/assets.ts
-import { existsSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, rmSync } from "node:fs";
+import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 var here = () => dirname(fileURLToPath(import.meta.url));
@@ -34,14 +35,39 @@ function marketplaceRoot() {
       return c;
   throw new Error("cannot find the bundled plugin files (set OFFLOAD_MARKETPLACE_DIR)");
 }
-var pluginDir = () => join(marketplaceRoot(), "plugins", "harness-offload");
-function packageRoot() {
+var pluginDir2 = () => join(marketplaceRoot(), "plugins", "harness-offload");
+function packageRoot2() {
+  if (process.env.OFFLOAD_PACKAGE_DIR)
+    return process.env.OFFLOAD_PACKAGE_DIR;
   for (const c of [join(here(), ".."), join(here(), "..", "..")])
     if (existsSync(join(c, "package.json")) && existsSync(join(c, "dist")))
       return resolve(c);
   return resolve(here(), "..");
 }
-var distFile = (name) => join(packageRoot(), "dist", name);
+var distFile2 = (name) => join(packageRoot2(), "dist", name);
+function checkoutRoot2() {
+  for (const c of [resolve(packageRoot2(), "..", ".."), resolve(here(), "..", "..", "..")]) {
+    if (existsSync(join(c, ".git")) && existsSync(join(c, ".claude-plugin", "marketplace.json")) && existsSync(join(c, "plugins", "harness-offload")))
+      return c;
+  }
+  return;
+}
+var ownCopyDir2 = () => join(process.env.XDG_DATA_HOME || join(process.env.OFFLOAD_HOME || homedir(), ".local", "share"), "harness-offload");
+function useOwnCopy2() {
+  if (checkoutRoot2() || process.env.OFFLOAD_MARKETPLACE_DIR)
+    return;
+  const dest = ownCopyDir2();
+  const market = marketplaceRoot();
+  const pkg = packageRoot2();
+  rmSync(join(dest, "marketplace"), { recursive: true, force: true });
+  rmSync(join(dest, "package"), { recursive: true, force: true });
+  mkdirSync(join(dest, "package"), { recursive: true });
+  cpSync(market, join(dest, "marketplace"), { recursive: true });
+  cpSync(join(pkg, "package.json"), join(dest, "package", "package.json"));
+  cpSync(join(pkg, "dist"), join(dest, "package", "dist"), { recursive: true });
+  process.env.OFFLOAD_MARKETPLACE_DIR = join(dest, "marketplace");
+  process.env.OFFLOAD_PACKAGE_DIR = join(dest, "package");
+}
 
 // src/hosts/install.ts
 var HOSTS = ["claude", "codex", "cursor", "gemini", "copilot", "qwen", "crush", "pi", "opencode", "kilo", "devin", "aider", "mcp"];
@@ -65,9 +91,9 @@ var HOST_LABELS = {
 };
 var HOST_BIN = { claude: "claude", codex: "codex", gemini: "gemini", copilot: "copilot", qwen: "qwen", crush: "crush", pi: "pi", opencode: "opencode", kilo: "kilo", amp: "amp", devin: "devin", aider: "aider" };
 async function mcpCommand() {
-  if (await which("harness-offload"))
+  if (await which2("harness-offload"))
     return { command: "harness-offload", args: ["mcp"] };
-  return { command: isWin ? process.execPath : "node", args: [join2(pluginDir(), "dist", "cli.js"), "mcp"] };
+  return { command: isWin ? process.execPath : "node", args: [join2(pluginDir2(), "dist", "cli.js"), "mcp"] };
 }
 async function mcpRecipes() {
   const { command, args } = await mcpCommand();
@@ -97,7 +123,11 @@ function crushDir() {
   return process.env.CRUSH_GLOBAL_CONFIG || join2(process.env.XDG_CONFIG_HOME || join2(home(), ".config"), "crush");
 }
 var CRUSH_DEFAULT_CONTEXT = ["~/.config/crush/CRUSH.md", "~/.config/AGENTS.md"];
-var home = () => process.env.OFFLOAD_HOME || homedir();
+var GITHUB_REPO = "levgiorg/harness-offload";
+function pluginSource() {
+  return process.env.OFFLOAD_PLUGIN_SOURCE || checkoutRoot2() || GITHUB_REPO;
+}
+var home = () => process.env.OFFLOAD_HOME || homedir2();
 var record = (host, data) => {
   const f = join2(stateDir2(), "installs.json");
   let all = {};
@@ -117,21 +147,21 @@ async function detectHosts() {
     if (h === "mcp")
       out[h] = true;
     else if (h === "cursor")
-      out[h] = existsSync2(join2(home(), ".cursor")) || Boolean(await which("cursor-agent")) || Boolean(await which("cursor"));
+      out[h] = existsSync2(join2(home(), ".cursor")) || Boolean(await which2("cursor-agent")) || Boolean(await which2("cursor"));
     else
-      out[h] = Boolean(await which(h === "opencode" ? cfgStr("opencode.bin", "opencode") : HOST_BIN[h]));
+      out[h] = Boolean(await which2(h === "opencode" ? cfgStr("opencode.bin", "opencode") : HOST_BIN[h]));
   }
   return out;
 }
 async function exec(cmd, args) {
-  const r = await runProcess(cmd, args, { timeoutMs: 180000 });
+  const r = await runProcess2(cmd, args, { timeoutMs: 180000 });
   const tail = (r.stdout + r.stderr).trim().split(`
 `).slice(-2).join(" ").slice(0, 200);
   return { ok: r.code === 0, text: `${cmd} ${args.join(" ")}${r.code === 0 ? "" : `  → exit ${r.code}: ${tail}`}` };
 }
 var isWin = process.platform === "win32";
 function winCommand() {
-  return `${JSON.stringify(process.execPath)} ${JSON.stringify(join2(pluginDir(), "dist", "cli.js"))}`;
+  return `${JSON.stringify(process.execPath)} ${JSON.stringify(join2(pluginDir2(), "dist", "cli.js"))}`;
 }
 function rewriteForWindows(file, from) {
   if (!isWin || !existsSync2(file))
@@ -149,14 +179,14 @@ function rewriteForWindows(file, from) {
   const out = walk(j);
   for (const srv of Object.values(out.mcpServers ?? {})) {
     srv.command = process.execPath;
-    srv.args = [join2(pluginDir(), "dist", "cli.js"), "mcp"];
+    srv.args = [join2(pluginDir2(), "dist", "cli.js"), "mcp"];
   }
   writeFileSync(file, JSON.stringify(out, null, 2) + `
 `);
 }
 function geminiExtension(dir, launcher) {
-  const src = join2(pluginDir(), "hosts", "gemini");
-  mkdirSync(join2(dir, "hooks"), { recursive: true });
+  const src = join2(pluginDir2(), "hosts", "gemini");
+  mkdirSync2(join2(dir, "hooks"), { recursive: true });
   const ext = JSON.parse(readFileSync(join2(src, "gemini-extension.json"), "utf8"));
   ext.mcpServers.offload.command = launcher;
   writeFileSync(join2(dir, "gemini-extension.json"), JSON.stringify(ext, null, 2) + `
@@ -169,49 +199,51 @@ function geminiExtension(dir, launcher) {
   }
   writeFileSync(join2(dir, "hooks", "hooks.json"), JSON.stringify(hooks, null, 2) + `
 `);
-  cpSync(join2(src, "GEMINI.md"), join2(dir, "GEMINI.md"));
+  cpSync2(join2(src, "GEMINI.md"), join2(dir, "GEMINI.md"));
   rewriteForWindows(join2(dir, "hooks", "hooks.json"), /"[^"]*offload-ts"/g);
   rewriteForWindows(join2(dir, "gemini-extension.json"), /"[^"]*offload-ts"/g);
 }
 async function install(host, opts = {}) {
   const steps = [];
+  if (!opts.dryRun)
+    useOwnCopy2();
   const bin = host === "opencode" ? cfgStr("opencode.bin", "opencode") : HOST_BIN[host];
-  if (bin && !await which(bin) && !["cursor", "mcp", "aider"].includes(host)) {
+  if (bin && !await which2(bin) && !["cursor", "mcp", "aider"].includes(host)) {
     return [{ ok: false, text: `${HOST_LABELS[host]} not found on PATH (${bin}); install it first.` }];
   }
-  const launcher = join2(pluginDir(), "bin", "offload-ts");
+  const launcher = join2(pluginDir2(), "bin", "offload-ts");
   switch (host) {
     case "claude": {
-      const root = marketplaceRoot();
+      const root = pluginSource();
       if (opts.dryRun)
         return [{ ok: true, text: `claude plugin marketplace add ${root} && claude plugin install harness-offload@harness-offload` }];
       steps.push(await exec("claude", ["plugin", "marketplace", "add", root]));
       steps.push(await exec("claude", ["plugin", "install", "harness-offload@harness-offload"]));
-      steps.push({ ok: true, text: "restart Claude Code (or /reload-plugins) to load it" });
+      steps.push({ ok: true, note: true, text: "restart Claude Code (or /reload-plugins) to load it" });
       record(host, { marketplace: root });
       break;
     }
     case "codex": {
-      const root = marketplaceRoot();
+      const root = pluginSource();
       if (opts.dryRun)
         return [{ ok: true, text: `codex plugin marketplace add ${root} && codex plugin add harness-offload@harness-offload` }];
       steps.push(await exec("codex", ["plugin", "marketplace", "add", root]));
       steps.push(await exec("codex", ["plugin", "add", "harness-offload@harness-offload"]));
-      steps.push({ ok: true, text: "in Codex, open /hooks and trust the Harness Offload hooks (Codex skips untrusted plugin hooks)" });
+      steps.push({ ok: true, note: true, text: "in Codex, open /hooks and trust the Harness Offload hooks (Codex skips untrusted plugin hooks)" });
       record(host, { marketplace: root });
       break;
     }
     case "cursor": {
       const dest = join2(home(), ".cursor", "plugins", "local", "harness-offload");
       if (opts.dryRun)
-        return [{ ok: true, text: `copy ${pluginDir()} → ${dest}` }];
-      rmSync(dest, { recursive: true, force: true });
-      mkdirSync(join2(dest, ".."), { recursive: true });
-      cpSync(pluginDir(), dest, { recursive: true });
+        return [{ ok: true, text: `copy ${pluginDir2()} → ${dest}` }];
+      rmSync2(dest, { recursive: true, force: true });
+      mkdirSync2(join2(dest, ".."), { recursive: true });
+      cpSync2(pluginDir2(), dest, { recursive: true });
       rewriteForWindows(join2(dest, "hosts", "cursor", "hooks.json"), /"\$\{CURSOR_PLUGIN_ROOT\}\/bin\/offload-ts"/g);
       rewriteForWindows(join2(dest, "hosts", "cursor", "mcp.json"), /\$\{CURSOR_PLUGIN_ROOT\}\/bin\/offload-ts/g);
       steps.push({ ok: true, text: `installed local plugin → ${dest}` });
-      steps.push({ ok: true, text: "in Cursor: Developer: Reload Window (CLI: cursor-agent picks it up on the next run)" });
+      steps.push({ ok: true, note: true, text: "in Cursor: Developer: Reload Window (CLI: cursor-agent picks it up on the next run)" });
       record(host, { dir: dest });
       break;
     }
@@ -219,28 +251,28 @@ async function install(host, opts = {}) {
       const dest = join2(home(), ".gemini", "extensions", "harness-offload");
       if (opts.dryRun)
         return [{ ok: true, text: `write Gemini extension → ${dest}` }];
-      rmSync(dest, { recursive: true, force: true });
+      rmSync2(dest, { recursive: true, force: true });
       geminiExtension(dest, launcher);
       steps.push({ ok: true, text: `wrote Gemini CLI extension → ${dest} (hooks + MCP + GEMINI.md)` });
       record(host, { dir: dest });
       break;
     }
     case "copilot": {
-      const root = marketplaceRoot();
+      const root = pluginSource();
       if (opts.dryRun)
         return [{ ok: true, text: `copilot plugin marketplace add ${root} && copilot plugin install harness-offload@harness-offload` }];
       steps.push(await exec("copilot", ["plugin", "marketplace", "add", root]));
       steps.push(await exec("copilot", ["plugin", "install", "harness-offload@harness-offload"]));
-      steps.push({ ok: true, text: "start a new Copilot session to load it" });
+      steps.push({ ok: true, note: true, text: "start a new Copilot session to load it" });
       record(host, { marketplace: root });
       break;
     }
     case "qwen": {
       if (opts.dryRun)
-        return [{ ok: true, text: `qwen extensions install ${pluginDir()} --consent` }];
-      steps.push(await exec("qwen", ["extensions", "install", pluginDir(), "--consent"]));
-      steps.push({ ok: true, text: "Qwen Code can't replace tool output, so long command output is not digested there; reads and the guide work" });
-      record(host, { plugin: pluginDir() });
+        return [{ ok: true, text: `qwen extensions install ${pluginDir2()} --consent` }];
+      steps.push(await exec("qwen", ["extensions", "install", pluginDir2(), "--consent"]));
+      steps.push({ ok: true, note: true, text: "Qwen Code can't replace tool output, so long command output is not digested there; reads and the guide work" });
+      record(host, { plugin: pluginDir2() });
       break;
     }
     case "crush": {
@@ -259,8 +291,8 @@ async function install(host, opts = {}) {
         }
         writeFileSync(`${file}.bak-harness-offload`, readFileSync(file));
       }
-      const { sessionGuide } = await import("./chunk-qs3aqz7g.js");
-      writeFileSync(guide, sessionGuide("crush", isWin ? winCommand() : JSON.stringify(join2(pluginDir(), "bin", "offload"))) + `
+      const { sessionGuide } = await import("./chunk-c5evmd8r.js");
+      writeFileSync(guide, sessionGuide("crush", isWin ? winCommand() : JSON.stringify(join2(pluginDir2(), "bin", "offload"))) + `
 `);
       const ours = (h) => h?.name === "harness-offload";
       cfg.hooks ??= {};
@@ -271,7 +303,7 @@ async function install(host, opts = {}) {
       if (!ctx.includes(guide))
         ctx.push(guide);
       cfg.options.global_context_paths = ctx;
-      mkdirSync(dir, { recursive: true });
+      mkdirSync2(dir, { recursive: true });
       writeFileSync(file, JSON.stringify(cfg, null, 2) + `
 `);
       steps.push({ ok: true, text: `added hooks and the guide (${guide}) to ${file}` });
@@ -279,7 +311,7 @@ async function install(host, opts = {}) {
       break;
     }
     case "pi": {
-      const pkg = packageRoot();
+      const pkg = packageRoot2();
       if (opts.dryRun)
         return [{ ok: true, text: `pi install ${pkg}` }];
       steps.push(await exec("pi", ["install", pkg]));
@@ -292,9 +324,9 @@ async function install(host, opts = {}) {
       const file = join2(dir, "harness-offload.js");
       if (opts.dryRun)
         return [{ ok: true, text: `write ${file} (OpenCode v${major})` }];
-      mkdirSync(dir, { recursive: true });
+      mkdirSync2(dir, { recursive: true });
       writeFileSync(file, `// Harness Offload for OpenCode (generated by \`offload install opencode\`)
-export { default } from ${JSON.stringify(pathToFileURL(distFile("opencode.js")).href)};
+export { default } from ${JSON.stringify(pathToFileURL(distFile2("opencode.js")).href)};
 `);
       steps.push({ ok: true, text: `wrote ${file} (OpenCode v${major})` });
       record(host, { file });
@@ -305,9 +337,9 @@ export { default } from ${JSON.stringify(pathToFileURL(distFile("opencode.js")).
       const file = join2(dir, "harness-offload.js");
       if (opts.dryRun)
         return [{ ok: true, text: `write ${file}` }];
-      mkdirSync(dir, { recursive: true });
+      mkdirSync2(dir, { recursive: true });
       writeFileSync(file, `// Harness Offload for Kilo Code (generated by \`offload install kilo\`)
-export { default } from ${JSON.stringify(pathToFileURL(distFile("opencode.js")).href)};
+export { default } from ${JSON.stringify(pathToFileURL(distFile2("opencode.js")).href)};
 `);
       steps.push({ ok: true, text: `wrote ${file}` });
       record(host, { file });
@@ -318,9 +350,9 @@ export { default } from ${JSON.stringify(pathToFileURL(distFile("opencode.js")).
       const file = join2(dir, "harness-offload.ts");
       if (opts.dryRun)
         return [{ ok: true, text: `write ${file}` }];
-      mkdirSync(dir, { recursive: true });
+      mkdirSync2(dir, { recursive: true });
       writeFileSync(file, `// Harness Offload for Amp (generated by \`offload install amp\`; experimental)
-export { default } from ${JSON.stringify(pathToFileURL(distFile("amp.js")).href)};
+export { default } from ${JSON.stringify(pathToFileURL(distFile2("amp.js")).href)};
 `);
       steps.push({ ok: true, text: `wrote ${file} — in Amp run "plugins: reload" (experimental: built from Amp's plugin API docs)` });
       record(host, { file });
@@ -328,17 +360,17 @@ export { default } from ${JSON.stringify(pathToFileURL(distFile("amp.js")).href)
     }
     case "devin": {
       if (opts.dryRun)
-        return [{ ok: true, text: `devin plugins install --local ${pluginDir()}` }];
-      steps.push(await exec("devin", ["plugins", "install", "--local", pluginDir()]));
-      record(host, { plugin: pluginDir() });
+        return [{ ok: true, text: `devin plugins install --local ${pluginDir2()}` }];
+      steps.push(await exec("devin", ["plugins", "install", "--local", pluginDir2()]));
+      record(host, { plugin: pluginDir2() });
       break;
     }
     case "aider": {
       const file = join2(stateDir2(), "aider-conventions.md");
       if (opts.dryRun)
         return [{ ok: true, text: `write ${file}` }];
-      const { sessionGuide } = await import("./chunk-qs3aqz7g.js");
-      const cli = isWin ? winCommand() : JSON.stringify(join2(pluginDir(), "bin", "offload"));
+      const { sessionGuide } = await import("./chunk-c5evmd8r.js");
+      const cli = isWin ? winCommand() : JSON.stringify(join2(pluginDir2(), "bin", "offload"));
       writeFileSync(file, `# Harness Offload
 
 ${sessionGuide("aider", cli)}
@@ -366,19 +398,22 @@ async function uninstall(host) {
   switch (host) {
     case "claude":
       steps.push(await exec("claude", ["plugin", "uninstall", "harness-offload@harness-offload"]));
+      steps.push(await exec("claude", ["plugin", "marketplace", "remove", "harness-offload"]));
       break;
     case "codex":
       steps.push(await exec("codex", ["plugin", "remove", "harness-offload@harness-offload"]));
+      steps.push(await exec("codex", ["plugin", "marketplace", "remove", "harness-offload"]));
       break;
     case "cursor":
     case "gemini": {
       const dir = host === "cursor" ? join2(home(), ".cursor", "plugins", "local", "harness-offload") : join2(home(), ".gemini", "extensions", "harness-offload");
-      rmSync(dir, { recursive: true, force: true });
+      rmSync2(dir, { recursive: true, force: true });
       steps.push({ ok: true, text: `removed ${dir}` });
       break;
     }
     case "copilot":
       steps.push(await exec("copilot", ["plugin", "uninstall", "harness-offload@harness-offload"]));
+      steps.push(await exec("copilot", ["plugin", "marketplace", "remove", "harness-offload"]));
       break;
     case "qwen":
       steps.push(await exec("qwen", ["extensions", "uninstall", "harness-offload"]));
@@ -405,26 +440,26 @@ async function uninstall(host) {
       break;
     }
     case "pi":
-      steps.push(await exec("pi", ["remove", packageRoot()]));
+      steps.push(await exec("pi", ["remove", recorded(host).source || packageRoot2()]));
       break;
     case "opencode":
       for (const d of ["plugins", "plugin"]) {
         const f = join2(home(), ".config", "opencode", d, "harness-offload.js");
         if (existsSync2(f)) {
-          rmSync(f, { force: true });
+          rmSync2(f, { force: true });
           steps.push({ ok: true, text: `removed ${f}` });
         }
       }
       break;
     case "kilo": {
       const f = join2(home(), ".config", "kilo", "plugin", "harness-offload.js");
-      rmSync(f, { force: true });
+      rmSync2(f, { force: true });
       steps.push({ ok: true, text: `removed ${f}` });
       break;
     }
     case "amp": {
       const f = join2(process.env.XDG_CONFIG_HOME || join2(home(), ".config"), "amp", "plugins", "harness-offload.ts");
-      rmSync(f, { force: true });
+      rmSync2(f, { force: true });
       steps.push({ ok: true, text: `removed ${f}` });
       break;
     }
@@ -433,7 +468,7 @@ async function uninstall(host) {
       break;
     case "aider": {
       const f = join2(stateDir2(), "aider-conventions.md");
-      rmSync(f, { force: true });
+      rmSync2(f, { force: true });
       steps.push({ ok: true, text: `removed ${f} (drop it from ~/.aider.conf.yml if you added it)` });
       break;
     }
@@ -442,6 +477,13 @@ async function uninstall(host) {
   }
   record(host, undefined);
   return steps;
+}
+function recorded(host) {
+  try {
+    return JSON.parse(readFileSync(join2(stateDir2(), "installs.json"), "utf8"))[host] ?? {};
+  } catch {
+    return {};
+  }
 }
 function installedHosts() {
   try {
@@ -452,4 +494,4 @@ function installedHosts() {
   }
 }
 
-export { HOSTS, isHost, HOST_LABELS, detectHosts, install, uninstall, installedHosts };
+export { pluginDir2, packageRoot2, distFile2, checkoutRoot2, ownCopyDir2, useOwnCopy2, HOSTS, isHost, HOST_LABELS, detectHosts, install, uninstall, installedHosts };

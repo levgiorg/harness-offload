@@ -438,9 +438,8 @@ footer .wrap { display: flex; flex-wrap: wrap; gap: 0.5rem 2rem; justify-content
           <button class="copy" type="button" id="copy">Copy command</button>
           <p class="after" id="after"></p>
           <div class="also">
-            <p>Or install the CLI once and let its setup wire up every harness it finds:</p>
-            <pre class="cmd" id="cmd-stub-all">npm i -g harness-offload
-offload setup</pre>
+            <p>Or set it up in every agent on this computer at once, no questions:</p>
+            <pre class="cmd" id="cmd-stub-all">npx harness-offload install</pre>
           </div>
         </aside>
       </article>
@@ -503,7 +502,7 @@ offload setup</pre>
           <table class="register">
             <thead><tr><th scope="col">Harness</th><th scope="col">Guards</th><th scope="col">Default reader (@host)</th><th scope="col">Install</th></tr></thead>
             <tbody>
-              <tr><td>Claude Code</td><td><span class="depth full">Reads · output · guide</span></td><td>Haiku on your Claude plan</td><td><code>npx harness-offload install claude</code></td></tr>
+              <tr><td>Claude Code</td><td><span class="depth full">Reads · output · guide</span></td><td>Haiku on your Claude plan</td><td><code>claude plugin install harness-offload --marketplace levgiorg/harness-offload</code></td></tr>
               <tr><td>Codex CLI</td><td><span class="depth full">Shell · output · MCP</span></td><td>gpt-6-luna on your ChatGPT plan</td><td><code>npx harness-offload install codex</code></td></tr>
               <tr><td>Gemini CLI</td><td><span class="depth full">Reads · output · MCP</span></td><td>Flash-Lite on your Google account</td><td><code>npx harness-offload install gemini</code></td></tr>
               <tr><td>GitHub Copilot CLI</td><td><span class="depth full">Reads · output · guide</span></td><td>Copilot CLI on your Copilot plan</td><td><code>npx harness-offload install copilot</code></td></tr>
@@ -640,7 +639,7 @@ offload setup</pre>
   show("file", false);
 
   const INSTALL = {
-    claude: ["/plugin marketplace add levgiorg/harness-offload\n/plugin install harness-offload@harness-offload", "Type both lines in Claude Code. No Node needed: by default it reads with Haiku on your own plan."],
+    claude: ["claude plugin install harness-offload --marketplace levgiorg/harness-offload", "One line in your terminal, no questions. By default it reads with Haiku on your own plan; your next session says so."],
     codex: ["npx harness-offload install codex", "Then open /hooks in Codex and trust the Harness Offload hooks."],
     cursor: ["npx harness-offload install cursor", "Then run Developer: Reload Window."],
     gemini: ["npx harness-offload install gemini", "Installs a Gemini CLI extension with hooks and MCP tools."],

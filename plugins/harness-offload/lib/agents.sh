@@ -127,6 +127,23 @@ co_route_ready() {
   esac
 }
 
+# Who does the cheap work, in the user's words: "Haiku on your Claude plan",
+# "gpt-6-luna on your ChatGPT plan", "qwen/qwen3-coder via the openrouter API".
+# Twin: workerWords in hooks/logic.ts.
+co_worker_words() {
+  local m names plan label
+  m=$(co_model_chain read | head -n 1)
+  co_route "$m" read 2>/dev/null || { printf 'a cheap model'; return 0; }
+  names=$(jq -c '.worker_names // {}' "$CO_ROOT/config/connectors.json" 2>/dev/null)
+  plan=$(printf '%s' "$names" | jq -r --arg b "$CO_RT_BACKEND" '.plans[$b] // empty' 2>/dev/null)
+  label=$(printf '%s' "$names" | jq -r --arg m "$CO_RT_MODEL" '.models[$m] // $m' 2>/dev/null)
+  case "$CO_RT_KIND" in
+    opencode) if [ -n "$CO_RT_MODEL" ]; then printf '%s via OpenCode' "$CO_RT_MODEL"; else printf "OpenCode's default model"; fi ;;
+    agent) printf '%s on %s' "${label:-the default model}" "${plan:-$CO_RT_BACKEND}" ;;
+    *) printf '%s via the %s API' "${label:-its default model}" "$CO_RT_BACKEND" ;;
+  esac
+}
+
 co_agent_bin() {
   case "$1" in
     cursor) co_cfg '.agents.cursor.bin' cursor-agent ;;

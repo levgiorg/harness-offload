@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { runProcess, which } from "../proc.ts";
 import { stateDir } from "../state.ts";
-import { distFile, marketplaceRoot, packageRoot, pluginDir } from "./assets.ts";
+import { checkoutRoot, distFile, marketplaceRoot, packageRoot, pluginDir, useOwnCopy } from "./assets.ts";
 import { opencodeMajor } from "../backends/opencode.ts";
 import { cfgStr } from "../config.ts";
 
@@ -68,6 +68,16 @@ const CRUSH_DEFAULT_CONTEXT = ["~/.config/crush/CRUSH.md", "~/.config/AGENTS.md"
 export interface Step {
   ok: boolean;
   text: string;
+  /** an instruction for the user (shown in summaries), not a record of what ran */
+  note?: boolean;
+}
+
+/** Where Claude Code, Codex and Copilot fetch the plugin from: this checkout
+ * when offload runs from one (edits apply live), else GitHub — never the npm
+ * or npx cache, which can disappear. OFFLOAD_PLUGIN_SOURCE overrides it. */
+export const GITHUB_REPO = "levgiorg/harness-offload";
+export function pluginSource(): string {
+  return process.env.OFFLOAD_PLUGIN_SOURCE || checkoutRoot() || GITHUB_REPO;
 }
 
 const home = () => process.env.OFFLOAD_HOME || homedir();
@@ -146,6 +156,7 @@ function geminiExtension(dir: string, launcher: string): void {
 
 export async function install(host: HostName, opts: { dryRun?: boolean } = {}): Promise<Step[]> {
   const steps: Step[] = [];
+  if (!opts.dryRun) useOwnCopy();
   const bin = host === "opencode" ? cfgStr("opencode.bin", "opencode") : HOST_BIN[host];
   if (bin && !(await which(bin)) && !["cursor", "mcp", "aider"].includes(host)) {
     return [{ ok: false, text: `${HOST_LABELS[host]} not found on PATH (${bin}); install it first.` }];
@@ -153,20 +164,20 @@ export async function install(host: HostName, opts: { dryRun?: boolean } = {}): 
   const launcher = join(pluginDir(), "bin", "offload-ts");
   switch (host) {
     case "claude": {
-      const root = marketplaceRoot();
+      const root = pluginSource();
       if (opts.dryRun) return [{ ok: true, text: `claude plugin marketplace add ${root} && claude plugin install harness-offload@harness-offload` }];
       steps.push(await exec("claude", ["plugin", "marketplace", "add", root]));
       steps.push(await exec("claude", ["plugin", "install", "harness-offload@harness-offload"]));
-      steps.push({ ok: true, text: "restart Claude Code (or /reload-plugins) to load it" });
+      steps.push({ ok: true, note: true, text: "restart Claude Code (or /reload-plugins) to load it" });
       record(host, { marketplace: root });
       break;
     }
     case "codex": {
-      const root = marketplaceRoot();
+      const root = pluginSource();
       if (opts.dryRun) return [{ ok: true, text: `codex plugin marketplace add ${root} && codex plugin add harness-offload@harness-offload` }];
       steps.push(await exec("codex", ["plugin", "marketplace", "add", root]));
       steps.push(await exec("codex", ["plugin", "add", "harness-offload@harness-offload"]));
-      steps.push({ ok: true, text: "in Codex, open /hooks and trust the Harness Offload hooks (Codex skips untrusted plugin hooks)" });
+      steps.push({ ok: true, note: true, text: "in Codex, open /hooks and trust the Harness Offload hooks (Codex skips untrusted plugin hooks)" });
       record(host, { marketplace: root });
       break;
     }
@@ -179,7 +190,7 @@ export async function install(host: HostName, opts: { dryRun?: boolean } = {}): 
       rewriteForWindows(join(dest, "hosts", "cursor", "hooks.json"), /"\$\{CURSOR_PLUGIN_ROOT\}\/bin\/offload-ts"/g);
       rewriteForWindows(join(dest, "hosts", "cursor", "mcp.json"), /\$\{CURSOR_PLUGIN_ROOT\}\/bin\/offload-ts/g);
       steps.push({ ok: true, text: `installed local plugin → ${dest}` });
-      steps.push({ ok: true, text: "in Cursor: Developer: Reload Window (CLI: cursor-agent picks it up on the next run)" });
+      steps.push({ ok: true, note: true, text: "in Cursor: Developer: Reload Window (CLI: cursor-agent picks it up on the next run)" });
       record(host, { dir: dest });
       break;
     }
@@ -195,11 +206,11 @@ export async function install(host: HostName, opts: { dryRun?: boolean } = {}): 
     case "copilot": {
       // Copilot CLI reads Claude marketplaces and plugins; the plugin's hooks
       // speak Copilot's dialect when COPILOT_CLI=1.
-      const root = marketplaceRoot();
+      const root = pluginSource();
       if (opts.dryRun) return [{ ok: true, text: `copilot plugin marketplace add ${root} && copilot plugin install harness-offload@harness-offload` }];
       steps.push(await exec("copilot", ["plugin", "marketplace", "add", root]));
       steps.push(await exec("copilot", ["plugin", "install", "harness-offload@harness-offload"]));
-      steps.push({ ok: true, text: "start a new Copilot session to load it" });
+      steps.push({ ok: true, note: true, text: "start a new Copilot session to load it" });
       record(host, { marketplace: root });
       break;
     }
@@ -207,7 +218,7 @@ export async function install(host: HostName, opts: { dryRun?: boolean } = {}): 
       // Qwen Code converts a Claude plugin into an extension on install.
       if (opts.dryRun) return [{ ok: true, text: `qwen extensions install ${pluginDir()} --consent` }];
       steps.push(await exec("qwen", ["extensions", "install", pluginDir(), "--consent"]));
-      steps.push({ ok: true, text: "Qwen Code can't replace tool output, so long command output is not digested there; reads and the guide work" });
+      steps.push({ ok: true, note: true, text: "Qwen Code can't replace tool output, so long command output is not digested there; reads and the guide work" });
       record(host, { plugin: pluginDir() });
       break;
     }
@@ -316,9 +327,11 @@ export async function uninstall(host: HostName): Promise<Step[]> {
   switch (host) {
     case "claude":
       steps.push(await exec("claude", ["plugin", "uninstall", "harness-offload@harness-offload"]));
+      steps.push(await exec("claude", ["plugin", "marketplace", "remove", "harness-offload"]));
       break;
     case "codex":
       steps.push(await exec("codex", ["plugin", "remove", "harness-offload@harness-offload"]));
+      steps.push(await exec("codex", ["plugin", "marketplace", "remove", "harness-offload"]));
       break;
     case "cursor":
     case "gemini": {
@@ -329,6 +342,7 @@ export async function uninstall(host: HostName): Promise<Step[]> {
     }
     case "copilot":
       steps.push(await exec("copilot", ["plugin", "uninstall", "harness-offload@harness-offload"]));
+      steps.push(await exec("copilot", ["plugin", "marketplace", "remove", "harness-offload"]));
       break;
     case "qwen":
       steps.push(await exec("qwen", ["extensions", "uninstall", "harness-offload"]));
@@ -352,7 +366,8 @@ export async function uninstall(host: HostName): Promise<Step[]> {
       break;
     }
     case "pi":
-      steps.push(await exec("pi", ["remove", packageRoot()]));
+      // the path it was installed from (offload's own copy, or a checkout)
+      steps.push(await exec("pi", ["remove", recorded(host).source || packageRoot()]));
       break;
     case "opencode":
       for (const d of ["plugins", "plugin"]) {
@@ -389,6 +404,15 @@ export async function uninstall(host: HostName): Promise<Step[]> {
   }
   record(host, undefined);
   return steps;
+}
+
+/** What `install` recorded for a host (e.g. the source Pi was installed from). */
+function recorded(host: HostName): Record<string, string> {
+  try {
+    return JSON.parse(readFileSync(join(stateDir(), "installs.json"), "utf8"))[host] ?? {};
+  } catch {
+    return {};
+  }
 }
 
 export function installedHosts(): HostName[] {

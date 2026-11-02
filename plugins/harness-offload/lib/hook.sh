@@ -4,6 +4,16 @@
 # Hooks must never wedge Claude: every failure path exits 0 with no output,
 # which Claude Code treats as "no opinion" and runs the tool normally.
 
+# OFFLOAD_ENGINE=ts: the TypeScript engine answers this hook instead — to compare
+# the two engines inside Claude Code with one plugin (installs never set it).
+# Copilot and Qwen dialects are spoken by the bash hooks only.
+if [ "${OFFLOAD_ENGINE:-}" = ts ] && [ "${COPILOT_CLI:-}" != 1 ] && [ -z "${QWEN_CODE_SESSION_ID:-}${QWEN_PROJECT_DIR:-}" ]; then
+  case "$0" in
+    */*) exec "${0%/*}/../bin/offload-ts" hook claude "${0##*/}" ;;
+    *) exec ../bin/offload-ts hook claude "$0" ;;
+  esac
+fi
+
 command -v jq >/dev/null 2>&1 || exit 0
 
 # Several harnesses run this Claude-format plugin: GitHub Copilot CLI loads it

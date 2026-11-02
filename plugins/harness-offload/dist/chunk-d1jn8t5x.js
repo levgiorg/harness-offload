@@ -1,17 +1,17 @@
 import {
   PROMPTS,
-  runProcess,
-  spawnDetached,
-  which
-} from "./chunk-yj9cq959.js";
+  runProcess2,
+  spawnDetached2,
+  which2
+} from "./chunk-25ca7170.js";
 import {
-  stateHome,
+  stateHome2,
   cfgStr,
   cfgInt,
   cfgBool,
   cfgList,
   redact
-} from "./chunk-e63v2s9a.js";
+} from "./chunk-djerf2vs.js";
 
 // src/backends/types.ts
 var E = {
@@ -53,7 +53,7 @@ import { join as join2 } from "node:path";
 import { appendFileSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 function stateDir2() {
-  const d = cfgStr("state_dir") || join(stateHome(), "harness-offload");
+  const d = cfgStr("state_dir") || join(stateHome2(), "harness-offload");
   for (const sub of ["logs", "cooldowns", "work"])
     mkdirSync(join(d, sub), { recursive: true });
   return d;
@@ -154,7 +154,7 @@ async function opencodeMajor() {
         return majorCache = Number(maj);
     }
   } catch {}
-  const r = await runProcess(b, ["--version"], { timeoutMs: 15000 });
+  const r = await runProcess2(b, ["--version"], { timeoutMs: 15000 });
   const m = (r.stdout.trim().split(`
 `).pop() || "").match(/(\d+)\./);
   const major = m ? Number(m[1]) : 1;
@@ -270,25 +270,25 @@ function forgetSession(sid, major) {
   if (!sid || cfgBool("opencode.keep_sessions", false))
     return;
   const args = major >= 2 ? ["session", "delete", "--standalone", sid] : ["session", "delete", sid];
-  spawnDetached(bin(), args, stateDir2());
+  spawnDetached2(bin(), args, stateDir2());
 }
 
 class OpencodeBackend {
   kind = "opencode";
   label = "OpenCode CLI";
   async available() {
-    const p = await which(bin());
+    const p = await which2(bin());
     if (!p)
       return { ok: false, detail: `opencode not found (${bin()}) — https://opencode.ai` };
     return { ok: true, detail: `${p} (v${await opencodeMajor()})` };
   }
   async models() {
-    const r = await runProcess(bin(), ["models"], { timeoutMs: 60000 });
+    const r = await runProcess2(bin(), ["models"], { timeoutMs: 60000 });
     return r.stdout.split(`
 `).map((s) => s.trim()).filter((s) => /^[\w.-]+\/\S+$/.test(s));
   }
   async run(req) {
-    if (!await which(bin()))
+    if (!await which2(bin()))
       throw new WorkerError(E.MISSING, `opencode CLI not found (${bin()}). Install it from https://opencode.ai, or set opencode.bin in the config.`);
     const major = await opencodeMajor();
     const agent = `offload-${req.task}`;
@@ -314,7 +314,7 @@ class OpencodeBackend {
     if (cfgBool("opencode.disable_claude_code_compat", true))
       env.OPENCODE_DISABLE_CLAUDE_CODE = "1";
     const maxErr = cfgInt("opencode.max_stream_errors", 2);
-    const r = await runProcess(bin(), args, {
+    const r = await runProcess2(bin(), args, {
       input: req.prompt,
       cwd: req.cwd,
       env,

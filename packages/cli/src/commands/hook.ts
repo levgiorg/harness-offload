@@ -1,7 +1,7 @@
 // `offload hook <host> <event>` — reads the host's hook JSON on stdin and
 // answers in that host's dialect. Every failure path prints nothing and exits
 // 0, which every host treats as "no opinion" (fail open).
-import { bashGuard, available, Host, postBash, readGuard, sessionGuide, Verdict } from "../hooks/logic.ts";
+import { bashGuard, available, firstSession, Host, PAUSED_MESSAGE, postBash, readGuard, sessionGuide, Verdict, welcomeMessage } from "../hooks/logic.ts";
 import { readFileSync } from "node:fs";
 import { setProjectDir } from "../paths.ts";
 import { cfgBool } from "../config.ts";
@@ -63,10 +63,15 @@ async function handle(host: Host, event: string, input: J): Promise<J | undefine
   if (event === "session-start" && host === "crush") return undefined;
   if (event === "session-start") {
     const guide = sessionGuide(host);
-    if (!(await available())) return undefined;
+    // Claude Code shows systemMessage to the user: one line when offload is
+    // paused, and once, on the first session, what it does and with which model
+    const userFacing = host === "claude" && input.source === "startup";
+    if (!(await available())) return userFacing ? { systemMessage: PAUSED_MESSAGE } : undefined;
     if (host === "cursor") return { additional_context: guide };
     if (host === "gemini") return { hookSpecificOutput: { hookEventName: "SessionStart", additionalContext: guide } };
-    return { hookSpecificOutput: { hookEventName: "SessionStart", additionalContext: guide } };
+    const out: J = { hookSpecificOutput: { hookEventName: "SessionStart", additionalContext: guide } };
+    if (userFacing && firstSession()) out.systemMessage = welcomeMessage();
+    return out;
   }
 
   if (["pre-read", "pre-bash", "pre-tool", "before-tool"].includes(event)) {

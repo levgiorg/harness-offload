@@ -19,25 +19,28 @@ Claude Code · Codex · Gemini CLI · Copilot CLI · Cursor · OpenCode · Pi ·
 
 ## Install
 
-**Claude Code** — needs only `bash` and `jq`:
-
-```text
-/plugin marketplace add levgiorg/harness-offload
-/plugin install harness-offload@harness-offload
-```
-
-**Any other harness** (or several at once):
+**Claude Code** — one line in your terminal (needs `bash` and `jq`, nothing else):
 
 ```bash
-npm i -g harness-offload
-offload setup
+claude plugin install harness-offload --marketplace levgiorg/harness-offload
 ```
 
-That's all. By default each harness uses **its own small model on your own plan** (`@host`):
-Claude Code → Haiku, Codex → gpt-6-luna, Gemini CLI → Flash-Lite, Copilot CLI, Qwen Code and Crush → themselves.
-Prefer OpenCode Zen/Go, an API key or a local model? One command: `offload model groq:llama-3.3-70b`
-([18 providers + local](docs/backends.md), each tested one by one). If your agent's own route ever stops
-working, an API key takes over: `offload key anthropic` ([how](docs/backends.md#if-your-agents-own-route-stops-working-an-api-key-takes-over)).
+**Every agent on your computer at once** — Claude Code, Codex, Cursor, Gemini CLI, Copilot CLI, Qwen Code,
+Crush, Pi, OpenCode, Kilo:
+
+```bash
+npx harness-offload install
+```
+
+No questions. It finds your agents, sets each one up and tells you who does the reading: by default **each
+agent's own small model on the plan you already pay for** (Claude Code → Haiku, Codex → gpt-6-luna, Gemini CLI →
+Flash-Lite…). Your next session opens with one line saying so.
+
+- **Change who reads:** `npx harness-offload model groq:llama-3.3-70b` ([18 providers + local](docs/backends.md)),
+  or in Claude Code `/harness-offload:setup`. A backup API key if your agent's own route stops working:
+  `npx harness-offload key anthropic` ([how](docs/backends.md#if-your-agents-own-route-stops-working-an-api-key-takes-over)).
+- **Remove:** `npx harness-offload uninstall` (everywhere; `--all` also deletes settings and stats), or for
+  Claude Code alone `claude plugin uninstall harness-offload@harness-offload`.
 
 ## What it saves
 

@@ -1,20 +1,21 @@
 import {
   TASKS,
   VERSION,
-  runProcess,
+  runProcess2,
   parseFlags,
   str
-} from "./chunk-yj9cq959.js";
-import"./chunk-e63v2s9a.js";
-import"./chunk-1t6ndaq6.js";
+} from "./chunk-25ca7170.js";
+import"./chunk-djerf2vs.js";
+import"./chunk-5at3kbd8.js";
 import {
   stateDir2,
   readStats2,
   listCooldowns2
-} from "./chunk-qwa0fbdf.js";
+} from "./chunk-d1jn8t5x.js";
+import"./chunk-fxbkapb7.js";
 import {
   modelChain2
-} from "./chunk-9e09px47.js";
+} from "./chunk-vvzeww8q.js";
 
 // src/commands/dashboard.ts
 import { existsSync, writeFileSync } from "node:fs";
@@ -653,7 +654,7 @@ async function cmdDashboard(argv) {
 `);
   if (opts.open) {
     const [cmd, args] = process.platform === "darwin" ? ["open", [out]] : process.platform === "win32" ? ["cmd", ["/c", "start", "", out]] : ["xdg-open", [out]];
-    const r = await runProcess(cmd, args, { timeoutMs: 1e4 });
+    const r = await runProcess2(cmd, args, { timeoutMs: 1e4 });
     if (r.code !== 0)
       process.stderr.write(`offload: open it in a browser: ${out}
 `);

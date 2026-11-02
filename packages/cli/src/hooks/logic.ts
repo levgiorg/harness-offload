@@ -13,6 +13,42 @@ import { outline } from "../outline.ts";
 import { taskSummary } from "../tasks.ts";
 import { estTokens, fileBytes, fileLines, fmtInt, isText, shquote } from "../text.ts";
 import { writeFileSync } from "node:fs";
+import { CONNECTORS } from "../assets.ts";
+import { CLI_AGENTS } from "../backends/agents.ts";
+import { stateDir } from "../state.ts";
+
+/** Who does the cheap work, in the user's words: "Haiku on your Claude plan".
+ * Twin: co_worker_words in lib/agents.sh. */
+export function workerWords(): string {
+  let p;
+  try {
+    p = parseRef(modelChain("read")[0] ?? "@default");
+  } catch {
+    return "a cheap model";
+  }
+  const names = CONNECTORS.worker_names ?? {};
+  const label = names.models?.[p.model] ?? p.model;
+  if (p.backend === "opencode") return p.model ? `${p.model} via OpenCode` : "OpenCode's default model";
+  if (p.backend in CLI_AGENTS) return `${label || "the default model"} on ${names.plans?.[p.backend] ?? p.backend}`;
+  return `${label || "its default model"} via the ${p.backend} API`;
+}
+
+/** The one-line messages a Claude Code user sees (twins in hooks/session-start). */
+export const PAUSED_MESSAGE = "Harness Offload is paused: it found no model to hand work to, so your tools work as usual. /harness-offload:setup sets one up (or run: offload doctor).";
+export const welcomeMessage = () =>
+  `Harness Offload is on: huge file reads and long command output now go to ${workerWords()} instead of filling this session. Nothing to set up — /harness-offload:setup changes who does the work.`;
+
+/** True once per machine (state dir): the first session after installing. */
+export function firstSession(): boolean {
+  const mark = join(stateDir(), "welcome-shown");
+  if (existsSync(mark)) return false;
+  try {
+    writeFileSync(mark, "");
+  } catch {
+    return false;
+  }
+  return true;
+}
 
 export type Host = "claude" | "codex" | "cursor" | "gemini" | "pi" | "opencode" | "kilo" | "devin" | "copilot" | "qwen" | "crush" | "amp";
 

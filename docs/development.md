@@ -13,6 +13,23 @@ node bench/hooks.mjs [--engine bash|ts] [--budget-ms N]           # hook latency
 bash bench/claude-e2e.sh [RUNS]                                # real Claude Code with vs without the plugin
 ```
 
+## Trying your checkout in Claude Code (both engines)
+
+```bash
+claude plugin install harness-offload --marketplace ~/path/to/harness-offload   # once; Claude reads the checkout live
+claude                        # bash engine: the plugin's own hooks (what users get)
+OFFLOAD_ENGINE=ts claude      # same plugin, the TypeScript engine answers every hook and `offload` command
+OFFLOAD_DISABLE=1 claude      # offload off, to compare (/context, /cost)
+claude plugin uninstall harness-offload@harness-offload && claude plugin marketplace remove harness-offload
+```
+
+`offload doctor` inside a session shows which engine answered (the TypeScript one prints its own report).
+Other agents from the checkout: `node packages/cli/dist/cli.js install` (every agent found, pointing at the
+checkout) and `… uninstall` to undo. Installs from npm/npx copy their files to `~/.local/share/harness-offload`
+first (the npx cache can vanish) and install Claude Code, Codex and Copilot from GitHub.
+
+## Performance
+
 Hooks run before and after every tool call, so keep them cheap: decide from what is already known (sizes,
 the command's shape) before loading worker code, start as few processes as possible (bash) or as little
 JavaScript as possible (`dist/hook.cjs`), and re-run `node bench/hooks.mjs` after touching a hook. See

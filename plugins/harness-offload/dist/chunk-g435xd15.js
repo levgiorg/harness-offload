@@ -1,21 +1,22 @@
 import {
   CONNECTORS,
   ExitError2
-} from "./chunk-yj9cq959.js";
+} from "./chunk-25ca7170.js";
 import {
   cfg
-} from "./chunk-e63v2s9a.js";
+} from "./chunk-djerf2vs.js";
 import {
-  credentialsPath,
-  endpoint
-} from "./chunk-1t6ndaq6.js";
+  credentialsPath2,
+  endpoint2
+} from "./chunk-5at3kbd8.js";
 import {
   E
-} from "./chunk-qwa0fbdf.js";
-import"./chunk-9e09px47.js";
-import"./chunk-grfv2v51.js";
-import"./chunk-1pg3f9m8.js";
-import"./chunk-8sjq7zcc.js";
+} from "./chunk-d1jn8t5x.js";
+import"./chunk-fxbkapb7.js";
+import"./chunk-vvzeww8q.js";
+import"./chunk-xnp9r6tm.js";
+import"./chunk-z3nern1b.js";
+import"./chunk-tb9htz8z.js";
 
 // src/commands/key.ts
 import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
@@ -26,7 +27,7 @@ var die = (m) => {
   throw new ExitError2(E.USAGE);
 };
 function readStore() {
-  const f = credentialsPath();
+  const f = credentialsPath2();
   if (!existsSync(f))
     return {};
   try {
@@ -37,7 +38,7 @@ function readStore() {
   }
 }
 function writeStore(all) {
-  const f = credentialsPath();
+  const f = credentialsPath2();
   mkdirSync(dirname(f), { recursive: true });
   writeFileSync(f, JSON.stringify(all, null, 2) + `
 `, { mode: 384 });
@@ -106,7 +107,7 @@ async function cmdKey(argv) {
     out(`API keys (add: offload key NAME · remove: offload key NAME --remove · keys are never shown):
 `);
     for (const n of names()) {
-      const ep = endpoint(n);
+      const ep = endpoint2(n);
       if (!ep)
         continue;
       const local = /127\.0\.0\.1|localhost/.test(ep.base_url);
@@ -115,14 +116,14 @@ async function cmdKey(argv) {
       out(`  ${n.padEnd(12)} ${state.padEnd(22)} ${env ?? ""}
 `);
     }
-    out(`File: ${credentialsPath()}
+    out(`File: ${credentialsPath2()}
 `);
     return 0;
   }
   if (args.length > 1)
     die("key: give the key on the prompt or through stdin, not as an argument (it would stay in your shell history)");
   const name = args[0];
-  const ep = endpoint(name);
+  const ep = endpoint2(name);
   if (!ep)
     die(`key: unknown backend "${name}" (offload key lists them; add your own with endpoints.${name})`);
   const store = readStore();
@@ -134,7 +135,7 @@ async function cmdKey(argv) {
     }
     delete store[name];
     writeStore(store);
-    out(`✓ removed the ${name} key from ${credentialsPath()}
+    out(`✓ removed the ${name} key from ${credentialsPath2()}
 `);
     return 0;
   }
@@ -145,7 +146,7 @@ async function cmdKey(argv) {
     die("key: the key contains spaces; nothing saved");
   store[name] = key;
   writeStore(store);
-  out(`✓ saved the ${name} key in ${credentialsPath()} (only you can read it)
+  out(`✓ saved the ${name} key in ${credentialsPath2()} (only you can read it)
 `);
   const hosts = usedBy(name);
   if (hosts.length)

@@ -1,15 +1,15 @@
 import {
   VERSION,
-  killChildrenOnSignals,
+  killChildrenOnSignals2,
   UsageError2,
   ExitError2,
   color,
   banner
-} from "./chunk-yj9cq959.js";
+} from "./chunk-25ca7170.js";
 
 // src/cli.ts
-var core = () => import("./chunk-3gr7ghje.js");
-var admin = () => import("./chunk-wnc9a456.js");
+var core = () => import("./chunk-hw7zptat.js");
+var admin = () => import("./chunk-8v4vbrmj.js");
 var HELP = () => `${banner()}
   ${color.bold("Delegate")}
     offload read -q QUESTION PATH...        answer a question about files (dirs, file:START-END ok);
@@ -29,8 +29,10 @@ var HELP = () => `${banner()}
     offload key [NAME] [--remove]           store an API key (hidden prompt or stdin; file mode 600)
     offload setup                           interactive wizard: backends, keys, models, hosts
     offload demo                            10-second tour, no model calls
-    offload install <host> | uninstall <host>   claude · codex · cursor · gemini · copilot · qwen · crush
-                                            pi · opencode · kilo · devin · aider · mcp
+    offload install                         set offload up in every agent on this computer (no questions)
+    offload uninstall [--all]               remove it from every agent (--all: settings, keys, stats too)
+    offload install <host> | uninstall <host>   just one: claude · codex · cursor · gemini · copilot · qwen
+                                            crush · pi · opencode · kilo · devin · aider · mcp
     offload sync                            refresh every installed integration (after an upgrade)
     offload doctor [--ping] [--reset]       check everything; --ping makes one tiny call per model
     offload models [BACKEND...]             list models your backends offer
@@ -50,7 +52,7 @@ var HELP = () => `${banner()}
 `;
 async function main(argv) {
   if (argv[0] !== "hook")
-    killChildrenOnSignals();
+    killChildrenOnSignals2();
   const [cmd = "help", ...rest] = argv;
   switch (cmd) {
     case "help":
@@ -90,21 +92,21 @@ async function main(argv) {
       (await core()).cmdTasks();
       return 0;
     case "model":
-      return (await import("./chunk-1pcfz0ks.js")).cmdModel(rest);
+      return (await import("./chunk-fgfhfvdp.js")).cmdModel(rest);
     case "key":
-      return (await import("./chunk-adrkfdtj.js")).cmdKey(rest);
+      return (await import("./chunk-g435xd15.js")).cmdKey(rest);
     case "outline":
       (await core()).cmdOutline(rest);
       return 0;
     case "dashboard":
-      return (await import("./chunk-55nwv4j3.js")).cmdDashboard(rest);
+      return (await import("./chunk-mewmaw8t.js")).cmdDashboard(rest);
     case "doctor":
       return (await admin()).cmdDoctor(rest);
     case "stats":
       (await admin()).cmdStats(rest);
       return 0;
     case "demo":
-      return (await import("./chunk-9x60v0fd.js")).cmdDemo();
+      return (await import("./chunk-y7xfmsnb.js")).cmdDemo();
     case "statusline":
       (await admin()).cmdStatusline();
       return 0;
@@ -115,18 +117,18 @@ async function main(argv) {
       await (await admin()).cmdModels(rest);
       return 0;
     case "setup":
-      return (await import("./chunk-syzjrnx1.js")).cmdSetup(rest);
+      return (await import("./chunk-e7g4mpsg.js")).cmdSetup(rest);
     case "install":
     case "uninstall":
-      return (await import("./chunk-wssn0q6h.js")).cmdInstall(cmd, rest);
+      return (await import("./chunk-517ff2ds.js")).cmdInstall(cmd, rest);
     case "sync":
-      return (await import("./chunk-wssn0q6h.js")).cmdSync(rest);
+      return (await import("./chunk-517ff2ds.js")).cmdSync(rest);
     case "mcp":
-      return (await import("./chunk-nhs6c2sn.js")).cmdMcp(rest);
+      return (await import("./chunk-azdqyab2.js")).cmdMcp(rest);
     case "hook":
-      return (await import("./chunk-emsep278.js")).cmdHook(rest);
+      return (await import("./chunk-frshp2gb.js")).cmdHook(rest);
     case "worker":
-      return (await import("./chunk-a0gwp9db.js")).cmdWorker(rest);
+      return (await import("./chunk-wzhadqat.js")).cmdWorker(rest);
   }
   process.stderr.write(`offload: unknown command: ${cmd}
 `);

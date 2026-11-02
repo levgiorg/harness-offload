@@ -1,18 +1,18 @@
 import {
   VERSION,
-  runProcess
-} from "./chunk-yj9cq959.js";
+  runProcess2
+} from "./chunk-25ca7170.js";
 import {
   cfgInt,
   cfgBool
-} from "./chunk-e63v2s9a.js";
+} from "./chunk-djerf2vs.js";
 import {
   __toESM,
   __commonJS
 } from "./chunk-svvq99r5.js";
 import {
   taskSummary
-} from "./chunk-8sjq7zcc.js";
+} from "./chunk-tb9htz8z.js";
 
 // node_modules/ajv/dist/compile/codegen/code.js
 var require_code = __commonJS(function(exports) {
@@ -21633,7 +21633,7 @@ function self() {
 async function runSelf(args, cwd, input, signal, timeoutSec) {
   const [cmd, ...pre] = self();
   const limit = timeoutSec ?? cfgInt("opencode.timeout_seconds", 180) * 2 + 60;
-  const r = await runProcess(cmd, [...pre, ...args], { input: input ?? "", cwd: cwd || process.cwd(), env: { ...process.env, NO_COLOR: "1" }, timeoutMs: limit * 1000, signal });
+  const r = await runProcess2(cmd, [...pre, ...args], { input: input ?? "", cwd: cwd || process.cwd(), env: { ...process.env, NO_COLOR: "1" }, timeoutMs: limit * 1000, signal });
   if (r.killedBy === "cancelled")
     return { code: 130, out: r.stdout, err: "cancelled by the client" };
   if (r.timedOut)

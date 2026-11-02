@@ -5,7 +5,7 @@ case "$0" in */*) . "${0%/*}/../lib/hook.sh" ;; *) . ../lib/hook.sh ;; esac
 co_cfg_bool '.enabled' true || exit 0
 if ! co_backend_present; then
   [ "$HK_SOURCE" = "startup" ] || exit 0
-  jq -nc --arg m "offload: no worker backend available (opencode not found and no other backend configured) — delegation is off and offload hooks pass everything through. Run: offload setup   (or: offload doctor)" \
+  jq -nc --arg m "Harness Offload is paused: it found no model to hand work to, so your tools work as usual. /harness-offload:setup sets one up (or run: offload doctor)." \
     '{systemMessage: $m}'
   exit 0
 fi
@@ -22,4 +22,15 @@ offload is installed: cheap worker models do bulk reading/digesting so it stays 
 - $HK_CLI write --spec "..." --ref EXAMPLE_FILE --out NEW_FILE — boilerplate that follows an existing file's patterns (tests, configs, stubs); review the result.
 ${task_line}Keep for yourself: debugging reasoning, design decisions, edits (use Read offset/limit for exact text), small files. Full reads of files over ~$lines lines may be blocked with an outline and these options; large successful Bash output may come back as a digest with a log path.
 EOF2
+# The first session after installing also tells the user, once, in one line
+# (systemMessage is shown to the user; the guide above goes to the model).
+if [ "$HK_DIALECT" = claude ] && [ "$HK_SOURCE" = "startup" ]; then
+  mark="$(co_state_dir)/welcome-shown"
+  if [ ! -e "$mark" ]; then
+    : > "$mark" 2>/dev/null
+    jq -nc --arg c "$guide" --arg m "Harness Offload is on: huge file reads and long command output now go to $(co_worker_words) instead of filling this session. Nothing to set up — /harness-offload:setup changes who does the work." \
+      '{systemMessage: $m, hookSpecificOutput: {hookEventName: "SessionStart", additionalContext: $c}}'
+    exit 0
+  fi
+fi
 hk_note "$guide" SessionStart

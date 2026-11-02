@@ -3,6 +3,18 @@
 Mock-based suites run in CI on every push (conformance ×2 engines, routing table ×2, TS unit/adapter/MCP/installer tests).
 Real-model runs are recorded here.
 
+## 2026-11-02 — installing
+
+- `claude plugin install harness-offload --marketplace <checkout>` in Claude Code 2.1.316 (isolated HOME): added
+  and installed with no prompt, "Read from" the checkout; `claude plugin uninstall …` + `marketplace remove` left
+  no setting behind.
+- Real Claude Code against the mock API: the first session shows "Harness Offload is on: … go to Haiku on your
+  Claude plan …" with the bash engine and, under `OFFLOAD_ENGINE=ts`, the identical line from the TypeScript
+  engine; not shown again; the guide reached the model on every request.
+- `npm pack` + the packed CLI against stub agents: `install` (no questions) set up Claude Code from GitHub and
+  Gemini, Pi and OpenCode from `~/.local/share/harness-offload`; `uninstall` removed all four and the copy;
+  `--all` removed the state too.
+
 ## 2026-11-02 — hook latency, with and without offload ([performance.md](performance.md))
 
 - **Real Claude Code 2.1.316**, scripted mock API (instant answers), the same 17 tool calls per session,

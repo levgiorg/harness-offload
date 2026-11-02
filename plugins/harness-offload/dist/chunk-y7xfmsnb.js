@@ -2,23 +2,24 @@ import {
   color,
   sym,
   banner
-} from "./chunk-yj9cq959.js";
-import"./chunk-e63v2s9a.js";
+} from "./chunk-25ca7170.js";
+import"./chunk-djerf2vs.js";
 import {
   fileBytes,
   fileLines,
   estTokens,
   fmtInt
-} from "./chunk-1t6ndaq6.js";
-import"./chunk-qwa0fbdf.js";
-import"./chunk-9e09px47.js";
+} from "./chunk-5at3kbd8.js";
+import"./chunk-d1jn8t5x.js";
+import"./chunk-fxbkapb7.js";
+import"./chunk-vvzeww8q.js";
 import {
   digest
-} from "./chunk-grfv2v51.js";
+} from "./chunk-xnp9r6tm.js";
 import {
   bigFileMessage2
-} from "./chunk-sr6cr4eh.js";
-import"./chunk-8sjq7zcc.js";
+} from "./chunk-6vvyrzfe.js";
+import"./chunk-tb9htz8z.js";
 
 // src/commands/demo.ts
 import { mkdtempSync, writeFileSync } from "node:fs";

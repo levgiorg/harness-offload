@@ -1,20 +1,24 @@
-import"./chunk-yj9cq959.js";
+import"./chunk-25ca7170.js";
 import {
-  setProjectDir,
+  setProjectDir2,
   cfgBool
-} from "./chunk-e63v2s9a.js";
-import"./chunk-1t6ndaq6.js";
-import"./chunk-qwa0fbdf.js";
-import"./chunk-9e09px47.js";
-import"./chunk-grfv2v51.js";
+} from "./chunk-djerf2vs.js";
+import"./chunk-5at3kbd8.js";
+import"./chunk-d1jn8t5x.js";
+import"./chunk-fxbkapb7.js";
+import"./chunk-vvzeww8q.js";
+import"./chunk-xnp9r6tm.js";
 import {
+  PAUSED_MESSAGE2,
+  welcomeMessage2,
+  firstSession2,
   available2,
   readGuard2,
   bashGuard2,
   postBash2,
   sessionGuide2
-} from "./chunk-sr6cr4eh.js";
-import"./chunk-8sjq7zcc.js";
+} from "./chunk-6vvyrzfe.js";
+import"./chunk-tb9htz8z.js";
 
 // src/commands/hook.ts
 import { readFileSync } from "node:fs";
@@ -50,7 +54,7 @@ function preToolOut(host, v) {
 async function handle(host, event, input) {
   const cwd = input.cwd || input.workspace_roots?.[0] || process.cwd();
   if (cwd)
-    setProjectDir(process.env.CLAUDE_PROJECT_DIR || process.env.CURSOR_PROJECT_DIR || process.env.GEMINI_PROJECT_DIR || cwd);
+    setProjectDir2(process.env.CLAUDE_PROJECT_DIR || process.env.CURSOR_PROJECT_DIR || process.env.GEMINI_PROJECT_DIR || cwd);
   if (input.agent_id && !cfgBool("hooks.subagents", true))
     return;
   const ti = input.tool_input ?? {};
@@ -59,13 +63,17 @@ async function handle(host, event, input) {
     return;
   if (event === "session-start") {
     const guide = sessionGuide2(host);
+    const userFacing = host === "claude" && input.source === "startup";
     if (!await available2())
-      return;
+      return userFacing ? { systemMessage: PAUSED_MESSAGE2 } : undefined;
     if (host === "cursor")
       return { additional_context: guide };
     if (host === "gemini")
       return { hookSpecificOutput: { hookEventName: "SessionStart", additionalContext: guide } };
-    return { hookSpecificOutput: { hookEventName: "SessionStart", additionalContext: guide } };
+    const out = { hookSpecificOutput: { hookEventName: "SessionStart", additionalContext: guide } };
+    if (userFacing && firstSession2())
+      out.systemMessage = welcomeMessage2();
+    return out;
   }
   if (["pre-read", "pre-bash", "pre-tool", "before-tool"].includes(event)) {
     if (!await available2())

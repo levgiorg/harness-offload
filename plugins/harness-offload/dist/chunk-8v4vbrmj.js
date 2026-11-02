@@ -1,8 +1,8 @@
 import {
   TASKS,
   VERSION,
-  runProcess,
-  which,
+  runProcess2,
+  which2,
   parseFlags,
   str,
   ExitError2,
@@ -11,11 +11,11 @@ import {
   banner,
   table,
   section
-} from "./chunk-yj9cq959.js";
+} from "./chunk-25ca7170.js";
 import {
-  userConfigPath,
-  projectDir,
-  projectConfigPath,
+  userConfigPath2,
+  projectDir2,
+  projectConfigPath2,
   warnings,
   ignoredProjectKeys,
   loadConfig,
@@ -23,15 +23,10 @@ import {
   setConfigValue,
   writeConfigFile,
   readConfigFile
-} from "./chunk-e63v2s9a.js";
+} from "./chunk-djerf2vs.js";
 import {
-  fmtInt,
-  detectHost,
-  hostModel,
-  parseRef,
-  backendFor,
-  allBackendNames
-} from "./chunk-1t6ndaq6.js";
+  fmtInt
+} from "./chunk-5at3kbd8.js";
 import {
   stateDir2,
   readStats2,
@@ -39,17 +34,24 @@ import {
   clearCooldowns2,
   opencodeMajor,
   opencodeConfig
-} from "./chunk-qwa0fbdf.js";
+} from "./chunk-d1jn8t5x.js";
+import {
+  detectHost,
+  hostModel,
+  parseRef,
+  backendFor,
+  allBackendNames
+} from "./chunk-fxbkapb7.js";
 import {
   modelChain2
-} from "./chunk-9e09px47.js";
-import"./chunk-grfv2v51.js";
-import"./chunk-1pg3f9m8.js";
+} from "./chunk-vvzeww8q.js";
+import"./chunk-xnp9r6tm.js";
+import"./chunk-z3nern1b.js";
 import {
   taskNames,
   taskDef,
   taskSystem
-} from "./chunk-8sjq7zcc.js";
+} from "./chunk-tb9htz8z.js";
 
 // src/commands/admin.ts
 import { existsSync } from "node:fs";
@@ -69,7 +71,7 @@ async function cmdDoctor(argv) {
   check(true, `node ${process.version}`, process.platform + "/" + process.arch);
   for (const w of warnings)
     check(false, w);
-  for (const f of [userConfigPath(), projectConfigPath()]) {
+  for (const f of [userConfigPath2(), projectConfigPath2()]) {
     if (existsSync(f))
       check(true, "config", f);
     else
@@ -95,7 +97,7 @@ async function cmdDoctor(argv) {
   const names = taskNames();
   if (names.length) {
     out.push(section("Your tasks"));
-    const { refCheck } = await import("./chunk-1pcfz0ks.js");
+    const { refCheck } = await import("./chunk-fgfhfvdp.js");
     for (const n of names) {
       const d = taskDef(n);
       if (!d)
@@ -122,7 +124,7 @@ async function cmdDoctor(argv) {
   }
   out.push(section("Backends in use"));
   {
-    const { refCheck } = await import("./chunk-1pcfz0ks.js");
+    const { refCheck } = await import("./chunk-fgfhfvdp.js");
     for (const r of [...refs]) {
       const c = await refCheck(r);
       if (c.err) {
@@ -168,12 +170,12 @@ async function cmdDoctor(argv) {
       let ok = false;
       let detail = "";
       if (major >= 2) {
-        const r = await runProcess(bin, ["run", "--standalone", "--format", "json", "--agent", "offload-read", "--title", "offload:doctor", "-m", "offload-doctor/none"], { input: `ping
+        const r = await runProcess2(bin, ["run", "--standalone", "--format", "json", "--agent", "offload-read", "--title", "offload:doctor", "-m", "offload-doctor/none"], { input: `ping
 `, env, cwd: stateDir2(), timeoutMs: 60000 });
         ok = /no-route|Model unavailable/.test(r.stdout + r.stderr);
         detail = ok ? "" : (r.stdout + r.stderr).slice(-200);
       } else {
-        const r = await runProcess(bin, ["debug", "agent", "offload-read"], { env, timeoutMs: 60000 });
+        const r = await runProcess2(bin, ["debug", "agent", "offload-read"], { env, timeoutMs: 60000 });
         ok = r.code === 0;
         detail = ok ? "" : r.stderr.slice(-200);
       }
@@ -189,12 +191,12 @@ async function cmdDoctor(argv) {
   }
   if (opts.ping) {
     out.push(section("Live ping"));
-    const { invoke } = await import("./chunk-a809hete.js");
+    const { invoke } = await import("./chunk-d4spfkkv.js");
     for (const r of refs) {
       const t0 = Date.now();
       try {
         const res = await invoke("ask", `Reply with exactly the word: pong
-`, (await import("./chunk-t2gzaxcr.js")).workDir(), r);
+`, (await import("./chunk-jkzywya7.js")).workDir(), r);
         check(true, r, `${res.text.trim().slice(0, 40)} (${Math.round((Date.now() - t0) / 1000)}s)`);
       } catch (e) {
         check(false, r, String(e.message).split(`
@@ -273,12 +275,12 @@ function cmdConfig(argv) {
   const project = argv.includes("--project");
   const args = argv.filter((a) => a !== "--project");
   const sub = args[0] ?? "show";
-  const target = project ? projectConfigPath() : userConfigPath();
+  const target = project ? projectConfigPath2() : userConfigPath2();
   switch (sub) {
     case "show":
       process.stdout.write(`# defaults: built in
-# user:     ${userConfigPath()}${existsSync(userConfigPath()) ? "" : " (absent)"}
-# project:  ${projectConfigPath()}${existsSync(projectConfigPath()) ? "" : " (absent)"}
+# user:     ${userConfigPath2()}${existsSync(userConfigPath2()) ? "" : " (absent)"}
+# project:  ${projectConfigPath2()}${existsSync(projectConfigPath2()) ? "" : " (absent)"}
 `);
       {
         const ign = ignoredProjectKeys();
@@ -294,12 +296,12 @@ function cmdConfig(argv) {
       }
       return;
     case "trust": {
-      const cur = readConfigFile(userConfigPath());
+      const cur = readConfigFile(userConfigPath2());
       const list = Array.isArray(cur.trusted_projects) ? cur.trusted_projects : [];
-      const dir = projectDir();
+      const dir = projectDir2();
       if (!list.includes(dir))
         list.push(dir);
-      writeConfigFile(userConfigPath(), { ...cur, trusted_projects: list });
+      writeConfigFile(userConfigPath2(), { ...cur, trusted_projects: list });
       process.stdout.write(`trusted ${dir}: its .harness-offload.json may now set binaries, endpoints and privacy options
 `);
       return;
@@ -376,7 +378,7 @@ async function cmdModels(argv) {
   }
 }
 async function which_(cmd) {
-  return which(cmd);
+  return which2(cmd);
 }
 function cmdStatusline() {
   const now = Math.floor(Date.now() / 1000);

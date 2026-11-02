@@ -1,7 +1,7 @@
 import {
   DEFAULTS,
   childProcess
-} from "./chunk-yj9cq959.js";
+} from "./chunk-25ca7170.js";
 
 // src/config.ts
 import { chmodSync, existsSync as existsSync2, mkdirSync, readFileSync, writeFileSync } from "node:fs";
@@ -12,25 +12,25 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { existsSync, statSync } from "node:fs";
 var isWin = process.platform === "win32";
-function configHome() {
+function configHome2() {
   if (process.env.XDG_CONFIG_HOME)
     return process.env.XDG_CONFIG_HOME;
   if (isWin && process.env.APPDATA)
     return process.env.APPDATA;
   return join(homedir(), ".config");
 }
-function stateHome() {
+function stateHome2() {
   if (process.env.XDG_STATE_HOME)
     return process.env.XDG_STATE_HOME;
   if (isWin && process.env.LOCALAPPDATA)
     return process.env.LOCALAPPDATA;
   return join(homedir(), ".local", "state");
 }
-function userConfigPath() {
-  return process.env.OFFLOAD_CONFIG || join(configHome(), "harness-offload", "config.json");
+function userConfigPath2() {
+  return process.env.OFFLOAD_CONFIG || join(configHome2(), "harness-offload", "config.json");
 }
 var projectDirCache;
-function projectDir() {
+function projectDir2() {
   if (projectDirCache)
     return projectDirCache;
   const fromEnv = process.env.OFFLOAD_PROJECT_DIR || process.env.CLAUDE_PROJECT_DIR;
@@ -43,11 +43,11 @@ function projectDir() {
   } catch {}
   return projectDirCache = process.cwd();
 }
-function setProjectDir(dir) {
+function setProjectDir2(dir) {
   projectDirCache = dir;
 }
-function projectConfigPath() {
-  return join(projectDir(), ".harness-offload.json");
+function projectConfigPath2() {
+  return join(projectDir2(), ".harness-offload.json");
 }
 
 // src/config.ts
@@ -85,14 +85,14 @@ var SAFE_PROJECT_KEYS = ["models", "variants", "read", "explore", "digest", "hoo
 var SAFE_OPENCODE_KEYS = ["timeout_seconds", "max_stream_errors"];
 function isTrustedProject(base) {
   const t = base.trusted_projects;
-  return Array.isArray(t) && t.includes(projectDir());
+  return Array.isArray(t) && t.includes(projectDir2());
 }
 function ignoredProjectKeys() {
-  const proj = readJsonFile(projectConfigPath());
+  const proj = readJsonFile(projectConfigPath2());
   if (!proj)
     return [];
   let base = structuredClone(DEFAULTS);
-  const user = readJsonFile(userConfigPath());
+  const user = readJsonFile(userConfigPath2());
   if (user)
     base = deepMerge(base, user);
   if (isTrustedProject(base))
@@ -130,10 +130,10 @@ function loadConfig() {
   if (cache)
     return cache;
   let merged = structuredClone(DEFAULTS);
-  const user = readJsonFile(userConfigPath());
+  const user = readJsonFile(userConfigPath2());
   if (user)
     merged = deepMerge(merged, user);
-  const proj = readJsonFile(projectConfigPath());
+  const proj = readJsonFile(projectConfigPath2());
   if (proj)
     merged = mergeProject(merged, proj);
   const c = merged;
@@ -206,7 +206,7 @@ function cfgList(path) {
   return Array.isArray(v) ? v.map(String) : [];
 }
 function writeConfigKey(key, value, project = false) {
-  const file = project ? projectConfigPath() : userConfigPath();
+  const file = project ? projectConfigPath2() : userConfigPath2();
   let current = {};
   if (existsSync2(file)) {
     const parsed = readJsonFile(file);
@@ -226,7 +226,7 @@ function writeConfigKey(key, value, project = false) {
   return file;
 }
 function setConfigValue(key, raw, project = false) {
-  const file = project ? projectConfigPath() : userConfigPath();
+  const file = project ? projectConfigPath2() : userConfigPath2();
   let current = {};
   if (existsSync2(file)) {
     const parsed = readJsonFile(file);
@@ -321,4 +321,4 @@ function redact(text) {
 `);
 }
 
-export { configHome, stateHome, userConfigPath, projectDir, setProjectDir, projectConfigPath, warnings, resetConfig, ignoredProjectKeys, loadConfig, getPath, cfg, cfgStr, cfgInt, cfgBool, cfgList, writeConfigKey, setConfigValue, writeConfigFile, readConfigFile, globToRegExp, matchesAny, isSecretName, isSecretPath, isSecretTarget, redact };
+export { configHome2, stateHome2, userConfigPath2, projectDir2, setProjectDir2, projectConfigPath2, warnings, resetConfig, ignoredProjectKeys, loadConfig, getPath, cfg, cfgStr, cfgInt, cfgBool, cfgList, writeConfigKey, setConfigValue, writeConfigFile, readConfigFile, globToRegExp, matchesAny, isSecretName, isSecretPath, isSecretTarget, redact };

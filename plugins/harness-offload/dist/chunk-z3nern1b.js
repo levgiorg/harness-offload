@@ -1,17 +1,17 @@
 import {
-  spawnSafe,
+  spawnSafe2,
   parseFlags,
   str,
   list,
   ExitError2
-} from "./chunk-yj9cq959.js";
+} from "./chunk-25ca7170.js";
 import {
   cfgInt,
   cfgBool,
   isSecretPath,
   isSecretTarget,
   redact
-} from "./chunk-e63v2s9a.js";
+} from "./chunk-djerf2vs.js";
 import {
   fileLines,
   estTokens,
@@ -20,22 +20,22 @@ import {
   shquote,
   numberLines,
   stripWrappingFence
-} from "./chunk-1t6ndaq6.js";
+} from "./chunk-5at3kbd8.js";
 import {
   E,
   WorkerError,
   workDir2,
   appendStats2,
   newLogPath2
-} from "./chunk-qwa0fbdf.js";
+} from "./chunk-d1jn8t5x.js";
 import {
   invoke2
-} from "./chunk-9e09px47.js";
+} from "./chunk-vvzeww8q.js";
 import {
   digest,
   isSmall,
   outline2
-} from "./chunk-grfv2v51.js";
+} from "./chunk-xnp9r6tm.js";
 import {
   TASK_NAME,
   taskNames,
@@ -43,7 +43,7 @@ import {
   taskSystem,
   setTaskContext,
   taskContext
-} from "./chunk-8sjq7zcc.js";
+} from "./chunk-tb9htz8z.js";
 
 // src/commands/core.ts
 import { spawn } from "node:child_process";
@@ -385,7 +385,7 @@ async function cmdExplore2(argv) {
 function execToFile(cmd, log) {
   return new Promise((res) => {
     const fd = openSync(log, "w");
-    const child = typeof cmd === "string" ? spawn(process.platform === "win32" ? cmd : "bash", process.platform === "win32" ? [] : ["-c", cmd], { stdio: ["inherit", fd, fd], shell: process.platform === "win32" }) : spawnSafe(cmd[0], cmd.slice(1), { stdio: ["inherit", fd, fd] });
+    const child = typeof cmd === "string" ? spawn(process.platform === "win32" ? cmd : "bash", process.platform === "win32" ? [] : ["-c", cmd], { stdio: ["inherit", fd, fd], shell: process.platform === "win32" }) : spawnSafe2(cmd[0], cmd.slice(1), { stdio: ["inherit", fd, fd] });
     child.on("error", (e) => {
       try {
         writeFileSync(log, `offload: cannot run ${Array.isArray(cmd) ? cmd[0] : cmd}: ${e.message}

@@ -110,3 +110,58 @@ describe("offload install", () => {
     expect(cli(["install", "notepad"], { env: s.env }).code).toBe(2);
   });
 });
+
+describe("offload install / uninstall with no host: every agent here, no questions", () => {
+  test("installs into each agent found and says who does the reading", () => {
+    const s = withStubs();
+    const env = { ...s.env };
+    delete env.OFFLOAD_MODEL; // the default: each agent's own plan
+    const r = cli(["install"], { env });
+    expect(r.code).toBe(0);
+    expect(r.stdout).toContain("Claude Code");
+    expect(r.stdout).toContain("reading goes to Haiku on your Claude plan");
+    expect(r.stdout).toContain("reading goes to gpt-6-luna on your ChatGPT plan");
+    expect(r.stdout).toContain("open /hooks and trust"); // the one step Codex still needs
+    expect(r.stdout).toContain("Done — nothing else to set up.");
+    expect(r.stdout).toMatch(/Remove everything:\s+(offload|npx harness-offload) uninstall/);
+    const log = readFileSync(join(s.dir, "calls.log"), "utf8");
+    // run from this checkout, the agents point at it (edits apply live)
+    expect(log).toMatch(/claude plugin marketplace add \/.+\nclaude plugin install harness-offload@harness-offload/);
+    expect(log).not.toContain("levgiorg/harness-offload");
+  });
+  test("OFFLOAD_PLUGIN_SOURCE picks where Claude Code fetches the plugin", () => {
+    const s = withStubs();
+    cli(["install", "claude"], { env: { ...s.env, OFFLOAD_PLUGIN_SOURCE: "levgiorg/harness-offload" } });
+    expect(readFileSync(join(s.dir, "calls.log"), "utf8")).toContain("claude plugin marketplace add levgiorg/harness-offload");
+  });
+  test("no agent on this computer → says so, exit 1", () => {
+    const s = sandbox();
+    // a PATH with node and nothing else (node may share a folder with real agents)
+    const only = join(s.dir, "only-node");
+    mkdirSync(only);
+    require("node:fs").symlinkSync(Bun.which("node")!, join(only, "node"));
+    const env: NodeJS.ProcessEnv = { ...s.env, OFFLOAD_HOME: join(s.dir, "home"), PATH: `${only}:/usr/bin:/bin` };
+    delete env.OFFLOAD_OPENCODE_BIN; // the sandbox's stub would count as OpenCode
+    const r = cli(["install"], { env });
+    expect(r.code).toBe(1);
+    expect(r.stdout).toContain("No supported agent found on this computer");
+  });
+  test("uninstall removes it everywhere; --all also settings and stats", () => {
+    const s = withStubs();
+    expect(cli(["install"], { env: s.env }).code).toBe(0);
+    const ext = join(s.dir, "home", ".gemini", "extensions", "harness-offload");
+    expect(existsSync(ext)).toBe(true);
+    const r = cli(["uninstall"], { env: s.env });
+    expect(r.code).toBe(0);
+    expect(r.stdout).toContain("Gemini CLI");
+    expect(existsSync(ext)).toBe(false);
+    const log = readFileSync(join(s.dir, "calls.log"), "utf8");
+    expect(log).toContain("claude plugin uninstall harness-offload@harness-offload");
+    expect(log).toContain("claude plugin marketplace remove harness-offload");
+    expect(r.stdout).toContain("add --all to remove them too");
+    expect(existsSync(join(s.dir, "state"))).toBe(true);
+    const all = cli(["uninstall", "--all"], { env: s.env });
+    expect(all.code).toBe(0);
+    expect(existsSync(join(s.dir, "state"))).toBe(false);
+  });
+});

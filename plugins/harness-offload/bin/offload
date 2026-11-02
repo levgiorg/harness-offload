@@ -12,6 +12,11 @@ while [ -h "$src" ]; do
 done
 CO_ROOT="$(cd -P "$(dirname "$src")/.." && pwd)"
 unset src dir
+# OFFLOAD_ENGINE=ts: the TypeScript engine answers instead (to compare the two
+# engines inside one harness; installs never set it).
+if [ "${OFFLOAD_ENGINE:-}" = ts ] && [ -x "$CO_ROOT/bin/offload-ts" ]; then
+  exec "$CO_ROOT/bin/offload-ts" "$@"
+fi
 # shellcheck source=../lib/common.sh
 . "$CO_ROOT/lib/common.sh"
 # shellcheck source=../lib/opencode.sh
@@ -44,7 +49,9 @@ offload — keep big reads, long logs and repo-wide searches out of your coding 
   offload doctor [--ping] [--reset]     Check setup; --ping makes a tiny live call per model.
   offload stats [--days N] [--json]     Delegations and estimated tokens saved (14-day sparkline).
   offload dashboard [--open] [--sample] HTML report of the same (needs Node 18+).
-  offload install|uninstall HOST        Wire up a harness (claude, codex, cursor, gemini, copilot, qwen, crush, …).
+  offload install                       Set offload up in every agent on this computer (no questions).
+  offload uninstall [--all]             Remove it from every agent (--all: settings, keys and stats too).
+  offload install|uninstall HOST        Just one harness (claude, codex, cursor, gemini, copilot, qwen, crush, …).
   offload config [show|path|init|set KEY VALUE|trust] [--project]
 
 Models are BACKEND:MODEL (openrouter:qwen/qwen3-coder, ollama:qwen3:8b, claude:haiku), a bare
