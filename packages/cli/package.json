@@ -1,6 +1,6 @@
 {
   "name": "harness-offload",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "The harness offloader: keep bulk I/O out of your coding agent's context by delegating it to cheap models you already pay for.",
   "license": "MIT",
   "author": "George Levis",

@@ -45,7 +45,7 @@ Nothing runs at `npm install` time (no `preinstall`/`postinstall`): npm 12, pnpm
 they are how the 2025 npm worms spread. `scripts/pack-check.mjs` fails the build if one appears, if a needed file
 is missing from the tarball, or if sources/tests would ship.
 
-**First publish (once, from your machine — the package doesn't exist on npm yet):**
+**First publish (once, from your machine — the package doesn't exist on npm yet; 0.2.0 was withdrawn and its number can't be reused, so the first release is 0.2.1):**
 
 ```bash
 cd packages/cli && bun install && bun run build
@@ -59,7 +59,7 @@ npm publish --access public    # asks for your 2FA code
 authentication and disallow tokens*. No npm token is stored anywhere.
 
 **Every release after that:** bump the version in every manifest (CI checks they agree), move the CHANGELOG
-entry under the new version, tag and push (`git tag v0.2.1 && git push --tags`). `release.yml` checks the tag
+entry under the new version, tag and push (`git tag v0.2.2 && git push --tags`; never tag the version you published by hand, npm refuses a second publish of it). `release.yml` checks the tag
 matches, builds, runs the pack checks and the smoke install, publishes with provenance (npm adds it by itself
 with trusted publishing), and attaches the standalone binaries and the plugin zip to the GitHub release. Users
 update by running `npx harness-offload@latest install` again.

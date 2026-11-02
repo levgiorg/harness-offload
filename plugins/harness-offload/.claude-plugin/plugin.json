@@ -1,7 +1,7 @@
 {
   "name": "harness-offload",
   "displayName": "Harness Offload",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Keeps huge file reads and long command output out of Claude's context: a cheap model on your own plan (Haiku by default) reads them and answers with checked citations. Nothing to set up.",
   "author": { "name": "George Levis" },
   "keywords": ["token-optimization", "delegation", "opencode", "context", "model-routing"]

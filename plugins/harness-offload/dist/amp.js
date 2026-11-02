@@ -1,14 +1,18 @@
-var __esm = (fn, res, err) => () => {
-  if (fn)
-    try {
-      res = fn(fn = 0);
-    } catch (e) {
-      err = [e];
-    }
-  if (err)
-    throw err[0];
-  return res;
+var __defProp = Object.defineProperty;
+var __returnValue = (v) => v;
+function __exportSetter(name, newValue) {
+  this[name] = __returnValue.bind(null, newValue);
+}
+var __export = (target, all) => {
+  for (var name in all)
+    __defProp(target, name, {
+      get: all[name],
+      enumerable: true,
+      configurable: true,
+      set: __exportSetter.bind(all, name)
+    });
 };
+var __esm = (fn, res) => () => (fn && (res = fn(fn = 0)), res);
 
 // src/generated/assets.ts
 var DEFAULTS_JSON, OUTLINE_JSON, CONNECTORS_JSON, PROMPT_TEXT;
@@ -74,6 +78,12 @@ var init_assets2 = __esm(() => {
 });
 
 // src/outline.ts
+var exports_outline = {};
+__export(exports_outline, {
+  posixToJs: () => posixToJs,
+  outlineRegex: () => outlineRegex,
+  outline: () => outline
+});
 import { readFileSync as readFileSync9 } from "node:fs";
 import { basename as basename2 } from "node:path";
 function posixToJs(ere) {
@@ -945,35 +955,35 @@ class HttpBackend {
     }
     return (j?.data ?? []).map((m) => String(m.id)).sort();
   }
-  async run(req) {
+  async run(req2) {
     const key = apiKey(this.ep);
     if (!key && !/127\.0\.0\.1|localhost/.test(this.ep.base_url)) {
       throw new WorkerError(E.AUTH, `no API key for ${this.ep.name}: set ${this.ep.api_key_env ?? "it"} or run \`offload setup\``);
     }
-    if (!req.model)
+    if (!req2.model)
       throw new WorkerError(E.MODEL, `endpoint ${this.ep.name} needs a model id, e.g. ${this.ep.name}:<model>`);
-    return this.ep.type === "anthropic" ? this.anthropic(req, key) : this.openai(req, key);
+    return this.ep.type === "anthropic" ? this.anthropic(req2, key) : this.openai(req2, key);
   }
-  async openai(req, key) {
+  async openai(req2, key) {
     const headers = { ...this.ep.headers ?? {} };
     if (key)
       headers.authorization = `Bearer ${key}`;
-    const tools = req.task === "explore" ? TOOL_SPECS.map((t) => ({ type: "function", function: t })) : undefined;
+    const tools = req2.task === "explore" ? TOOL_SPECS.map((t) => ({ type: "function", function: t })) : undefined;
     const messages = [
-      { role: "system", content: req.system },
-      { role: "user", content: req.prompt }
+      { role: "system", content: req2.system },
+      { role: "user", content: req2.prompt }
     ];
     let tokensIn = 0;
     let tokensOut = 0;
     let ctxIn = 0;
-    const deadline = Date.now() + req.timeoutSec * 1000;
-    const steps = req.task === "explore" ? req.maxSteps ?? 40 : 1;
+    const deadline = Date.now() + req2.timeoutSec * 1000;
+    const steps = req2.task === "explore" ? req2.maxSteps ?? 40 : 1;
     for (let step = 0;step < steps; step++) {
-      const body = { model: req.model, messages };
+      const body = { model: req2.model, messages };
       if (tools)
         body.tools = tools;
-      if (req.variant)
-        body.reasoning_effort = req.variant;
+      if (req2.variant)
+        body.reasoning_effort = req2.variant;
       const j = await post(`${this.ep.base_url}/chat/completions`, body, headers, Math.max(1000, deadline - Date.now()));
       tokensIn += j?.usage?.prompt_tokens ?? 0;
       tokensOut += j?.usage?.completion_tokens ?? 0;
@@ -994,26 +1004,26 @@ class HttpBackend {
         try {
           args = JSON.parse(c.function?.arguments || "{}");
         } catch {}
-        messages.push({ role: "tool", tool_call_id: c.id, content: await runTool(c.function?.name, args, { root: req.cwd, secretGlobs: req.secretGlobs ?? [], allowGlobs: req.allowGlobs ?? [] }) });
+        messages.push({ role: "tool", tool_call_id: c.id, content: await runTool(c.function?.name, args, { root: req2.cwd, secretGlobs: req2.secretGlobs ?? [], allowGlobs: req2.allowGlobs ?? [] }) });
       }
       if (step === steps - 2)
         messages.push({ role: "user", content: "Step budget almost used: answer now with what you found." });
     }
     throw new WorkerError(E.WORKER, `explore used all ${steps} steps without answering`);
   }
-  async anthropic(req, key) {
+  async anthropic(req2, key) {
     const headers = { "anthropic-version": "2023-06-01", ...this.ep.headers ?? {} };
     if (key)
       headers["x-api-key"] = key;
-    const tools = req.task === "explore" ? TOOL_SPECS.map((t) => ({ name: t.name, description: t.description, input_schema: t.parameters })) : undefined;
-    const messages = [{ role: "user", content: req.prompt }];
+    const tools = req2.task === "explore" ? TOOL_SPECS.map((t) => ({ name: t.name, description: t.description, input_schema: t.parameters })) : undefined;
+    const messages = [{ role: "user", content: req2.prompt }];
     let tokensIn = 0;
     let tokensOut = 0;
     let ctxIn = 0;
-    const deadline = Date.now() + req.timeoutSec * 1000;
-    const steps = req.task === "explore" ? req.maxSteps ?? 40 : 1;
+    const deadline = Date.now() + req2.timeoutSec * 1000;
+    const steps = req2.task === "explore" ? req2.maxSteps ?? 40 : 1;
     for (let step = 0;step < steps; step++) {
-      const body = { model: req.model, max_tokens: 8192, system: req.system, messages };
+      const body = { model: req2.model, max_tokens: 8192, system: req2.system, messages };
       if (tools)
         body.tools = tools;
       const j = await post(`${this.ep.base_url}/v1/messages`, body, headers, Math.max(1000, deadline - Date.now()));
@@ -1031,7 +1041,7 @@ class HttpBackend {
       messages.push({ role: "assistant", content });
       messages.push({
         role: "user",
-        content: await Promise.all(uses.map(async (u) => ({ type: "tool_result", tool_use_id: u.id, content: await runTool(u.name, u.input ?? {}, { root: req.cwd, secretGlobs: req.secretGlobs ?? [], allowGlobs: req.allowGlobs ?? [] }) })))
+        content: await Promise.all(uses.map(async (u) => ({ type: "tool_result", tool_use_id: u.id, content: await runTool(u.name, u.input ?? {}, { root: req2.cwd, secretGlobs: req2.secretGlobs ?? [], allowGlobs: req2.allowGlobs ?? [] }) })))
       });
     }
     throw new WorkerError(E.WORKER, `explore used all ${steps} steps without answering`);
@@ -1119,7 +1129,7 @@ function spawnSafe(cmd, args, opts) {
   return childProcess().spawn(p.file, p.args, { ...opts, ...p.opts, shell: false });
 }
 function runProcess(cmd, args, opts) {
-  return new Promise((resolve) => {
+  return new Promise((resolve2) => {
     let stdout = "";
     let stderr = "";
     let timedOut = false;
@@ -1128,7 +1138,7 @@ function runProcess(cmd, args, opts) {
     try {
       child = spawnSafe(cmd, args, { cwd: opts.cwd, env: opts.env, stdio: ["pipe", "pipe", "pipe"], detached: !isWin2 });
     } catch (e) {
-      resolve({ code: 127, stdout: "", stderr: String(e), timedOut: false });
+      resolve2({ code: 127, stdout: "", stderr: String(e), timedOut: false });
       return;
     }
     track(child);
@@ -1143,7 +1153,7 @@ function runProcess(cmd, args, opts) {
       killTree(child, "SIGKILL");
       child.stdout?.destroy();
       child.stderr?.destroy();
-      resolve({ code, stdout, stderr, timedOut, killedBy });
+      resolve2({ code, stdout, stderr, timedOut, killedBy });
     };
     const kill = () => {
       killTree(child, "SIGTERM");
@@ -1275,10 +1285,10 @@ async function opencodeMajor() {
   if (majorCache)
     return majorCache;
   const b = bin();
-  const cache = join6(stateDir(), "opencode-version");
+  const cache2 = join6(stateDir(), "opencode-version");
   try {
-    if (existsSync6(cache) && Date.now() - statSync5(cache).mtimeMs < 3600000) {
-      const [maj, cbin] = readFileSync6(cache, "utf8").trim().split(" ");
+    if (existsSync6(cache2) && Date.now() - statSync5(cache2).mtimeMs < 3600000) {
+      const [maj, cbin] = readFileSync6(cache2, "utf8").trim().split(" ");
       if (cbin === b && /^\d+$/.test(maj))
         return majorCache = Number(maj);
     }
@@ -1289,7 +1299,7 @@ async function opencodeMajor() {
   const major = m ? Number(m[1]) : 1;
   if (m) {
     try {
-      writeFileSync3(cache, `${major} ${b}
+      writeFileSync3(cache2, `${major} ${b}
 `);
     } catch {}
   }
@@ -1324,10 +1334,10 @@ function opencodeConfig(major, overrides = {}) {
       system,
       permissions: [{ action: "*", resource: "*", effect: "deny" }]
     });
-    const explore = v2("offload read-only explorer", P.explore);
-    explore.steps = steps;
-    explore.permissions.push(...["read", "grep", "glob"].map((action) => ({ action, resource: "*", effect: "allow" })));
-    explore.permissions.push(...secrets.map((resource) => ({ action: "read", resource, effect: "deny" })));
+    const explore2 = v2("offload read-only explorer", P.explore);
+    explore2.steps = steps;
+    explore2.permissions.push(...["read", "grep", "glob"].map((action) => ({ action, resource: "*", effect: "allow" })));
+    explore2.permissions.push(...secrets.map((resource) => ({ action: "read", resource, effect: "deny" })));
     return merge(user, {
       snapshots: false,
       agents: {
@@ -1335,7 +1345,7 @@ function opencodeConfig(major, overrides = {}) {
         "offload-summarize": v2("offload output digester", P.summarize),
         "offload-write": v2("offload code writer", P.write),
         "offload-ask": v2("offload one-shot helper", P.ask),
-        "offload-explore": explore
+        "offload-explore": explore2
       }
     });
   }
@@ -1416,45 +1426,45 @@ class OpencodeBackend {
     return r.stdout.split(`
 `).map((s) => s.trim()).filter((s) => /^[\w.-]+\/\S+$/.test(s));
   }
-  async run(req) {
+  async run(req2) {
     if (!await which(bin()))
       throw new WorkerError(E.MISSING, `opencode CLI not found (${bin()}). Install it from https://opencode.ai, or set opencode.bin in the config.`);
     const major = await opencodeMajor();
-    const agent = `offload-${req.task}`;
-    const args = ["run", "--format", "json", "--agent", agent, "--title", `offload:${req.task}`];
+    const agent = `offload-${req2.task}`;
+    const args = ["run", "--format", "json", "--agent", agent, "--title", `offload:${req2.task}`];
     if (major >= 2) {
       args.push("--standalone");
-      if (req.model)
-        args.push("-m", req.variant ? `${req.model}#${req.variant}` : req.model);
+      if (req2.model)
+        args.push("-m", req2.variant ? `${req2.model}#${req2.variant}` : req2.model);
     } else {
       args.push("--print-logs", "--log-level", "ERROR");
-      if (req.model)
-        args.push("-m", req.model);
-      if (req.variant)
-        args.push("--variant", req.variant);
+      if (req2.model)
+        args.push("-m", req2.model);
+      if (req2.variant)
+        args.push("--variant", req2.variant);
     }
     const env = {
       ...process.env,
-      OPENCODE_CONFIG_CONTENT: JSON.stringify(opencodeConfig(major, req.system !== PROMPTS[req.task] ? { [req.task]: req.system } : {})),
+      OPENCODE_CONFIG_CONTENT: JSON.stringify(opencodeConfig(major, req2.system !== PROMPTS[req2.task] ? { [req2.task]: req2.system } : {})),
       OPENCODE_DISABLE_AUTOUPDATE: "1",
       OFFLOAD_DISABLE: "1",
-      PWD: req.cwd
+      PWD: req2.cwd
     };
     if (cfgBool("opencode.disable_claude_code_compat", true))
       env.OPENCODE_DISABLE_CLAUDE_CODE = "1";
     const maxErr = cfgInt("opencode.max_stream_errors", 2);
     const r = await runProcess(bin(), args, {
-      input: req.prompt,
-      cwd: req.cwd,
+      input: req2.prompt,
+      cwd: req2.cwd,
       env,
-      timeoutMs: req.timeoutSec * 1000,
-      watchdog: (out, err) => retries(out, err) >= maxErr ? "retries" : undefined
+      timeoutMs: req2.timeoutSec * 1000,
+      watchdog: (out, err2) => retries(out, err2) >= maxErr ? "retries" : undefined
     });
     const events = parseEvents(r.stdout);
     const sid = events.find((e) => e.sessionID)?.sessionID || (r.stderr.match(/session\.id=(ses_[A-Za-z0-9]+)/) || [])[1];
     forgetSession(sid, major);
     if (r.timedOut)
-      throw new WorkerError(E.TIMEOUT, `timed out after ${req.timeoutSec}s`);
+      throw new WorkerError(E.TIMEOUT, `timed out after ${req2.timeoutSec}s`);
     if (r.killedBy === "retries") {
       const msg = (r.stderr.match(/error\.error="([^"]*)"/g) || []).pop()?.replace(/^error\.error="|"$/g, "");
       const why = `provider kept failing and retrying (${retries(r.stdout, r.stderr)} retries): ${msg || "likely rate limit, quota or overload"}`;
@@ -1551,29 +1561,29 @@ function crushLockdown() {
   } catch {}
   return { options: { disabled_tools: CRUSH_TOOLS }, ...Object.keys(mcp).length ? { mcp } : {} };
 }
-var merged = (req) => `<instructions>
-${req.system}
+var merged = (req2) => `<instructions>
+${req2.system}
 </instructions>
 
-${req.prompt}`;
+${req2.prompt}`;
 var CLI_AGENTS = {
   claude: {
     label: "Claude Code (claude -p) — your Claude plan (Haiku)",
     models: async () => ["haiku", "sonnet"],
     bin: "claude",
     install: "https://claude.com/claude-code",
-    args: (req) => {
-      const a = ["-p", "--output-format", "json", "--no-session-persistence", "--setting-sources", "", "--strict-mcp-config", "--disable-slash-commands", "--system-prompt", req.system];
-      if (req.model)
-        a.push("--model", req.model);
-      if (req.task === "explore") {
+    args: (req2) => {
+      const a = ["-p", "--output-format", "json", "--no-session-persistence", "--setting-sources", "", "--strict-mcp-config", "--disable-slash-commands", "--system-prompt", req2.system];
+      if (req2.model)
+        a.push("--model", req2.model);
+      if (req2.task === "explore") {
         a.push("--tools", "Read,Grep,Glob", "--allowedTools", "Read,Grep,Glob");
-        const deny = (req.secretGlobs ?? []).map((g) => `Read(**/${g})`).join(",");
+        const deny = (req2.secretGlobs ?? []).map((g) => `Read(**/${g})`).join(",");
         if (deny)
           a.push("--disallowedTools", deny);
       } else
         a.push("--tools", "");
-      return { args: a, input: req.prompt };
+      return { args: a, input: req2.prompt };
     },
     parse: (out) => {
       const j = lastJson(out);
@@ -1594,14 +1604,14 @@ var CLI_AGENTS = {
     models: async () => ["gpt-6-luna", "gpt-6.1-terra", "gpt-6.1-sol"],
     bin: "codex",
     install: "npm i -g @openai/codex  (then: codex login)",
-    args: (req) => {
-      const a = ["exec", "--json", "--ephemeral", "--skip-git-repo-check", "-s", "read-only", "--disable", "hooks", "--ignore-rules", "-C", req.cwd];
-      if (req.model)
-        a.push("-m", req.model);
-      if (req.variant)
-        a.push("-c", `model_reasoning_effort="${req.variant}"`);
+    args: (req2) => {
+      const a = ["exec", "--json", "--ephemeral", "--skip-git-repo-check", "-s", "read-only", "--disable", "hooks", "--ignore-rules", "-C", req2.cwd];
+      if (req2.model)
+        a.push("-m", req2.model);
+      if (req2.variant)
+        a.push("-c", `model_reasoning_effort="${req2.variant}"`);
       a.push("-");
-      return { args: a, input: merged(req) };
+      return { args: a, input: merged(req2) };
     },
     parse: (out) => {
       let text = "";
@@ -1631,16 +1641,16 @@ var CLI_AGENTS = {
     models: async () => ["flash-lite", "flash", "pro"],
     bin: "gemini",
     install: "npm i -g @google/gemini-cli",
-    args: (req) => {
+    args: (req2) => {
       const a = ["-o", "json", "--approval-mode", "plan", "--skip-trust", "-e", "none"];
-      if (req.model)
-        a.push("-m", req.model);
+      if (req2.model)
+        a.push("-m", req2.model);
       a.push("-p", "Answer as instructed above.");
-      return { args: a, input: req.prompt };
+      return { args: a, input: req2.prompt };
     },
-    env: (req, dir) => {
-      const file = join7(dir, `gemini-system-${req.task}.md`);
-      writeFileSync4(file, req.system);
+    env: (req2, dir) => {
+      const file = join7(dir, `gemini-system-${req2.task}.md`);
+      writeFileSync4(file, req2.system);
       return { GEMINI_SYSTEM_MD: file, GEMINI_CLI_TRUST_WORKSPACE: "true" };
     },
     parse: (out, err) => {
@@ -1670,18 +1680,18 @@ var CLI_AGENTS = {
     },
     bin: "pi",
     install: "npm i -g @earendil-works/pi-coding-agent",
-    args: (req) => {
-      const a = ["-p", "--mode", "json", "--no-session", "-na", "-ne", "-ns", "-nc", "--no-mcp", "--system-prompt", req.system];
-      if (req.task === "explore")
+    args: (req2) => {
+      const a = ["-p", "--mode", "json", "--no-session", "-na", "-ne", "-ns", "-nc", "--no-mcp", "--system-prompt", req2.system];
+      if (req2.task === "explore")
         a.push("--tools", "read,grep,find,ls");
       else
         a.push("--no-tools");
-      if (req.model)
-        a.push("--model", req.variant ? `${req.model}:${req.variant}` : req.model);
+      if (req2.model)
+        a.push("--model", req2.variant ? `${req2.model}:${req2.variant}` : req2.model);
       a.push(`
 
 Answer as instructed above.`);
-      return { args: a, input: req.prompt };
+      return { args: a, input: req2.prompt };
     },
     parse: (out) => {
       let text = "";
@@ -1711,17 +1721,17 @@ Answer as instructed above.`);
     label: "GitHub Copilot CLI (copilot) — your Copilot plan",
     bin: "copilot",
     install: "npm i -g @github/copilot  (then run copilot once and /login)",
-    args: (req) => {
+    args: (req2) => {
       const a = ["--output-format", "json", "-s", "--no-custom-instructions", "--no-ask-user", "--disable-builtin-mcps", "--no-auto-update"];
-      if (req.model)
-        a.push("--model", req.model);
-      if (req.variant)
-        a.push("--reasoning-effort", req.variant);
-      if (req.task === "explore")
+      if (req2.model)
+        a.push("--model", req2.model);
+      if (req2.variant)
+        a.push("--reasoning-effort", req2.variant);
+      if (req2.task === "explore")
         a.push("--allow-all-tools", "--available-tools", "view", "grep", "glob");
       else
         a.push("--available-tools", "none");
-      return { args: a, input: merged(req) };
+      return { args: a, input: merged(req2) };
     },
     parse: (out) => {
       let text = "";
@@ -1741,15 +1751,15 @@ Answer as instructed above.`);
     label: "Qwen Code (qwen) — your Qwen account or keys",
     bin: "qwen",
     install: "npm i -g @qwen-code/qwen-code  (then run qwen once and /auth)",
-    args: (req) => {
-      const a = ["--output-format", "json", "--system-prompt", req.system, "--approval-mode", "plan", "--chat-recording", "false", "-e", "none"];
-      if (req.model)
-        a.push("-m", req.model);
-      a.push("--core-tools", ...req.task === "explore" ? ["read_file", "grep_search", "glob"] : ["none"]);
+    args: (req2) => {
+      const a = ["--output-format", "json", "--system-prompt", req2.system, "--approval-mode", "plan", "--chat-recording", "false", "-e", "none"];
+      if (req2.model)
+        a.push("-m", req2.model);
+      a.push("--core-tools", ...req2.task === "explore" ? ["read_file", "grep_search", "glob"] : ["none"]);
       a.push("--", "Answer as instructed above.");
-      return { args: a, input: req.prompt };
+      return { args: a, input: req2.prompt };
     },
-    env: (req, dir) => {
+    env: (req2, dir) => {
       const file = join7(dir, "qwen-worker-settings.json");
       writeFileSync4(file, JSON.stringify({ memory: { enableManagedAutoMemory: false, enableManagedAutoDream: false } }));
       return { QWEN_CODE_SYSTEM_SETTINGS_PATH: file };
@@ -1778,19 +1788,19 @@ Answer as instructed above.`);
     label: "Crush (crush run) — your Crush providers",
     bin: "crush",
     install: "brew install charmbracelet/tap/crush  or  npm i -g @charmland/crush",
-    args: (req) => {
-      if (req.task === "explore")
+    args: (req2) => {
+      if (req2.task === "explore")
         throw new WorkerError(E.USAGE, "crush: `crush run` approves every tool call, so it is not used as a read-only explorer; the next model in the chain takes over");
       const a = ["run", "-q"];
-      if (req.model)
-        a.push("-m", req.model);
-      if (req.variant)
-        a.push("--reasoning-effort", req.variant);
+      if (req2.model)
+        a.push("-m", req2.model);
+      if (req2.variant)
+        a.push("--reasoning-effort", req2.variant);
       a.push("Answer as instructed above.");
-      return { args: a, input: merged(req) };
+      return { args: a, input: merged(req2) };
     },
-    env: (req) => {
-      writeFileSync4(join7(req.cwd, ".crush.json"), JSON.stringify(crushLockdown()));
+    env: (req2) => {
+      writeFileSync4(join7(req2.cwd, ".crush.json"), JSON.stringify(crushLockdown()));
       return {};
     },
     parse: (out) => empty(out.trim())
@@ -1799,11 +1809,11 @@ Answer as instructed above.`);
     label: "Cursor CLI (cursor-agent -p) — Cursor plan",
     bin: "cursor-agent",
     install: "curl https://cursor.com/install -fsS | bash  (then: cursor-agent login)",
-    args: (req) => {
-      const a = ["-p", "--output-format", "json", "--mode", "ask", "--trust", "--workspace", req.cwd];
-      if (req.model)
-        a.push("--model", req.model);
-      a.push(merged(req));
+    args: (req2) => {
+      const a = ["-p", "--output-format", "json", "--mode", "ask", "--trust", "--workspace", req2.cwd];
+      if (req2.model)
+        a.push("--model", req2.model);
+      a.push(merged(req2));
       return { args: a, input: "" };
     },
     parse: (out) => {
@@ -1819,23 +1829,23 @@ Answer as instructed above.`);
 };
 function cliAgentBackend(name) {
   const spec = CLI_AGENTS[name];
-  const bin = () => cfgStr(`agents.${name}.bin`, spec.bin);
+  const bin2 = () => cfgStr(`agents.${name}.bin`, spec.bin);
   return {
     kind: name,
     label: spec.label,
     models: spec.models,
     async available() {
-      const p = await which(bin());
-      return p ? { ok: true, detail: p } : { ok: false, detail: `${bin()} not found — ${spec.install}` };
+      const p = await which(bin2());
+      return p ? { ok: true, detail: p } : { ok: false, detail: `${bin2()} not found — ${spec.install}` };
     },
-    async run(req) {
-      if (!await which(bin()))
-        throw new WorkerError(E.MISSING, `${bin()} not found — install: ${spec.install}`);
-      const { args, input } = spec.args(req);
-      const env = { ...process.env, OFFLOAD_DISABLE: "1", ...spec.env ? spec.env(req, workDir()) : {} };
-      const r = await runProcess(bin(), args, { input, cwd: req.cwd, env, timeoutMs: req.timeoutSec * 1000 });
+    async run(req2) {
+      if (!await which(bin2()))
+        throw new WorkerError(E.MISSING, `${bin2()} not found — install: ${spec.install}`);
+      const { args, input } = spec.args(req2);
+      const env = { ...process.env, OFFLOAD_DISABLE: "1", ...spec.env ? spec.env(req2, workDir()) : {} };
+      const r = await runProcess(bin2(), args, { input, cwd: req2.cwd, env, timeoutMs: req2.timeoutSec * 1000 });
       if (r.timedOut)
-        throw new WorkerError(E.TIMEOUT, `timed out after ${req.timeoutSec}s`);
+        throw new WorkerError(E.TIMEOUT, `timed out after ${req2.timeoutSec}s`);
       const mapped = spec.exitCode?.(r.code);
       let res;
       try {
@@ -2428,8 +2438,8 @@ async function postBash(opts) {
   const never = cfgStr("hooks.bash_never_summarize");
   if (never) {
     try {
-      await Promise.resolve().then(() => init_outline());
-      if (new RegExp(posixToJs(never)).test(last))
+      const { posixToJs: posixToJs2 } = await Promise.resolve().then(() => (init_outline(), exports_outline));
+      if (new RegExp(posixToJs2(never)).test(last))
         return;
     } catch {
       return;

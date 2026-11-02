@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.2.0 — unreleased
+## 0.2.1 — first npm release
 - Renamed to **Harness Offload** (`offload` CLI, `harness-offload` package). MIT.
 - TypeScript engine (`harness-offload` npm package) alongside the dependency-free bash engine; shared conformance suite.
 - Connectors: OpenCode v1/v2, Pi, Codex CLI, Gemini CLI, Cursor CLI, Claude Code, 16 HTTP presets (OpenAI-compatible + Anthropic) and custom endpoints; `BACKEND:MODEL` refs; fallback chains across backends.

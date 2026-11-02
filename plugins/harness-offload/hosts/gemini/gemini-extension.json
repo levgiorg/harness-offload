@@ -1,6 +1,6 @@
 {
   "name": "harness-offload",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Keep bulk I/O out of Gemini CLI's context: large reads, noisy command output and codebase exploration go to cheap worker models.",
   "contextFileName": "GEMINI.md",
   "mcpServers": {
