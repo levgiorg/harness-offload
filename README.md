@@ -9,7 +9,7 @@ let the models you already pay for do the heavy lifting.
 [![npm](https://img.shields.io/npm/v/harness-offload)](https://www.npmjs.com/package/harness-offload)
 [![license: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-Claude Code · Codex · Cursor · Gemini CLI · Pi · OpenCode · Devin/Windsurf · any MCP client
+Claude Code · Codex · Cursor · Gemini CLI · Copilot CLI · OpenCode · Pi · Qwen Code · Crush · Kilo · Amp · Devin/Windsurf · Aider · any MCP client
 
 </div>
 
@@ -19,8 +19,9 @@ Your agent reads a 4,000-line file to answer one question. It dumps 30 KB of tes
 failing assertion. It greps through forty files to learn where auth happens. Every one of those tokens
 sits in its context for the rest of the session, on the most expensive model you use.
 
-**Harness Offload** hands that bulk work to a cheap worker model — through OpenCode, Pi, Codex, Gemini,
-any OpenAI-compatible API or a local model — and gives your agent back only the answer:
+**Harness Offload** hands that bulk work to a cheap worker model — by default **your harness's own small
+model on the plan you already pay for** (Claude Code → Haiku, Codex → gpt-6-luna, Gemini CLI → Flash-Lite),
+or OpenCode, Pi, any OpenAI-compatible API or a local model — and gives your agent back only the answer:
 
 ```text
 $ offload read -q "what does applyLateFee do and when?" src/ledger.ts
@@ -36,19 +37,29 @@ Every citation's quote is **checked against the file** before your agent sees it
 
 ## Quickstart
 
+**Claude Code, zero setup** — the plugin needs only `bash` and `jq`, and by default reads with Haiku on
+your own Claude plan:
+
+```text
+/plugin marketplace add OWNER/harness-offload
+/plugin install harness-offload@harness-offload
+```
+
+**Everything else** (and the setup wizard):
+
 ```bash
 npm install -g harness-offload          # or: curl -fsSL https://raw.githubusercontent.com/OWNER/harness-offload/main/install.sh | sh
 offload demo                         # 10-second tour of the guard and the digest — no model calls
 offload setup                        # pick worker backends, API keys, models, and the agents to wire up
 ```
 
-The wizard detects your agent harnesses and worker backends, lets you choose a model per task
-(and a fallback from another provider), sets the read guard, installs the integrations and runs a
-live test. Scripted: `offload setup --yes --model openrouter:qwen/qwen3-coder --hosts claude,codex`.
+The wizard first asks who should do the cheap work — **your agent's own subscription** (`@host`, the
+default), the same plus a fallback, or backends you pick (OpenCode Zen/Go, ChatGPT, API keys, local
+models) — then sets the read guard, installs the integrations and runs a live test. Scripted:
+`offload setup --yes --hosts claude,codex` (defaults to `@host`) or `--model openrouter:qwen/qwen3-coder`.
 
-Prefer a plugin marketplace? In Claude Code: `/plugin marketplace add OWNER/harness-offload`, then
-`/plugin install harness-offload@harness-offload`. Codex: `codex plugin marketplace add OWNER/harness-offload`
-(then trust the hooks in `/hooks`).
+Codex can also use the marketplace directly: `codex plugin marketplace add OWNER/harness-offload` (then
+trust the hooks in `/hooks`). A landing page for the project lives in [`site/`](site/index.html).
 
 ## What it does
 
@@ -62,6 +73,7 @@ Prefer a plugin marketplace? In Claude Code: `/plugin marketplace add OWNER/harn
 | **Read guard** (hooks) | Blocks a *full* read of a file over 600 lines / ~6K tokens — Read tool and `cat`/`head`/`sed -n` dumps alike — and answers with a **symbol outline** plus ready-to-run options, so the agent jumps straight to a targeted slice. |
 | **Output digest** (hooks) | When a successful command prints more than 250 lines, the agent gets the digest instead (full output kept in a log). |
 | **MCP server** | `offload mcp` exposes `offload_read`, `offload_explore`, `offload_run`, `offload_summarize`, `offload_write`, `offload_ask`, `offload_outline` to any MCP client. |
+| **Report** | `offload dashboard --open` writes an offline HTML report: tokens kept out of context per day, by kind and model, failures, and every delegation with its citation check. |
 
 ## Agent harnesses
 
@@ -74,31 +86,43 @@ Prefer a plugin marketplace? In Claude Code: `/plugin marketplace add OWNER/harn
 | **Pi** | package (`offload install pi`) | ✓ read + bash | ✓ | system prompt | native `offload_*` tools |
 | **OpenCode** (v1 & v2) | plugin (`offload install opencode`) | ✓ read + shell | ✓ | system prompt | `offload` CLI |
 | **Kilo Code CLI** | plugin (`offload install kilo`) | ✓ read + bash | ✓ | system prompt | `offload` CLI |
+| **GitHub Copilot CLI** | Claude plugin (`offload install copilot`) | ✓ view + bash | ✓ | SessionStart | `offload` CLI (absolute path) |
+| **Qwen Code** | extension converted from the plugin (`offload install qwen`) | ✓ read_file + shell | — (no output replacement) | SessionStart | `offload` CLI |
+| **Crush** | hooks in `crush.json` (`offload install crush`) | ✓ view + bash | ✓ | global context file | `offload` CLI |
+| **Amp** *(experimental)* | plugin (`offload install amp`) | ✓ Read + Bash | ✓ | — | `offload` CLI |
 | **Devin Desktop / Windsurf** | Claude plugin (`offload install devin`) | ✓ (Claude hooks) | — | — | `offload` CLI |
-| **Any MCP client** (Zed, VS Code, Goose, Claude Desktop…) | `offload install mcp` prints the config | — | — | server instructions | MCP tools |
+| **Aider** | conventions file (`offload install aider`, then `aider --read …`) | — | — | conventions | `/run offload …` |
+| **MCP clients** (Cline, Zed, Continue, Goose, Kiro, VS Code, Claude Desktop) | `offload install mcp` prints each client's config | — | — | server instructions | MCP tools |
+
+Copilot CLI, Crush and Qwen Code were verified end to end with their real binaries.
 
 Details per host: [docs/hosts.md](docs/hosts.md).
 
 ## Worker backends ("connectors")
 
-Models are written `BACKEND:MODEL`. A bare `provider/model` means OpenCode.
+Models are written `BACKEND:MODEL`. A bare `provider/model` means OpenCode. **`@host`** means "the
+calling harness's own cheap model" and is the default.
 
 | Backend | Example model ref | Uses |
 |---|---|---|
+| **Same subscription** | `@host` | Claude Code → `claude:haiku`, Codex → `codex:gpt-6-luna`, Gemini CLI → `gemini:flash-lite`, Cursor → `cursor:`, Pi → `pi:`, OpenCode/Kilo/Copilot/Qwen/Crush → OpenCode's default (`host_models.<host>` overrides) |
 | **OpenCode** (v1/v2) | `opencode-go/deepseek-v4.1-flash` | OpenCode Zen/Go, ChatGPT Plus/Pro, Copilot, coding plans (GLM, Kimi, MiniMax…), local |
 | **Pi** | `pi:openai-codex/gpt-6-luna` | Pi's logins (ChatGPT, Copilot, Kimi, xAI, OpenRouter…) and API keys |
 | **Codex CLI** | `codex:gpt-6-luna` | your ChatGPT plan |
 | **Gemini CLI** | `gemini:flash` | your Google account (free daily quota) |
 | **Cursor CLI** | `cursor:<model>` | your Cursor plan |
-| **Claude Code** | `claude:haiku` | your Claude plan (testing only — it doesn't save Claude quota) |
+| **Claude Code** | `claude:haiku` | your Claude plan, through a lean `claude -p` (no settings, plugins or MCP; its own short prompt). It counts toward your plan's limits at Haiku's rate; the saving is your main session's context. |
 | **HTTP APIs** | `openrouter:qwen/qwen3-coder`, `openai:…`, `anthropic:…`, `google:gemini-…`, `groq:…`, `deepseek:…`, `mistral:…`, `together:…`, `fireworks:…`, `cerebras:…`, `xai:…`, `zai:glm-…`, `moonshot:kimi-…` | API keys (`offload setup` stores them `0600`, or use the usual env vars) |
 | **Local** | `ollama:qwen3:8b`, `lmstudio:…`, `vllm:…` | your machine |
 | **Your own endpoint** | `mygw:model` | `endpoints.mygw = {type: "openai"\|"anthropic", base_url, api_key_env}` |
 
 `explore` works on every backend: HTTP models get a sandboxed read-only tool loop (read_file, grep,
-glob, list_dir — confined to the project, secrets refused).
+glob, list_dir — confined to the project's real directory, symlinks not followed, `.git` and secrets
+refused, every result redacted). The bash engine runs agent CLIs and HTTP APIs itself (curl); only
+`explore` over an HTTP API uses the bundled Node CLI.
 
-Per task you can pick a different model, plus a **fallback chain across backends**: a quota wall
+Per task you can pick a different model, plus a **fallback chain across backends** (default:
+`@host`, then OpenCode's default model; an explicit `-m MODEL` is used alone): a quota wall
 (OpenCode retries those silently forever — offload stops after two retries) cools that model down
 for 5 min, auth errors 30 min, unknown models 1 h, and the next model takes over.
 
@@ -108,7 +132,8 @@ for 5 min, auth errors 30 min, unknown models 1 h, and the next model takes over
 offload read -q QUESTION PATH...        offload setup               offload install <host...>
 offload explore QUESTION                offload doctor [--ping]     offload uninstall <host...>
 offload run [-q FOCUS] -- CMD...        offload models [BACKEND]    offload stats [--days N]
-offload summarize [-q FOCUS] [FILE]     offload config show|set     offload mcp
+offload summarize [-q FOCUS] [FILE]     offload config show|set|trust offload mcp
+offload dashboard [--open] [--sample]   offload demo
 offload write --spec S --ref F [--out P] [--check CMD]
 offload ask [--stdin|-f FILE] QUESTION  offload outline FILE           offload statusline · offload sync
 ```
@@ -136,22 +161,28 @@ agent ── offload read/explore/run/write (CLI, MCP or native tools)
 - **Fail open.** No backend, broken config, quota walls, `OFFLOAD_DISABLE=1` → hooks step aside.
 - **Workers never act.** No edits, no shell; workers run with `OFFLOAD_DISABLE=1` so they can't
   trigger offload's own hooks.
-- **Two engines, one behaviour.** The Claude Code hooks are dependency-free bash (+`jq`); the
-  `harness-offload` package is TypeScript (CLI, wizard, MCP server, connectors, other hosts, Windows).
-  Both run the same black-box conformance suite in CI.
+- **Two engines, one behaviour.** The Claude Code hooks and CLI are dependency-free bash (+`jq`, `curl`
+  for HTTP APIs); the `harness-offload` package is TypeScript (CLI, wizard, MCP server, report, other
+  hosts, Windows) and is also bundled inside the plugin (`dist/`). Both run the same black-box
+  conformance suite in CI.
 
 More in [docs/DESIGN.md](docs/DESIGN.md).
 
 ## Configuration
 
-`~/.config/harness-offload/config.json` (user) and `<repo>/.harness-offload.json` (project, wins). Edit
-with `offload config set KEY VALUE [--project]`; inspect with `offload config show`. Defaults:
+`~/.config/harness-offload/config.json` (user) and `<repo>/.harness-offload.json` (project). Edit
+with `offload config set KEY VALUE [--project]`; inspect with `offload config show`. A repository's file
+is **untrusted**: it may set models, thresholds and hook behaviour and add secret globs, but not
+binaries, endpoints, the backend, the state directory or privacy relaxations — unless you run
+`offload config trust` in it (`offload doctor` lists ignored keys). Defaults:
 [`plugins/harness-offload/config/defaults.json`](plugins/harness-offload/config/defaults.json).
 
 | Key | Default | Meaning |
 |---|---|---|
-| `models.{default,read,explore,summarize,write,ask}` | `""` | `BACKEND:MODEL` per task; empty → `default` → the default backend's own model |
-| `models.fallback` | `[]` | tried in order when a model fails |
+| `models.{default,read,explore,summarize,write,ask}` | `default`: `@host` | `BACKEND:MODEL` per task; empty → `default` |
+| `models.fallback` | `["@default"]` | tried in order when a model fails |
+| `host_models.<host>` | see connectors | what `@host` means in each harness |
+| `trusted_projects` | `[]` | project dirs whose `.harness-offload.json` is fully trusted (`offload config trust`) |
 | `backend` | `opencode` | backend for bare `provider/model` refs |
 | `endpoints.<name>` | presets | `{type, base_url, api_key_env}` for your own gateways |
 | `variants.<task>` | `""` | reasoning effort per task (`low`, `high`, …) |
@@ -168,6 +199,7 @@ with `offload config set KEY VALUE [--project]`; inspect with `offload config sh
 | `explore.max_steps` | `40` | tool budget of the explorer |
 | `digest.use_model` | `true` | `false` = deterministic digests only |
 | `privacy.secret_globs` / `redact` | `.env*`, keys, … / `true` | never sent; credential shapes masked |
+| `mcp.run_tool` / `mcp.run_timeout_seconds` | `true` / `1800` | expose `offload_run` (runs outside a host's sandbox) and its limit |
 
 Environment: `OFFLOAD_MODEL`, `OFFLOAD_READ_GUARD`, `OFFLOAD_MIN_LINES`, `OFFLOAD_TIMEOUT`,
 `OFFLOAD_DISABLE`, `OFFLOAD_CONFIG`, `OFFLOAD_STATE_DIR`, `OFFLOAD_NO_MODEL=1`. Prefix a command
@@ -176,9 +208,12 @@ with `OFFLOAD_RAW=1 ` to bypass the shell guard and digest.
 ## Privacy & safety
 
 - Files matching `privacy.secret_globs` (`.env*`, `*.pem`, `*.key`, `id_rsa*`, credentials, tfstate…)
-  are refused (`--allow-secrets` to override) and the explorer can't read them.
-- AWS/GitHub/OpenAI/Slack/Google keys, JWTs, `password=…` values and private-key blocks are masked
-  in everything sent to a worker.
+  are refused — matched case-insensitively and on symlink targets — (`--allow-secrets` to override) and
+  the explorer can't read them.
+- Cloud/GitHub/GitLab/npm/Stripe/OpenAI/Slack/Google keys, Bearer/Basic auth, URL credentials, JWTs,
+  `password=…` values and private-key blocks are masked in everything sent to a worker, in command
+  lines, log names and stats, and in worker answers.
+- Trust model, safeguards and known limits: [SECURITY.md](SECURITY.md).
 - Some providers train on prompts — pick ones that don't for private code.
 - API keys stored by `offload setup` live in `~/.config/harness-offload/credentials.json` (mode `600`).
 
