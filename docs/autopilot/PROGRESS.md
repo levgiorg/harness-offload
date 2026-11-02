@@ -60,3 +60,8 @@
 - Impeccable finish review (fresh reviewer): fix on both surfaces; fix batch applied (dark paper, ink-masked stamp, CHECKED impressions, red reserved, stacked phone records, cooldowns panel, square stamp chips, empty-period message); recaptured; verdict pass pending.
 - UI verdict pass (2nd round): fix on both; the three regressions it found (phone empty state, a false sentence about the TS engine, cooldown file names) fixed and checked in one recapture; per the playbook's two-round budget the remaining taste/process items (direction roll, stamp asset) go to the owner. DESIGN.md written.
 - Bash `offload stats --json` and sparkline (parity with TS; conformance 240/240 ×2). bun 52/52.
+
+## 2026-11-02 ~14:00 UTC — delivery
+- harness-offload.zip (repo with history, 32 commits) sent; smoke-tested from a fresh unzip: conformance 240/240 with no build step, bundled CLI runs, dist hash current.
+- Private previews published: landing page and a sample report.
+- Remaining unchecked: M4 "beautiful CLI" polish for the bash engine's colors/tables, M7 context-aware thresholds, `offload serve` (deferred). Open owner questions are in the delivery report.
