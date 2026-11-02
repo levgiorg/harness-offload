@@ -1,14 +1,45 @@
-// Bundles the CLI for Node (dist/cli.js). Shared assets are inlined.
+// Bundles the CLI for Node. Shared assets are inlined.
+//   dist/cli.js       tiny entry: turns on Node's compile cache, then loads main.js
+//   dist/main.js      the CLI, split into chunks so a hook (run on every tool
+//   dist/chunk-*.js   call) loads only what it needs, not the MCP SDK, the
+//                     setup wizard or the report page
 export {};
+const { chmodSync, readFileSync, writeFileSync, cpSync, rmSync, mkdirSync, readdirSync } = await import("node:fs");
+const { resolve } = await import("node:path");
+// Absolute paths: Bun on Windows rejects rmSync on "../.."-relative directories (EINVAL).
+const pkgDir = resolve(import.meta.dir, "..");
+const repoDir = resolve(pkgDir, "..", "..");
+mkdirSync("dist", { recursive: true });
+for (const f of readdirSync("dist")) if (/^(chunk-.*|main)\.js$/.test(f)) rmSync(`dist/${f}`);
 const res = await Bun.build({
   entrypoints: ["src/cli.ts"],
   outdir: "dist",
   target: "node",
   format: "esm",
   minify: false,
-  naming: "cli.js",
-  banner: "#!/usr/bin/env node",
+  splitting: true,
+  naming: { entry: "main.js", chunk: "chunk-[hash].js" },
 });
+// dist/hook.cjs: the hook path alone, CommonJS (see src/hook-main.ts). Bun
+// would inline import.meta.url as the build machine's path, so it is defined
+// from __filename at run time instead.
+const resHook = await Bun.build({
+  entrypoints: ["src/hook-main.ts"],
+  outdir: "dist",
+  target: "node",
+  format: "cjs",
+  naming: "hook.cjs",
+  define: { "import.meta.url": "__offload_module_url" },
+  banner: 'const __offload_module_url = require("node:url").pathToFileURL(__filename).href;',
+});
+if (!resHook.success) {
+  for (const l of resHook.logs) console.error(l);
+  process.exit(1);
+}
+if (/file:\/\/\/|\/home\/|\/Users\//.test(readFileSync("dist/hook.cjs", "utf8").replace(/^.*__offload_module_url.*$/m, ""))) {
+  console.error("dist/hook.cjs embeds a build-machine path");
+  process.exit(1);
+}
 // Host integrations loaded in-process by pi (Node), OpenCode and Amp (Bun).
 const res2 = await Bun.build({
   entrypoints: ["src/integrations/pi.ts", "src/integrations/opencode.ts", "src/integrations/amp.ts"],
@@ -24,15 +55,22 @@ for (const r of [res, res2]) {
     process.exit(1);
   }
 }
-const { chmodSync, readFileSync, writeFileSync, cpSync, rmSync, mkdirSync } = await import("node:fs");
-const { resolve } = await import("node:path");
-// Absolute paths: Bun on Windows rejects rmSync on "../.."-relative directories (EINVAL).
-const pkgDir = resolve(import.meta.dir, "..");
-const repoDir = resolve(pkgDir, "..", "..");
-// Bun keeps the source shebang too; make sure there is exactly one.
-const out = readFileSync("dist/cli.js", "utf8").replace(/^(#!.*\n)+/, "#!/usr/bin/env node\n");
-writeFileSync("dist/cli.js", out);
+// Bun keeps the source shebang; main.js is not run directly, so drop it.
+writeFileSync("dist/main.js", readFileSync("dist/main.js", "utf8").replace(/^(#!.*\n)+/, ""));
+writeFileSync(
+  "dist/cli.js",
+  `#!/usr/bin/env node
+// harness-offload entry. Node 22.1+ keeps compiled code in its on-disk cache
+// (NODE_DISABLE_COMPILE_CACHE=1 turns that off), so hooks start faster.
+import module from "node:module";
+try {
+  module.enableCompileCache?.();
+} catch {}
+await import("./main.js");
+`,
+);
 chmodSync("dist/cli.js", 0o755);
+const cliFiles = readdirSync("dist").filter((f) => f === "cli.js" || f === "main.js" || f === "hook.cjs" || /^chunk-.*\.js$/.test(f));
 // dist/offload-node: a bash launcher used by the conformance suite.
 const { copyFileSync } = await import("node:fs");
 copyFileSync("scripts/node-wrapper.sh", "dist/offload-node");
@@ -45,8 +83,11 @@ chmodSync("dist/offload-node", 0o755);
   const pdist = resolve(repoDir, "plugins/harness-offload/dist");
   rmSync(pdist, { recursive: true, force: true });
   mkdirSync(pdist, { recursive: true });
-  for (const f of ["cli.js", "pi.js", "opencode.js", "amp.js"]) cpSync(`dist/${f}`, `${pdist}/${f}`);
+  for (const f of [...cliFiles, "pi.js", "opencode.js", "amp.js"]) cpSync(`dist/${f}`, `${pdist}/${f}`);
   chmodSync(`${pdist}/cli.js`, 0o755);
+  // ESM, said up front: Node then skips guessing the format of every file
+  // (and Node 18 / early 20 would otherwise refuse to load them at all)
+  writeFileSync(`${pdist}/package.json`, `{ "type": "module" }\n`);
   writeFileSync(`${pdist}/SOURCE_HASH`, sourceHash() + "\n");
 }
 // assets/marketplace: the Claude-format marketplace (plugin + host files) that

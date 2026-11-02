@@ -10,6 +10,7 @@ import { modelChain } from "../engine.ts";
 import { isSecretTarget, matchesAny } from "../secrets.ts";
 import { appendStats, cooling, newLogPath } from "../state.ts";
 import { outline } from "../outline.ts";
+import { taskSummary } from "../tasks.ts";
 import { estTokens, fileBytes, fileLines, fmtInt, isText, shquote } from "../text.ts";
 import { writeFileSync } from "node:fs";
 
@@ -217,28 +218,32 @@ export async function postBash(opts: { command?: string; output: string; persist
   }
   const lines = text.split("\n").length - (text.endsWith("\n") ? 1 : 0);
   if (lines <= cfgInt("hooks.bash_output_threshold_lines", 250) && Buffer.byteLength(text) <= cfgInt("hooks.bash_output_threshold_bytes", 20000)) return undefined;
-  // options, not process.env: in-process hosts (OpenCode, Pi) live on
-  const noModel = !(await available());
+  // options, not process.env: in-process hosts (OpenCode, Pi) live on.
+  // The agent waits for this hook: the model gets hooks.digest_timeout_seconds
+  // in all; 0 = no model in hooks (the digest is then instant).
+  const budgetSec = cfgInt("hooks.digest_timeout_seconds", 20);
+  const noModel = budgetSec === 0 || !(await available());
   const log = newLogPath(cmd);
   writeFileSync(log, text);
-  return digest(log, cmd, "0", opts.description ?? "", "hook", undefined, { noModel, compact, budgetSec: cfgInt("hooks.digest_timeout_seconds", 90) });
+  return digest(log, cmd, "0", opts.description ?? "", "hook", undefined, { noModel, compact, budgetSec });
 }
 
 /** Usage guidance injected at session start. */
 export function sessionGuide(host: Host, cliPath = cliCommand()): string {
   const lines = cfgStr("hooks.read_threshold_lines", "600");
+  const tasks = taskSummary();
   if (callStyle(host) === "mcp") {
     return `offload is installed: cheap worker models do bulk reading/digesting so it stays out of your context. Use its tools:
 - offload_read(question, paths[]) — questions about big files or dirs (paths may be file:START-END). Answers cite path:Lx-Ly with machine-checked quotes; read just those lines before editing.
 - offload_explore(question) — read-only cheap agent searches the repo itself ("where/how is X done?" across many files).
 - offload_run(command, focus?) — run noisy commands (tests, builds, installs, linters): digest + verbatim error lines + full-log path.
 - offload_write(spec, reference, out) — boilerplate that follows an existing file's patterns; review the result.
-Keep for yourself: debugging reasoning, design decisions, edits (read slices for exact text), small files. Full reads of files over ~${lines} lines may be blocked with an outline and these options.`;
+${tasks ? `- offload_task(name, paths?, question?) — the user's own tasks: ${tasks}.\n` : ""}Keep for yourself: debugging reasoning, design decisions, edits (read slices for exact text), small files. Full reads of files over ~${lines} lines may be blocked with an outline and these options.`;
   }
   return `offload is installed: cheap worker models do bulk reading/digesting so it stays out of your context. Use these shell commands:
 - ${cliPath} read -q "QUESTION" PATH... — questions about big files or dirs (PATH may be file:START-END). Answers cite path:Lx-Ly with machine-checked quotes; read just those lines before editing.
 - ${cliPath} explore "QUESTION" — read-only cheap agent searches the repo itself ("where/how is X done?" across many files).
 - ${cliPath} run -- CMD... — for noisy commands (tests, builds, installs, linters, long logs): prints a digest + verbatim error lines + full-log path, keeps the exit code.
 - ${cliPath} write --spec "..." --ref EXAMPLE_FILE --out NEW_FILE — boilerplate that follows an existing file's patterns (tests, configs, stubs); review the result.
-Keep for yourself: debugging reasoning, design decisions, edits (read slices for exact text), small files. Full reads of files over ~${lines} lines may be blocked with an outline and these options; large successful command output may come back as a digest with a log path.`;
+${tasks ? `- ${cliPath} task NAME [PATH...] — the user's own tasks: ${tasks}.\n` : ""}Keep for yourself: debugging reasoning, design decisions, edits (read slices for exact text), small files. Full reads of files over ~${lines} lines may be blocked with an outline and these options; large successful command output may come back as a digest with a log path.`;
 }

@@ -22,6 +22,7 @@
 #   13 unknown model/provider · 14 other worker error · 15 opencode missing
 #   16 nothing to send (refused by a guard)
 
+CO_BACKENDS_LOADED=1
 CO_E_USAGE=2 CO_E_QUOTA=10 CO_E_AUTH=11 CO_E_TIMEOUT=12 CO_E_MODEL=13
 CO_E_WORKER=14 CO_E_NOOC=15 CO_E_REFUSED=16
 
@@ -54,8 +55,15 @@ co_oc_major() {
 
 # ------------------------------------------------------------ model chain
 
+# The system prompt file for a task (a running custom task supplies its own).
+co_prompt_path() {
+  if [ -n "${CO_TASK_SYSTEM_FILE:-}" ]; then printf '%s' "$CO_TASK_SYSTEM_FILE"; else printf '%s/prompts/%s.md' "$CO_ROOT" "$1"; fi
+}
+
 co_model_for() {
   local task="$1" m
+  # a custom task's own model comes first
+  [ -n "${CO_TASK_MODEL:-}" ] && { printf '%s' "$CO_TASK_MODEL"; return 0; }
   m=$(co_cfg ".models.$task")
   [ -z "$m" ] && m=$(co_cfg '.models.default')
   printf '%s' "$m"
@@ -136,11 +144,11 @@ co_oc_config() {
     user_cfg='{}'
   fi
   jq -n \
-    --rawfile read "$CO_ROOT/prompts/read.md" \
-    --rawfile summarize "$CO_ROOT/prompts/summarize.md" \
-    --rawfile explore "$CO_ROOT/prompts/explore.md" \
-    --rawfile write "$CO_ROOT/prompts/write.md" \
-    --rawfile ask "$CO_ROOT/prompts/ask.md" \
+    --rawfile read "$(co_prompt_path read)" \
+    --rawfile summarize "$(co_prompt_path summarize)" \
+    --rawfile explore "$(co_prompt_path explore)" \
+    --rawfile write "$(co_prompt_path write)" \
+    --rawfile ask "$(co_prompt_path ask)" \
     --argjson steps "$steps" \
     --argjson secrets "$secrets" \
     --argjson user "$user_cfg" \
@@ -191,9 +199,10 @@ co_oc_classify() {
     *provider.rate-limit*|*provider.quota*|*provider.free-limit*|*provider.go-limit*|*provider.overloaded*|\
     *"usage limit"*|*"rate limit"*|*rate_limit*|*quota*|*"too many requests"*|*429*|*overloaded*|*"limit reached"*|*"insufficient"*|*credit*)
       return $CO_E_QUOTA ;;
-    *provider.auth*|*"api key"*|*api_key*|*unauthorized*|*401*|*403*|*forbidden*|*"not authenticated"*|*"log in"*|*login*)
+    *provider.auth*|*"api key"*|*api_key*|*unauthorized*|*401*|*403*|*forbidden*|*"not authenticated"*|*"log in"*|*login*|\
+    *authenticat*|*"auth type"*|*"auth method"*|*"security token"*|*"invalid token"*|*"token expired"*|*"expired token"*|*"no providers configured"*|*"no provider configured"*)
       return $CO_E_AUTH ;;
-    *provider.no-route*|*"model unavailable"*|*"model not found"*|*"unknown model"*|*"provider not found"*|*providermodelnotfound*|*model_not_found*)
+    *provider.no-route*|*"model unavailable"*|*"model not found"*|*"unknown model"*|*"provider not found"*|*providermodelnotfound*|*model_not_found*|*"does not exist"*)
       return $CO_E_MODEL ;;
     *provider.timeout*|*"timed out"*)
       return $CO_E_TIMEOUT ;;
@@ -299,6 +308,7 @@ co_ts_attempt() {
   co_tmp errf
   start=$(co_now)
   co_ts_run worker --task "${agent#offload-}" --cwd "$workdir" --model "$model" ${variant:+--variant "$variant"} \
+    ${CO_TASK_SYSTEM_FILE:+--system-file "$CO_TASK_SYSTEM_FILE"} \
     --timeout "$(co_attempt_timeout)" < "$prompt_file" > "$answer_file" 2> "$errf"
   rc=$?
   CO_OC_SECONDS=$(co_elapsed "$start")
@@ -378,28 +388,43 @@ co_opencode_attempt() {
   ) &
   pid=$!
 
-  rc=""
-  while :; do
-    if ! kill -0 "$pid" 2>/dev/null; then
-      wait "$pid"; rc=$?
-      break
-    fi
-    if [ "$(co_elapsed "$start")" -ge "$timeout" ]; then
-      kill "$pid" 2>/dev/null; sleep 1; kill -9 "$pid" 2>/dev/null; wait "$pid" 2>/dev/null
+  # A watchdog enforces the deadline and the retry limit in the background;
+  # this shell just waits, so the answer is picked up the moment the worker
+  # exits (polling here added up to 0.3 s to every call).
+  local why wd
+  co_tmp why
+  (
+    trap 'exit 0' TERM
+    while kill -0 "$pid" 2>/dev/null; do
+      if [ "$(co_elapsed "$start")" -ge "$timeout" ]; then
+        printf 'timeout\n' > "$why"
+        kill "$pid" 2>/dev/null; sleep 1; kill -9 "$pid" 2>/dev/null
+        exit 0
+      fi
+      n=$(co_oc_retry_count "$out" "$errf")
+      if [ "${n:-0}" -ge "$max_err" ]; then
+        printf 'retries %s\n' "$n" > "$why"
+        kill "$pid" 2>/dev/null; sleep 1; kill -9 "$pid" 2>/dev/null
+        exit 0
+      fi
+      # (sleep in the background: a TERM is then handled at once, not after it)
+      sleep 0.3 & wait $!
+    done
+  ) </dev/null >/dev/null 2>&1 &
+  # (no inherited stdout: a hook's caller waits until every holder closes it)
+  wd=$!
+  wait "$pid"; rc=$?
+  kill "$wd" 2>/dev/null; wait "$wd" 2>/dev/null
+  case "$(cat "$why" 2>/dev/null)" in
+    timeout)
       CO_OC_ERROR="timed out after ${timeout}s"
-      rc=$CO_E_TIMEOUT
-      break
-    fi
-    n=$(co_oc_retry_count "$out" "$errf")
-    if [ "${n:-0}" -ge "$max_err" ]; then
-      kill "$pid" 2>/dev/null; sleep 1; kill -9 "$pid" 2>/dev/null; wait "$pid" 2>/dev/null
+      rc=$CO_E_TIMEOUT ;;
+    "retries "*)
+      n=$(cat "$why"); n=${n#retries }
       msg=$(LC_ALL=C grep 'stream error' "$errf" 2>/dev/null | tail -1 | LC_ALL=C sed -n 's/.*error\.error="\([^"]*\).*/\1/p')
       CO_OC_ERROR="provider kept failing and retrying (${n} retries): ${msg:-likely rate limit, quota or overload}"
-      co_oc_classify "${msg:-rate limit}"; rc=$?
-      break
-    fi
-    sleep 0.3
-  done
+      co_oc_classify "${msg:-rate limit}"; rc=$? ;;
+  esac
   CO_OC_SECONDS=$(co_elapsed "$start")
 
   sid=$(grep -o '"sessionID":"ses_[A-Za-z0-9_]*"' "$out" 2>/dev/null | head -1 | sed 's/.*"\(ses_[^"]*\)"/\1/')

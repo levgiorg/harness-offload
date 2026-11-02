@@ -16,6 +16,8 @@ fi
 export OFFLOAD_HOST="${OFFLOAD_HOST:-$HK_DIALECT}"
 HK_INPUT=$(cat)
 [ -z "$HK_INPUT" ] && exit 0
+# Switched off for this run: nothing to decide, so no config to load.
+case "${OFFLOAD_DISABLE:-}" in 1|true) exit 0 ;; esac
 # Normalise to Claude's field names (Copilot: path/view_range, toolArgs,
 # tool_result; Qwen: 0-based offsets).
 case "$HK_DIALECT" in
@@ -39,36 +41,78 @@ if [ -n "${OFFLOAD_DEBUG_DIR:-}" ]; then
     printf '%s' "$HK_INPUT" > "$OFFLOAD_DEBUG_DIR/$(basename "$0")-$(date +%s)-$$.json"
 fi
 
-CO_ROOT="${CLAUDE_PLUGIN_ROOT:-$(cd "$(dirname "$0")/.." && pwd)}"
+CO_ROOT="${CLAUDE_PLUGIN_ROOT:-}"
+if [ -z "$CO_ROOT" ]; then
+  case "$0" in */*) CO_ROOT=$(cd "${0%/*}/.." && pwd) ;; *) CO_ROOT=$(cd .. && pwd) ;; esac
+fi
 # shellcheck source=common.sh
 . "$CO_ROOT/lib/common.sh" || exit 0
-# shellcheck source=opencode.sh
-. "$CO_ROOT/lib/opencode.sh" || exit 0
+# (the worker code, lib/opencode.sh + lib/agents.sh, loads on first use:
+# co_backends — most tool calls pass without needing it)
 
 hk_get() { printf '%s' "$HK_INPUT" | jq -r "($1) // empty | tostring" 2>/dev/null; }
+
+# Every field a hook reads, in one jq run (hooks sit in front of every tool
+# call, and each jq start costs a few ms). Same rules as hk_get: null and
+# false read as empty. HK_OUT_BYTES/HK_OUT_LINES describe the Bash output as
+# post-bash would write it to a file (-1: work it out from the file).
+HK_FIELDS='
+  def s: if . == null or . == false then "" else tostring end;
+  def g(f): (try f catch null) | s;
+  (try ((.tool_response.stdout // "") as $o | (.tool_response.stderr // "") as $e
+    | (if ($e | length) > 0 then $o + (if ($o | length) > 0 then "\n" else "" end) + "[stderr]\n" + $e else $o end) + "\n"
+    | [utf8bytelength, (split("\n") | length) - 1]) catch [-1, -1]) as $sz
+  | @sh "HK_CWD=\(g(.cwd))",
+    @sh "HK_AGENT_ID=\(g(.agent_id))",
+    @sh "HK_SOURCE=\(g(.source))",
+    @sh "HK_FILE=\(g(.tool_input.file_path))",
+    @sh "HK_OFFSET=\(g(.tool_input.offset))",
+    @sh "HK_LIMIT=\(g(.tool_input.limit))",
+    @sh "HK_COMMAND=\(g(.tool_input.command))",
+    @sh "HK_DESCRIPTION=\(g(.tool_input.description))",
+    @sh "HK_BACKGROUND=\(g(.tool_input.run_in_background))",
+    @sh "HK_INTERRUPTED=\(g(.tool_response.interrupted))",
+    @sh "HK_IS_IMAGE=\(g(.tool_response.isImage))",
+    @sh "HK_PERSISTED=\(g(.tool_response.persistedOutputPath))",
+    "HK_OUT_BYTES=\($sz[0])", "HK_OUT_LINES=\($sz[1])"'
+HK_CWD="" HK_AGENT_ID="" HK_SOURCE="" HK_FILE="" HK_OFFSET="" HK_LIMIT="" HK_COMMAND="" HK_DESCRIPTION=""
+HK_BACKGROUND="" HK_INTERRUPTED="" HK_IS_IMAGE="" HK_PERSISTED="" HK_OUT_BYTES=-1 HK_OUT_LINES=-1
+eval "$(printf '%s' "$HK_INPUT" | jq -r "$HK_FIELDS" 2>/dev/null)"
 
 # How the agent should call the CLI: Claude Code puts the plugin's bin/ on the
 # Bash PATH; other harnesses get the absolute path.
 if [ "$HK_DIALECT" = claude ]; then HK_CLI=offload; else HK_CLI=$(co_shquote "$CO_ROOT/bin/offload"); fi
 
 # Resolve the tool's cwd so relative paths in commands mean what Claude meant.
-HK_CWD=$(hk_get '.cwd')
 [ -n "$HK_CWD" ] && [ -d "$HK_CWD" ] && cd "$HK_CWD" 2>/dev/null
 [ -n "$HK_CWD" ] && CO_PROJECT_DIR="${CLAUDE_PROJECT_DIR:-$HK_CWD}"
 # Load once in this shell; $(co_cfg ...) subshells then reuse CO_CONFIG.
 co_config_load
 
 # Inside a subagent? (agent_id is only present there.)
-hk_in_subagent() { [ -n "$(hk_get '.agent_id')" ]; }
+hk_in_subagent() { [ -n "$HK_AGENT_ID" ]; }
 
 hk_skip_subagent() {
   hk_in_subagent && ! co_cfg_bool '.hooks.subagents' true
 }
 
+# A hook found something worth acting on (a big read, a long output): may it?
+# Checked late on purpose — most tool calls are small and pass before this.
+hk_may_act() {
+  hk_skip_subagent && return 1
+  co_available
+}
+
+# One stats line for a hook decision. EXTRA is a flat JSON object of numbers
+# and plain words built by the caller (no jq needed for that).
 hk_event() {
   local event="$1" extra="${2:-}"
-  [ -z "$extra" ] && extra='{}'
-  co_stats_append "$(jq -nc --arg e "$event" --argjson x "$extra" '{ts: now | floor, kind: "hook", event: $e} + $x' 2>/dev/null)"
+  case "$extra" in
+    ''|'{}') extra="" ;;
+    '{'*'}') extra=",${extra#\{}"; extra=${extra%\}} ;;
+    *) return 0 ;;
+  esac
+  co_stats_append "{\"ts\":$(co_now),\"kind\":\"hook\",\"event\":\"$event\"$extra}"
 }
 
 # --- PreToolUse responses
@@ -109,7 +153,7 @@ hk_guard() {
 # True when the path matches hooks.ignore_globs (full path or basename).
 hk_ignored() {
   local p="$1" base pat
-  base=$(basename "$p")
+  co_base base "$p"
   while IFS= read -r pat; do
     [ -z "$pat" ] && continue
     # shellcheck disable=SC2254
@@ -125,7 +169,7 @@ EOF
 # Files Claude's Read tool handles natively and that offload cannot help with.
 hk_not_for_offload() {
   local ext
-  ext=$(printf '%s' "${1##*.}" | LC_ALL=C tr '[:upper:]' '[:lower:]')
+  co_lower ext "${1##*.}"
   case "$ext" in
     png|jpg|jpeg|gif|webp|bmp|ico|svgz|pdf|ipynb|zip|gz|tgz|tar|jar|wasm|so|dylib|dll|exe|bin|pyc|class|o|a|mp3|mp4|mov|woff|woff2|ttf|otf) return 0 ;;
   esac

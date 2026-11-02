@@ -14,10 +14,11 @@ export function modelFor(task: Task): string {
   return cfgStr(`models.${task}`) || cfgStr("models.default");
 }
 
-/** The task's model then models.fallback; an explicit override (-m) is used alone. */
-export function modelChain(task: Task, override?: string): string[] {
+/** The task's model then models.fallback; an explicit override (-m) is used alone.
+ * A custom task's own model (primary) comes before the task's configured one. */
+export function modelChain(task: Task, override?: string, primary?: string): string[] {
   if (override) return [override];
-  const first = modelFor(task) || "@default";
+  const first = primary || modelFor(task) || "@default";
   return [...new Set([first, ...cfgList("models.fallback")].filter(Boolean))];
 }
 
@@ -28,6 +29,10 @@ export function modelChain(task: Task, override?: string): string[] {
 export interface InvokeOptions {
   /** Total time budget across the whole fallback chain (hooks have host timeouts). */
   budgetSec?: number;
+  /** A custom task's instructions instead of the built-in prompt. */
+  system?: string;
+  /** A custom task's own model, tried first. */
+  primary?: string;
 }
 
 export async function invoke(task: Task, prompt: string, cwd: string, override?: string, opts: InvokeOptions = {}): Promise<InvokeResult> {
@@ -37,12 +42,12 @@ export async function invoke(task: Task, prompt: string, cwd: string, override?:
   const errors: string[] = [];
   let tried = 0;
   let lastCode: number = E.WORKER;
-  for (const raw of modelChain(task, override)) {
+  for (const raw of modelChain(task, override, opts.primary)) {
     let ref = raw;
     let parsed;
     try {
       parsed = parseRef(raw);
-      if (raw === "@host" || raw === "@self") ref = parsed.ref;
+      if (raw === "@host" || raw === "@self" || raw === "@host-api") ref = parsed.ref;
     } catch (e) {
       errors.push(`  - ${raw}: ${(e as Error).message}`);
       lastCode = E.USAGE;
@@ -74,7 +79,7 @@ export async function invoke(task: Task, prompt: string, cwd: string, override?:
     try {
       const r = await b.run({
         task,
-        system: PROMPTS[task],
+        system: opts.system ?? PROMPTS[task],
         prompt,
         model,
         variant: variant || undefined,
@@ -95,7 +100,7 @@ export async function invoke(task: Task, prompt: string, cwd: string, override?:
       if (err.code === E.QUOTA) coolDown(ref, 300, "rate-limit/quota");
       else if (err.code === E.AUTH) coolDown(ref, 1800, "auth");
       else if (err.code === E.MODEL) coolDown(ref, 3600, "unknown-model");
-      else if (err.code === E.MISSING && modelChain(task, override).length === 1) throw err;
+      else if (err.code === E.MISSING && modelChain(task, override, opts.primary).length === 1) throw err;
     }
   }
   if (tried === 0 && lastCode !== E.USAGE && lastCode !== E.TIMEOUT) {

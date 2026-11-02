@@ -23,7 +23,7 @@ unset src dir
 
 usage() {
   cat <<'EOF'
-offload — delegate bulk I/O to cheap OpenCode models (keeps it out of Claude's context)
+offload — keep big reads, long logs and repo-wide searches out of your coding agent's context
 
   offload read -q QUESTION PATH...      Answer a question about files (PATH may be a dir or file:START-END).
                                         Answers cite path:Lx-Ly with quotes; quotes are verified locally.
@@ -34,17 +34,25 @@ offload — delegate bulk I/O to cheap OpenCode models (keeps it out of Claude's
   offload write --spec S --ref FILE [--ref FILE] [--context FILE] [--out PATH] [--check 'CMD']
                                         Generate pattern-following code (tests, boilerplate, configs).
   offload ask [--stdin|-f FILE] QUESTION  One-off question to the cheap model.
+  offload task NAME [-q Q] [PATH...]    Run one of your own tasks (offload tasks lists them).
   offload outline FILE                  Symbol outline with line numbers (no model call).
 
+  offload model [TASK] [REF]            Show or change which model does the work (e.g. offload model groq:llama-3.3-70b).
+  offload key [NAME] [--remove]         Store an API key (hidden prompt or stdin; file mode 600).
+  offload setup                         Wizard: backends, keys, models, harnesses (needs Node 18+).
+  offload models [BACKEND]              List the models your backends offer.
   offload doctor [--ping] [--reset]     Check setup; --ping makes a tiny live call per model.
   offload stats [--days N] [--json]     Delegations and estimated tokens saved (14-day sparkline).
   offload dashboard [--open] [--sample] HTML report of the same (needs Node 18+).
-  offload statusline                    One short line for status bars.
+  offload install|uninstall HOST        Wire up a harness (claude, codex, cursor, gemini, copilot, qwen, crush, …).
   offload config [show|path|init|set KEY VALUE|trust] [--project]
 
-Common options: -m/--model PROVIDER/MODEL (one-off override), --allow-secrets.
+Models are BACKEND:MODEL (openrouter:qwen/qwen3-coder, ollama:qwen3:8b, claude:haiku), a bare
+provider/model means OpenCode, @host (the default) is your harness's own small model, and
+@host-api the same model family through an API key (a backup if the plan route stops working).
+Common options: -m/--model REF (one-off override), --allow-secrets.
 Exit codes: 0 ok · 2 usage · 10 quota/rate limit · 11 auth · 12 timeout · 13 unknown model
-            14 worker error · 15 opencode missing · 16 refused (secrets/size)
+            14 worker error · 15 backend missing · 16 refused (secrets/size)
 EOF
 }
 
@@ -64,8 +72,8 @@ report_failure() {
   case "$rc" in
     "$CO_E_NOOC") ;;
     "$CO_E_QUOTA") co_err "hint: quota/rate limit — add models.fallback in the config, or do this step yourself." ;;
-    "$CO_E_AUTH")  co_err "hint: run \`opencode auth login\` (outside Claude) for that provider." ;;
-    "$CO_E_MODEL") co_err "hint: check the model id with \`opencode models\`; set it with \`offload config set models.default PROVIDER/MODEL\`." ;;
+    "$CO_E_AUTH")  co_err "hint: log the backend in (its own CLI login, or \`opencode auth login\`) or set its API key with \`offload setup\`; \`offload doctor\` shows which." ;;
+    "$CO_E_MODEL") co_err "hint: check the model id (\`offload models BACKEND\` lists them) and switch with \`offload model BACKEND:MODEL\`; some providers also say \"model not found\" when the API key is wrong." ;;
     "$CO_E_TIMEOUT") co_err "hint: raise opencode.timeout_seconds or send less input." ;;
   esac
 }
@@ -176,7 +184,7 @@ EOF
     cite=" · citations: $ok verified, $bad unverified"
   fi
   cat "$answer"
-  footer "read · $CO_OC_MODEL · $nfiles file(s), $(co_fmt_int "$nlines") lines (~$(co_fmt_int "$(co_est_tokens "$bytes")") tokens) kept out of your context · $(co_elapsed "$t0")s$cite"
+  footer "${CO_CMD_LABEL:-read} · $CO_OC_MODEL · $nfiles file(s), $(co_fmt_int "$nlines") lines (~$(co_fmt_int "$(co_est_tokens "$bytes")") tokens) kept out of your context · $(co_elapsed "$t0")s$cite"
   [ "${bad:-0}" -gt 0 ] && echo "⚠unverified = quote not found near the cited lines; confirm with Read(offset/limit) before acting on it."
   [ -n "$skipped" ] && echo "skipped:$skipped"
 
@@ -185,7 +193,7 @@ EOF
   co_stats_append "$(jq -nc --arg model "$CO_OC_MODEL" --argjson files "$nfiles" --argjson bin "$bytes" --argjson bout "$abytes" \
     --argjson secs "$(co_elapsed "$t0")" --argjson ok "${ok:-0}" --argjson bad "${bad:-0}" \
     --argjson tin "${CO_OC_TOKENS_IN:-0}" --argjson tout "${CO_OC_TOKENS_OUT:-0}" \
-    '{ts: now | floor, kind: "read", model: $model, files: $files, bytes_in: $bin, bytes_out: $bout,
+    '{ts: now | floor, kind: "read"} + (if env.CO_TASK_NAME then {task: env.CO_TASK_NAME} else {} end) + {model: $model, files: $files, bytes_in: $bin, bytes_out: $bout,
       saved_tokens: ((($bin - $bout) / 4) | floor | if . < 0 then 0 else . end), seconds: $secs,
       cites_ok: $ok, cites_bad: $bad, worker_tokens_in: $tin, worker_tokens_out: $tout}')"
 }
@@ -228,7 +236,7 @@ cmd_explore() {
     cite=" · citations: $ok verified, $bad unverified"
   fi
   cat "$answer"
-  footer "explore · $CO_OC_MODEL · worker read ~$(co_fmt_int "${CO_OC_CTX_IN:-0}") tokens of context for you · $(co_elapsed "$t0")s$cite"
+  footer "${CO_CMD_LABEL:-explore} · $CO_OC_MODEL · worker read ~$(co_fmt_int "${CO_OC_CTX_IN:-0}") tokens of context for you · $(co_elapsed "$t0")s$cite"
   [ "${bad:-0}" -gt 0 ] && echo "⚠unverified = quote not found near the cited lines; confirm with Read(offset/limit) before acting on it."
 
   local abytes
@@ -236,7 +244,7 @@ cmd_explore() {
   co_stats_append "$(jq -nc --arg model "$CO_OC_MODEL" --argjson ctx "${CO_OC_CTX_IN:-0}" --argjson bout "$abytes" \
     --argjson secs "$(co_elapsed "$t0")" --argjson ok "${ok:-0}" --argjson bad "${bad:-0}" \
     --argjson tin "${CO_OC_TOKENS_IN:-0}" --argjson tout "${CO_OC_TOKENS_OUT:-0}" \
-    '{ts: now | floor, kind: "explore", model: $model, bytes_out: $bout,
+    '{ts: now | floor, kind: "explore"} + (if env.CO_TASK_NAME then {task: env.CO_TASK_NAME} else {} end) + {model: $model, bytes_out: $bout,
       saved_tokens: (($ctx - ($bout / 4)) | floor | if . < 0 then 0 else . end), seconds: $secs,
       cites_ok: $ok, cites_bad: $bad, worker_tokens_in: $tin, worker_tokens_out: $tout}')"
 }
@@ -437,10 +445,380 @@ cmd_ask() {
   co_oc_invoke ask "$prompt" "$(co_work_dir)" "$answer" "$model"; rc=$?
   if [ "$rc" != 0 ]; then report_failure "ask" "$rc"; exit "$rc"; fi
   cat "$answer"
-  footer "ask · $CO_OC_MODEL · $(co_elapsed "$t0")s"
+  footer "${CO_CMD_LABEL:-ask} · $CO_OC_MODEL · $(co_elapsed "$t0")s"
   co_stats_append "$(jq -nc --arg model "$CO_OC_MODEL" --argjson secs "$(co_elapsed "$t0")" \
     --argjson tin "${CO_OC_TOKENS_IN:-0}" --argjson tout "${CO_OC_TOKENS_OUT:-0}" \
-    '{ts: now | floor, kind: "ask", model: $model, seconds: $secs, saved_tokens: 0, worker_tokens_in: $tin, worker_tokens_out: $tout}')"
+    '{ts: now | floor, kind: "ask"} + (if env.CO_TASK_NAME then {task: env.CO_TASK_NAME} else {} end) + {model: $model, seconds: $secs, saved_tokens: 0, worker_tokens_in: $tin, worker_tokens_out: $tout}')"
+}
+
+# ----------------------------------------------------------------- tasks
+
+# Custom tasks: tasks.<name> = {description, prompt | prompt_file, model, tools}
+# in the config. A task runs through the read flow (with files), the ask flow
+# (no files) or the explore flow (tools: "read"), with its own instructions.
+co_task_names() { co_cfg_list '(.tasks // {}) | keys'; }
+
+# Prints the task's instructions; a prompt_file must be a regular, non-secret
+# file of at most 64 KB inside the project or the user config directory.
+co_task_prompt() {
+  local name="$1" p f real root confdir size
+  p=$(co_cfg ".tasks[\"$name\"].prompt")
+  f=$(co_cfg ".tasks[\"$name\"].prompt_file")
+  if [ -n "$f" ]; then
+    case "$f" in \~/*) f="$HOME/${f#\~/}" ;; /*) ;; *) f="$(co_project_dir)/$f" ;; esac
+    [ -f "$f" ] || { co_err "task $name: prompt_file not found: $f"; return 1; }
+    real=$(co_real_path "$f")
+    root=$(cd -P "$(co_project_dir)" 2>/dev/null && pwd)
+    confdir=$(cd -P "$(dirname "$(co_user_config_path)")" 2>/dev/null && pwd || echo /nonexistent)
+    case "$real" in
+      "$root"/*|"$confdir"/*) ;;
+      *) co_err "task $name: prompt_file must be inside the project or $(dirname "$(co_user_config_path)")"; return 1 ;;
+    esac
+    co_is_secret_target "$real" && { co_err "task $name: prompt_file matches privacy.secret_globs"; return 1; }
+    size=$(co_file_bytes "$real")
+    [ "$size" -le 65536 ] || { co_err "task $name: prompt_file is over 64 KB"; return 1; }
+    cat "$real"
+    return 0
+  fi
+  [ -n "$p" ] || { co_err "task $name: give it a prompt or a prompt_file"; return 1; }
+  printf '%s\n' "$p"
+}
+
+cmd_tasks() {
+  local names n
+  names=$(co_task_names)
+  if [ -z "$names" ]; then
+    echo "No custom tasks yet. Add one to your config, for example:"
+    echo '  offload config set tasks.review-sql '"'"'{"description":"Find N+1 queries","prompt":"You review SQL access code for N+1 queries.","tools":"none"}'"'"
+    echo "then: offload task review-sql src/db/"
+    return 0
+  fi
+  echo "Custom tasks (offload task NAME [-q QUESTION] [PATH...]):"
+  while IFS= read -r n; do
+    [ -z "$n" ] && continue
+    printf '  %-20s %s  [%s · %s]\n' "$n" "$(co_cfg ".tasks[\"$n\"].description" "")" \
+      "$(co_cfg ".tasks[\"$n\"].tools" none)" "$(co_cfg ".tasks[\"$n\"].model" "default model")"
+  done <<EOF
+$names
+EOF
+}
+
+cmd_task() {
+  local name="${1:-}"
+  case "$name" in ''|--list|-l) cmd_tasks; return 0 ;; -h|--help) usage; return 0 ;; esac
+  shift
+  case "$name" in *[!a-z0-9_-]*|-*) die "task: names use lowercase letters, digits, - and _ ($name)" ;; esac
+  [ ${#name} -le 40 ] || die "task: names are at most 40 characters ($name)"
+  [ -n "$(co_cfg ".tasks[\"$name\"]")" ] || die "task: no task named $name (offload tasks lists them)"
+  local tools question="" model="" use_stdin=false
+  local -a paths=()
+  tools=$(co_cfg ".tasks[\"$name\"].tools" none)
+  case "$tools" in none|read) ;; *) die "task $name: tools must be \"none\" or \"read\" (got $tools)" ;; esac
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      -q|--question) need "$@"; question="$2"; shift 2 ;;
+      -m|--model) need "$@"; model="$2"; shift 2 ;;
+      --stdin) use_stdin=true; shift ;;
+      --) shift; while [ $# -gt 0 ]; do paths+=("$1"); shift; done ;;
+      -*) die "task: unknown option $1" ;;
+      *) paths+=("$1"); shift ;;
+    esac
+  done
+  local sysf
+  co_tmp sysf
+  { co_task_prompt "$name" || exit "$CO_E_USAGE"; printf '\n'; cat "$CO_ROOT/prompts/task-contract.md"; } > "$sysf"
+  export CO_TASK_SYSTEM_FILE="$sysf" CO_TASK_NAME="$name" CO_CMD_LABEL="task $name"
+  CO_TASK_MODEL=$(co_cfg ".tasks[\"$name\"].model")
+  export CO_TASK_MODEL
+  [ -z "$question" ] && question="Do the task described in your instructions."
+  local -a margs=()
+  [ -n "$model" ] && margs=(-m "$model")
+  if [ "$tools" = read ]; then
+    [ ${#paths[@]} -gt 0 ] && question="$question (start with: ${paths[*]})"
+    cmd_explore "${margs[@]}" -- "$question"
+  elif [ ${#paths[@]} -gt 0 ]; then
+    cmd_read "${margs[@]}" -q "$question" -- "${paths[@]}"
+  elif $use_stdin; then
+    cmd_ask "${margs[@]}" --stdin -- "$question"
+  else
+    cmd_ask "${margs[@]}" -- "$question"
+  fi
+}
+
+# ----------------------------------------------------------------- model
+
+CO_MODEL_SLOTS="default read summarize explore write ask fallback"
+
+co_known_backends() {
+  printf 'opencode %s ' "$CO_AGENT_BACKENDS"
+  { jq -r '.endpoints | keys[]' "$CO_ROOT/config/connectors.json"; co_cfg_list '(.endpoints // {}) | keys'; } 2>/dev/null | awk '!seen[$0]++' | tr '\n' ' '
+}
+
+# Closest known backend within two edits, for "did you mean".
+co_did_you_mean() {
+  co_known_backends | tr ' ' '\n' | LC_ALL=C awk -v w="$1" '
+    function lev(a, b,   i, j, la, lb, d, c) {
+      la = length(a); lb = length(b)
+      for (i = 0; i <= la; i++) d[i, 0] = i
+      for (j = 0; j <= lb; j++) d[0, j] = j
+      for (i = 1; i <= la; i++) for (j = 1; j <= lb; j++) {
+        c = (substr(a, i, 1) == substr(b, j, 1)) ? 0 : 1
+        d[i, j] = d[i-1, j] + 1
+        if (d[i, j-1] + 1 < d[i, j]) d[i, j] = d[i, j-1] + 1
+        if (d[i-1, j-1] + c < d[i, j]) d[i, j] = d[i-1, j-1] + c
+      }
+      return d[la, lb]
+    }
+    NF { s = lev(w, $0); if (best == "" || s < bs) { best = $0; bs = s } }
+    END { if (best != "" && bs <= 2) print best }'
+}
+
+# co_ref_check REF — validates a model reference without calling a model.
+# Sets CO_REF_NOTE (where it runs, plus a warning if it cannot run here) and
+# returns 0, or sets CO_REF_ERR and returns 1. Twin: refCheck in model.ts.
+co_ref_check() {
+  local ref="$1" backend model def prefix ep label envk key bin m h near
+  CO_REF_NOTE="" CO_REF_ERR=""
+  def=$(co_cfg '.backend' opencode)
+  case "$ref" in
+    @host|@self)
+      if h=$(co_detect_host) && m=$(co_host_model); then CO_REF_NOTE="$m via $h's own plan"
+      else CO_REF_NOTE="your harness's own model (resolved when a harness calls offload)"; fi
+      return 0 ;;
+    @host-api)
+      local ep n
+      if ! h=$(co_detect_host); then CO_REF_NOTE="your harness's model through an API key (resolved when a harness calls offload)"; return 0; fi
+      m=$(co_host_api_model)
+      case "$m" in ''|@*) CO_REF_NOTE="$h has no API-key backup; this entry is skipped"; return 0 ;; esac
+      n=${m%%:*}; ep=$(co_endpoint_json "$n")
+      CO_REF_NOTE="$m via $h's API key"
+      if [ -n "$ep" ] && [ -z "$(co_endpoint_key "$n" "$ep")" ]; then
+        case "$(printf '%s' "$ep" | jq -r .base_url)" in *127.0.0.1*|*localhost*) ;; *) CO_REF_NOTE="$CO_REF_NOTE; warning: no key yet (offload key $n)" ;; esac
+      fi
+      return 0 ;;
+    @default) CO_REF_NOTE="$def's default model"; return 0 ;;
+    '') CO_REF_ERR="give a model reference, e.g. groq:llama-3.3-70b, claude:haiku or @host"; return 1 ;;
+  esac
+  backend="$def" model="$ref"
+  prefix=${ref%%:*}
+  case "$prefix" in
+    "$ref"|*/*) ;;
+    *)
+      if [ "$prefix" = opencode ] || co_is_agent_backend "$prefix" || [ -n "$(co_endpoint_json "$prefix")" ]; then
+        backend="$prefix" model="${ref#*:}"
+      else
+        near=$(co_did_you_mean "$prefix")
+        CO_REF_ERR="unknown backend \"$prefix\" in $ref${near:+ — did you mean $near:${ref#*:}?} (backends: $(co_known_backends | sed 's/ $//; s/ /, /g'))"
+        return 1
+      fi ;;
+  esac
+  if [ "$backend" = opencode ]; then
+    case "$model" in
+      ''|*/*) ;;
+      *) if co_is_agent_backend "$model" || [ -n "$(co_endpoint_json "$model")" ]; then
+           CO_REF_ERR="\"$model\" is a backend — write $model:MODEL (offload models $model lists them)"
+         else
+           CO_REF_ERR="\"$ref\" is not a model reference — write BACKEND:MODEL (e.g. openrouter:qwen/qwen3-coder), provider/model for OpenCode, or @host"
+         fi
+         return 1 ;;
+    esac
+    CO_REF_NOTE="OpenCode"
+    co_have_opencode || CO_REF_NOTE="$CO_REF_NOTE; warning: opencode is not installed"
+    return 0
+  fi
+  if co_is_agent_backend "$backend"; then
+    bin=$(co_agent_bin "$backend")
+    CO_REF_NOTE="$backend CLI"
+    [ -z "$model" ] && CO_REF_NOTE="$backend CLI, its default model"
+    command -v "$bin" >/dev/null 2>&1 || CO_REF_NOTE="$CO_REF_NOTE; warning: $bin is not installed"
+    return 0
+  fi
+  ep=$(co_endpoint_json "$backend")
+  [ -n "$model" ] || { CO_REF_ERR="$backend needs a model id, e.g. $backend:MODEL (offload models $backend lists them)"; return 1; }
+  label=$(printf '%s' "$ep" | jq -r '.label // empty')
+  CO_REF_NOTE="${label:-$backend}"
+  envk=$(printf '%s' "$ep" | jq -r '.api_key_env // empty')
+  key=$(co_endpoint_key "$backend" "$ep")
+  if [ -z "$key" ] && [ -n "$envk" ]; then
+    CO_REF_NOTE="$CO_REF_NOTE; warning: no API key (export $envk or run offload setup)"
+  fi
+  return 0
+}
+
+co_model_slot_key() {
+  case " $CO_MODEL_SLOTS " in *" $1 "*) printf 'models.%s' "$1"; return 0 ;; esac
+  case "$1" in *[!a-z0-9_-]*|-*|'') return 1 ;; esac
+  [ -n "$(co_cfg ".tasks[\"$1\"]")" ] && { printf 'tasks.%s.model' "$1"; return 0; }
+  return 1
+}
+
+co_model_line() {
+  local slot="$1" key="$2" v
+  case "$key" in tasks.*) slot="task $slot" ;; esac
+  if [ "$slot" = fallback ]; then
+    v=$(co_cfg_list '.models.fallback // []' | tr '\n' ' ' | sed 's/ $//; s/ /, /g')
+    printf '  %-18s %s\n' "$slot" "${v:-(none)}"
+    return 0
+  fi
+  v=$(co_cfg "getpath(\"$key\" | split(\".\"))")
+  if [ -z "$v" ]; then
+    [ "$slot" = default ] || { printf '  %-18s (default)\n' "$slot"; return 0; }
+    v=@default
+  fi
+  if co_ref_check "$v"; then printf '  %-18s %s — %s\n' "$slot" "$v" "$CO_REF_NOTE"
+  else printf '  %-18s %s — error: %s\n' "$slot" "$v" "$CO_REF_ERR"; fi
+}
+
+co_model_bad_slot() {
+  local w="$1" kind=""
+  if [ "$w" = opencode ] || co_is_agent_backend "$w"; then kind=agent
+  elif [ -n "$(co_endpoint_json "$w")" ]; then kind=http; fi
+  case "$kind" in
+    agent) die "model: \"$w\" is a backend — write $w: for its default model or $w:MODEL" ;;
+    http) die "model: \"$w\" is a backend — write $w:MODEL (offload models $w lists them)" ;;
+  esac
+  die "model: \"$w\" is neither a task (default, read, summarize, explore, write, ask, fallback, or one of offload tasks) nor a model reference (BACKEND:MODEL, provider/model, @host)"
+}
+
+cmd_model() {
+  local target project=false reset=false s n slot="" key=""
+  local -a args=() refs=()
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --project) project=true; shift ;;
+      --reset) reset=true; shift ;;
+      -h|--help) usage; return 0 ;;
+      --) shift; while [ $# -gt 0 ]; do args+=("$1"); shift; done ;;
+      -*) die "model: unknown option $1" ;;
+      *) args+=("$1"); shift ;;
+    esac
+  done
+  target=$(co_user_config_path)
+  $project && target=$(co_project_config_path)
+  if [ ${#args[@]} -gt 0 ]; then
+    if key=$(co_model_slot_key "${args[0]}"); then
+      slot="${args[0]}"
+      [ ${#args[@]} -gt 1 ] && refs=("${args[@]:1}")
+    else
+      case "${args[0]}" in
+        *[:/@]*) [ ${#args[@]} -eq 1 ] && ! $reset || co_model_bad_slot "${args[0]}"
+                 slot=default key=models.default refs=("${args[0]}") ;;
+        *) co_model_bad_slot "${args[0]}" ;;
+      esac
+    fi
+  fi
+  if $reset; then
+    [ ${#refs[@]} -eq 0 ] || die "model: --reset takes no model"
+    [ -z "$slot" ] && slot=default key=models.default
+    if [ -f "$target" ]; then
+      jq -e 'type == "object"' "$target" >/dev/null 2>&1 || die "model: $target is not valid JSON; fix it first"
+      (umask 077; jq --arg k "$key" 'delpaths([$k | split(".")])' "$target" > "$target.tmp") && mv "$target.tmp" "$target"
+    fi
+    CO_CONFIG=""
+    echo "✓ $key reset in $target"
+    co_model_line "$slot" "$key"
+    return 0
+  fi
+  if [ ${#refs[@]} -eq 0 ]; then
+    if [ -n "$slot" ]; then co_model_line "$slot" "$key"; return 0; fi
+    echo "Models (change: offload model [TASK] REF · undo: offload model [TASK] --reset · --project for this repo):"
+    for s in $CO_MODEL_SLOTS; do co_model_line "$s" "models.$s"; done
+    while IFS= read -r n; do
+      [ -n "$n" ] && co_model_line "$n" "tasks.$n.model"
+    done <<EOT
+$(co_task_names)
+EOT
+    echo "References: @host (your harness's own plan) · BACKEND:MODEL · provider/model (OpenCode). List models: offload models BACKEND"
+    return 0
+  fi
+  [ "$slot" = fallback ] || [ ${#refs[@]} -eq 1 ] || die "model: give one model (only fallback takes several)"
+  local r notes="" val cur eff
+  for r in "${refs[@]}"; do
+    co_ref_check "$r" || die "model: $CO_REF_ERR (to store it anyway: offload config set $key VALUE)"
+    notes="$notes  $r — $CO_REF_NOTE"$'\n'
+  done
+  if [ "$slot" = fallback ]; then val=$(printf '%s\n' "${refs[@]}" | jq -R . | jq -cs .); else val=$(jq -cn --arg v "${refs[0]}" '$v'); fi
+  mkdir -p "$(dirname "$target")"
+  cur='{}'; [ -f "$target" ] && cur=$(cat "$target")
+  printf '%s' "$cur" | jq -e 'type == "object"' >/dev/null 2>&1 || die "model: $target is not valid JSON; fix it first"
+  (umask 077; printf '%s' "$cur" | jq --arg k "$key" --argjson v "$val" 'setpath($k | split("."); $v)' > "$target.tmp") && mv "$target.tmp" "$target"
+  CO_CONFIG=""
+  printf '✓ %s = %s\n' "$key" "$(printf '%s' "$val" | jq -r 'if type == "array" then join(", ") else . end')"
+  printf '%s' "$notes"
+  echo "  saved in $target · try it: offload doctor --ping"
+  eff=$(co_cfg "getpath(\"$key\" | split(\".\")) | tojson")
+  [ "$eff" = "$val" ] || echo "  note: another config file overrides this (in effect: $(printf '%s' "$eff" | jq -r 'if type == "array" then join(", ") else . end')); use --project to change this repo's setting"
+}
+
+# ------------------------------------------------------------------- key
+
+# offload key [NAME] [--remove] — API keys in the credentials file (mode 600),
+# read hidden from the terminal or from stdin; never printed. Twin: key.ts.
+cmd_key() {
+  local remove=false a name="" f cur key ep env state n hosts
+  local -a args=()
+  for a in "$@"; do
+    case "$a" in
+      --remove) remove=true ;;
+      -h|--help) usage; return 0 ;;
+      -*) die "key: unknown option $a" ;;
+      *) args+=("$a") ;;
+    esac
+  done
+  f=$(co_credentials_path)
+  cur='{}'
+  if [ -f "$f" ]; then
+    jq -e 'type == "object"' "$f" >/dev/null 2>&1 || die "$f is not valid JSON; fix it first"
+    cur=$(cat "$f")
+  fi
+  if [ ${#args[@]} -eq 0 ]; then
+    echo "API keys (add: offload key NAME · remove: offload key NAME --remove · keys are never shown):"
+    while IFS= read -r n; do
+      [ -n "$n" ] || continue
+      ep=$(co_endpoint_json "$n"); [ -n "$ep" ] || continue
+      env=$(printf '%s' "$ep" | jq -r '.api_key_env // empty')
+      case "$env" in ''|[!A-Za-z_]*|*[!A-Za-z0-9_]*) env="" ;; esac
+      if [ -n "$(printf '%s' "$cur" | jq -r --arg n "$n" '.[$n] // empty')" ]; then state=stored
+      elif [ -n "$(printf '%s' "$ep" | jq -r '.api_key // empty')" ]; then state="in config"
+      elif [ -n "$env" ] && [ -n "$(eval "printf '%s' \"\${$env:-}\"")" ]; then state="from \$$env"
+      else case "$(printf '%s' "$ep" | jq -r .base_url)" in *127.0.0.1*|*localhost*) state="local, no key needed" ;; *) state="not set" ;; esac
+      fi
+      printf '  %-12s %-22s %s\n' "$n" "$state" "$env"
+    done <<EOT
+$({ jq -r '.endpoints | keys[]' "$CO_ROOT/config/connectors.json"; co_cfg_list '(.endpoints // {}) | keys'; } 2>/dev/null | awk '!s[$0]++')
+EOT
+    echo "File: $f"
+    return 0
+  fi
+  [ ${#args[@]} -eq 1 ] || die "key: give the key on the prompt or through stdin, not as an argument (it would stay in your shell history)"
+  name="${args[0]}"
+  case "$name" in *[!A-Za-z0-9_-]*|-*) die "key: backend names use letters, digits, - and _ ($name)" ;; esac
+  ep=$(co_endpoint_json "$name")
+  [ -n "$ep" ] || die "key: unknown backend \"$name\" (offload key lists them; add your own with endpoints.$name)"
+  if $remove; then
+    if [ -z "$(printf '%s' "$cur" | jq -r --arg n "$name" '.[$n] // empty')" ]; then echo "no stored key for $name"; return 0; fi
+    (umask 077; printf '%s' "$cur" | jq --arg n "$name" 'del(.[$n])' > "$f.tmp") && mv "$f.tmp" "$f"
+    echo "✓ removed the $name key from $f"
+    return 0
+  fi
+  if [ -t 0 ]; then
+    printf 'API key for %s: ' "$(printf '%s' "$ep" | jq -r --arg n "$name" '.label // $n')" >&2
+    IFS= read -rs key; echo >&2
+  else
+    IFS= read -r key || true
+  fi
+  key=$(printf '%s' "$key" | LC_ALL=C sed 's/^[[:space:]]*//; s/[[:space:]]*$//')
+  [ -n "$key" ] || die "key: empty key, nothing saved"
+  case "$key" in *[[:space:]]*) die "key: the key contains spaces; nothing saved" ;; esac
+  mkdir -p "$(dirname "$f")"
+  (umask 077; printf '%s' "$cur" | jq --arg n "$name" --arg k "$key" '.[$n] = $k' > "$f.tmp") && mv "$f.tmp" "$f"
+  chmod 600 "$f" 2>/dev/null || true
+  echo "✓ saved the $name key in $f (only you can read it)"
+  hosts=$({ jq -r --arg n "$name:" '.host_api_models | to_entries[] | select(.value | startswith($n)) | .key' "$CO_ROOT/config/connectors.json"
+            co_cfg_list "(.host_api_models // {}) | to_entries | map(select(.value | type == \"string\" and startswith(\"$name:\")) | .key)"; } | awk 'NF && !s[$0]++' | tr '\n' ' ' | sed 's/ $//; s/ /, /g')
+  [ -n "$hosts" ] && echo "  backup for $hosts: add it to your chain with  offload model fallback @host-api @default"
+  echo "  use it directly:  offload model $name:MODEL   (offload models $name lists them)"
+  return 0
 }
 
 # ---------------------------------------------------------------- doctor
@@ -515,8 +893,31 @@ cmd_doctor() {
   for task in read explore summarize write ask; do
     printf '    %-9s → %s\n' "$task" "$(co_model_chain "$task" | tr '\n' ' ')"
   done
-  local all_models
-  all_models=$(for task in read explore summarize write ask; do co_model_chain "$task"; done | awk 'NF && !s[$0]++')
+  local all_models tn terr ttools tmodel tmodels=""
+  tn=$(co_task_names)
+  if [ -n "$tn" ]; then
+    echo "  your tasks:"
+    while IFS= read -r task; do
+      [ -z "$task" ] && continue
+      ttools=$(co_cfg ".tasks[\"$task\"].tools" none)
+      tmodel=$(co_cfg ".tasks[\"$task\"].model")
+      case "$task" in *[!a-z0-9_-]*|-*) echo "    $bad $task: names use lowercase letters, digits, - and _"; problems=$((problems + 1)); continue ;; esac
+      if ! terr=$(co_task_prompt "$task" 2>&1 >/dev/null); then
+        echo "    $bad ${terr#offload: }"; problems=$((problems + 1))
+      elif [ "$ttools" != none ] && [ "$ttools" != read ]; then
+        echo "    $bad task $task: tools must be \"none\" or \"read\" (got $ttools)"; problems=$((problems + 1))
+      elif [ -n "$tmodel" ] && ! co_ref_check "$tmodel"; then
+        echo "    $bad task $task: $CO_REF_ERR"; problems=$((problems + 1))
+      else
+        echo "    $ok task $task ($ttools · ${tmodel:-default model})"
+        [ -n "$tmodel" ] && tmodels="$tmodels$tmodel"$'\n'
+      fi
+    done <<EOF
+$tn
+EOF
+  fi
+  all_models=$({ for task in read explore summarize write ask; do co_model_chain "$task"; done
+                 printf '%s' "$tmodels"; } | awk 'NF && !s[$0]++')
   local host hm label ep uses_oc=false
   if host=$(co_detect_host); then
     hm=$(co_host_model 2>/dev/null)
@@ -526,8 +927,10 @@ cmd_doctor() {
   fi
   while IFS= read -r m; do
     [ -z "$m" ] && continue
+    if ! co_ref_check "$m"; then echo "  $bad $m: $CO_REF_ERR"; problems=$((problems + 1)); continue; fi
     if ! co_route "$m" read; then
       case "$m" in @host|@self) echo "  $warn $m: resolved per harness at run time (none detected in this shell)" ;;
+        @host-api) echo "  $warn @host-api: backup skipped — ${CO_OC_ERROR#@host-api: }" ;;
         *) echo "  $bad $m: $CO_OC_ERROR"; problems=$((problems + 1)) ;; esac
       continue
     fi
@@ -754,6 +1157,15 @@ main() {
     statusline)      cmd_statusline ;;
     dashboard)       co_ts_run dashboard "$@" || die "dashboard needs Node.js 18+ (the report is built by the bundled TypeScript CLI)" "$CO_E_NOOC" ;;
     config)          cmd_config "$@" ;;
+    task)            cmd_task "$@" ;;
+    tasks)           cmd_tasks ;;
+    model)           cmd_model "$@" ;;
+    key)             cmd_key "$@" ;;
+    # interactive and host-integration commands live in the bundled TypeScript CLI
+    setup|models|install|uninstall|sync|mcp|demo|worker|hook)
+                     local rc; co_ts_run "$cmd" "$@"; rc=$?
+                     [ "$rc" = "$CO_E_NOOC" ] && ! co_ts_cli >/dev/null && die "$cmd needs Node.js 18+ (it is part of the bundled TypeScript CLI)" "$CO_E_NOOC"
+                     return "$rc" ;;
     *) co_err "unknown command: $cmd"; usage >&2; return "$CO_E_USAGE" ;;
   esac
 }

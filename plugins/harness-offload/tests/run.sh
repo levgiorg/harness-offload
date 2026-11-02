@@ -369,7 +369,13 @@ expect_has "@host in Crush → its own CLI" "$out" "CRUSH-STUB tools-off=29: cru
 STUB_AGENT_MODE=auth ag ask -m claude:haiku "hi" >/dev/null; expect_eq "claude: login problem → exit 11" "$?" 11
 STUB_AGENT_MODE=quota ag ask -m claude:sonnet "hi" >/dev/null; expect_eq "claude: usage limit → exit 10" "$?" 10
 STUB_AGENT_MODE=quota ag ask -m codex:x "hi" >/dev/null; expect_eq "codex: usage limit → exit 10" "$?" 10
-STUB_AGENT_MODE=auth ag ask -m gemini:y "hi" >/dev/null; expect_eq "gemini: exit 41 → exit 11" "$?" 11
+out=$(STUB_AGENT_MODE=auth ag ask -m gemini:y "hi"); expect_eq "gemini: exit 41 → exit 11" "$?" 11
+expect_has "gemini: shows its own login message (JSON on stderr)" "$out" "Please set an Auth method"
+STUB_AGENT_MODE=auth ag ask -m qwen:x "hi" >/dev/null; expect_eq "qwen: no auth type selected → exit 11" "$?" 11
+STUB_AGENT_MODE=auth ag ask -m pi:x "hi" >/dev/null; expect_eq "pi: invalid security token → exit 11" "$?" 11
+out=$(STUB_AGENT_MODE=nokey ag ask -m pi:x "hi"); expect_eq "pi: no API key (reason on its first stderr line) → exit 11" "$?" 11
+expect_has "pi: the error shows pi's reason" "$out" "No API key found"
+STUB_AGENT_MODE=auth ag ask -m crush:x "hi" >/dev/null; expect_eq "crush: no providers configured → exit 11" "$?" 11
 STUB_AGENT_MODE=quota ag ask -m pi:z "hi" >/dev/null; expect_eq "pi: 429 → exit 10" "$?" 10
 s=$(date +%s); STUB_AGENT_MODE=slow OFFLOAD_TIMEOUT=1 ag ask -m codex:slow "hi" >/dev/null; rc=$?
 expect_eq "agent timeout → exit 12, fast" "$rc:$(( $(date +%s) - s < 10 ))" "12:1"
@@ -410,6 +416,203 @@ d=$(decision "$(OFFLOAD_MODEL=@host OFFLOAD_HOST=claude PATH="$AB:$PATH" pre_rea
 expect_eq "hook: @host but CLI missing → fail open" "$d" "none"
 rm -f "$OFFLOAD_CONFIG"
 
+# ------------------------------------------------------- TS-only commands
+section "commands that live in the TypeScript CLI"
+if $HAVE_TS_NODE; then
+  out=$("$OFFLOAD" demo 2>&1); rc=$?
+  expect_eq "demo runs from either engine" "$rc" 0
+  expect_has "demo output" "$out" "no model calls"
+fi
+if [ "$OFFLOAD" = "$PLUGIN/bin/offload" ] && [ -x /usr/bin/jq ] && ! PATH=/usr/bin:/bin command -v node >/dev/null 2>&1; then
+  out=$(PATH=/usr/bin:/bin "$OFFLOAD" setup 2>&1); rc=$?
+  expect_eq "bash engine without Node: setup → exit 15" "$rc" 15
+  expect_has "bash engine without Node: says what is needed" "$out" "setup needs Node.js 18+"
+fi
+
+# ------------------------------------------------------------ custom tasks
+section "custom tasks (tasks.<name> in the config)"
+out=$("$OFFLOAD" tasks 2>&1)
+expect_has "tasks: none yet → shows how to add one" "$out" "No custom tasks yet"
+mkdir -p "$P/prompts"; printf 'You summarise release notes for managers.\n' > "$P/prompts/notes.md"
+awk 'BEGIN { for (i = 1; i <= 7000; i++) print "padding line " i }' > "$P/prompts/huge.md"
+jq -n '{tasks: {
+  "review-sql": {description: "Find N+1 queries", prompt: "You review SQL access code for N+1 queries.", model: "claude:haiku"},
+  scan: {description: "Scan the repo", prompt: "List TODO comments.", tools: "read", model: "claude:haiku"},
+  notes: {prompt_file: "prompts/notes.md", model: "claude:haiku"},
+  outside: {prompt_file: "/etc/hosts"},
+  secret: {prompt_file: ".env"},
+  huge: {prompt_file: "prompts/huge.md"},
+  writer: {prompt: "x", tools: "write"},
+  empty: {description: "no prompt"}}}' > "$OFFLOAD_CONFIG"
+out=$("$OFFLOAD" tasks 2>&1)
+expect_has "tasks: lists name and description" "$out" "review-sql"
+expect_has "tasks: shows tools and model" "$out" "[none · claude:haiku]"
+: > "$STUB_AGENT_LOG"; rm -f "$OFFLOAD_STATE_DIR/stats.jsonl"
+out=$(STUB_AGENT_ARGS="$T/task-args" ag task review-sql small.txt); rc=$?
+expect_eq "task with files: exit 0" "$rc" 0
+expect_has "task with files: runs on the task's model, labelled as the task" "$out" "[offload task review-sql · claude:haiku · 1 file(s)"
+targs=$(cat "$T/task-args")
+expect_has "task: worker gets the task's own instructions" "$targs" "You review SQL access code for N+1 queries."
+expect_has "task: + the shared citation rules" "$targs" "Citations are machine-checked."
+expect_not "task: built-in read prompt replaced" "$targs" "$(head -1 "$PLUGIN/prompts/read.md" | cut -c1-40)"
+expect_has "task: still no tools for a files task" "$targs" "--tools"
+expect_has "task: stats record the task name" "$(tail -1 "$OFFLOAD_STATE_DIR/stats.jsonl")" '"task":"review-sql"'
+expect_has "task: stats keep the flow kind" "$(tail -1 "$OFFLOAD_STATE_DIR/stats.jsonl")" '"kind":"read"'
+out=$(ag task review-sql -q "only the orders table" small.txt)
+expect_has "task: -q question reaches the worker" "$out" "[offload task review-sql"
+out=$(ag task review-sql -m codex:gpt-6-luna small.txt)
+expect_has "task: -m overrides the task's model" "$out" "[offload task review-sql · codex:gpt-6-luna"
+out=$(ag task review-sql)
+expect_has "task without files → one-shot (ask flow)" "$out" "CLAUDE-STUB: Do the task described in your instructions."
+out=$(printf 'SELECT * FROM a;\n' | ag task review-sql --stdin)
+expect_has "task --stdin: piped input goes to the worker" "$(grep stdin-bytes "$STUB_AGENT_LOG" | tail -1)" "stdin-bytes="
+expect_has "task --stdin: answers" "$out" "[offload task review-sql · claude:haiku"
+: > "$STUB_AGENT_LOG"; ag task scan src >/dev/null
+expect_has "task tools:read → read-only explorer tools" "$(cat "$STUB_AGENT_LOG")" "arg[Read,Grep,Glob]"
+out=$(STUB_AGENT_ARGS="$T/task-args2" ag task notes small.txt)
+expect_has "task prompt_file inside the project is used" "$(cat "$T/task-args2")" "You summarise release notes for managers."
+out=$(ag task outside small.txt); rc=$?
+expect_eq "task prompt_file outside project/config dir → exit 2" "$rc" 2
+expect_has "task prompt_file outside → explains" "$out" "must be inside the project"
+out=$(ag task secret small.txt); rc=$?
+expect_eq "task prompt_file that is a secret → exit 2" "$rc" 2
+expect_has "task prompt_file secret → explains" "$out" "secret_globs"
+out=$(ag task huge small.txt); rc=$?
+expect_eq "task prompt_file over 64 KB → exit 2" "$rc" 2
+out=$(ag task writer small.txt); rc=$?
+expect_has "task tools other than none/read refused" "$out" 'tools must be "none" or "read"'
+out=$(ag task empty small.txt); rc=$?
+expect_has "task with no prompt → explains" "$out" "give it a prompt or a prompt_file"
+out=$(ag task nope small.txt); rc=$?
+expect_eq "unknown task → exit 2" "$rc" 2
+expect_has "unknown task → points at offload tasks" "$out" "offload tasks"
+out=$(ag task 'Bad*Name' small.txt); rc=$?
+expect_eq "invalid task name → exit 2" "$rc" 2
+out=$(ag doctor); rc=$?
+expect_eq "doctor: a broken task is a problem (exit 1)" "$rc" 1
+expect_has "doctor: names the task and why" "$out" "prompt_file must be inside the project"
+expect_has "doctor: checks task tools" "$out" 'task writer: tools must be "none" or "read"'
+expect_has "doctor: good tasks pass" "$out" "task review-sql (none · claude:haiku)"
+STUB_CONFIG="$T/oc-cfg" ag task review-sql -m stub/ok small.txt >/dev/null
+expect_has "task on OpenCode: its agent carries the task's instructions" "$(jq -r '(.agent // .agents)["offload-read"] | (.prompt // .system)' "$T/oc-cfg")" "You review SQL access code"
+expect_has "task on OpenCode: + the shared rules" "$(jq -r '(.agent // .agents)["offload-read"] | (.prompt // .system)' "$T/oc-cfg")" "Citations are machine-checked."
+STUB_CONFIG="$T/oc-cfg" ag read -m stub/ok -q q small.txt >/dev/null
+expect_not "plain read on OpenCode keeps the built-in prompt" "$(jq -r '(.agent // .agents)["offload-read"] | (.prompt // .system)' "$T/oc-cfg")" "You review SQL"
+expect_has "plain read on OpenCode: built-in prompt present" "$(jq -r '(.agent // .agents)["offload-read"] | (.prompt // .system)' "$T/oc-cfg")" "$(head -1 "$PLUGIN/prompts/read.md" | cut -c1-30)"
+rm -f "$OFFLOAD_CONFIG"
+printf '{"tasks":{"repo-task":{"description":"from the repo","prompt":"Repo rules."}}}' > "$P/.harness-offload.json"
+out=$("$OFFLOAD" tasks 2>&1)
+expect_has "tasks: an untrusted repo may define tasks" "$out" "repo-task"
+expect_not "tasks: not reported as an ignored project key" "$("$OFFLOAD" config show 2>&1 | grep ignored)" "tasks"
+rm -f "$P/.harness-offload.json"
+
+# ------------------------------------------------------------ model command
+section "offload model (show / change / undo)"
+unset GROQ_API_KEY OPENROUTER_API_KEY
+out=$(OFFLOAD_MODEL= "$OFFLOAD" model 2>&1); rc=$?
+expect_eq "model: show exits 0" "$rc" 0
+expect_has "model: shows the default (@host)" "$out" "default            @host"
+expect_has "model: unset slots say (default)" "$out" "read               (default)"
+out=$(OFFLOAD_MODEL= OFFLOAD_HOST=claude "$OFFLOAD" model 2>&1)
+expect_has "model: @host resolved for the calling harness" "$out" "claude:haiku via claude's own plan"
+out=$("$OFFLOAD" model read groq:llama-3.3-70b 2>&1); rc=$?
+expect_eq "model: set read → exit 0" "$rc" 0
+expect_eq "model: written to the user config" "$(jq -r '.models.read' "$OFFLOAD_CONFIG")" "groq:llama-3.3-70b"
+expect_has "model: warns when the API key is missing" "$out" "no API key (export GROQ_API_KEY"
+out=$(GROQ_API_KEY=x "$OFFLOAD" model read groq:llama-3.3-70b 2>&1)
+expect_not "model: no warning once the key is there" "$out" "warning"
+out=$("$OFFLOAD" model opnerouter:qwen/qwen3-coder 2>&1); rc=$?
+expect_eq "model: unknown backend → exit 2" "$rc" 2
+expect_has "model: typo → did you mean" "$out" "did you mean openrouter:qwen/qwen3-coder?"
+expect_eq "model: rejected ref not written" "$(jq -r '.models.default // "unset"' "$OFFLOAD_CONFIG")" "unset"
+out=$("$OFFLOAD" model groq: 2>&1); rc=$?
+expect_eq "model: HTTP backend without a model id → exit 2" "$rc" 2
+expect_has "model: says it needs a model id" "$out" "groq needs a model id"
+out=$("$OFFLOAD" model groq 2>&1); rc=$?
+expect_has "model: bare backend name → explains BACKEND:MODEL" "$out" "write groq:MODEL"
+out=$("$OFFLOAD" model gpt5 2>&1); rc=$?
+expect_eq "model: neither task nor ref → exit 2" "$rc" 2
+out=$(PATH="$AB:$PATH" "$OFFLOAD" model claude:haiku 2>&1)
+expect_has "model: one argument sets the default" "$out" "models.default = claude:haiku"
+expect_has "model: agent CLI found" "$out" "claude CLI"
+printf '%s' "$(jq --arg b "$T/nope/copilot" '.agents.copilot.bin = $b' "$OFFLOAD_CONFIG")" > "$OFFLOAD_CONFIG"
+out=$("$OFFLOAD" model explore copilot: 2>&1)
+expect_has "model: warns when the CLI is not installed" "$out" "nope/copilot is not installed"
+out=$("$OFFLOAD" model fallback @host openrouter:qwen/qwen3-coder ollama:qwen3:8b 2>&1)
+expect_eq "model: fallback takes several" "$(jq -c '.models.fallback' "$OFFLOAD_CONFIG")" '["@host","openrouter:qwen/qwen3-coder","ollama:qwen3:8b"]'
+out=$("$OFFLOAD" model read a/b c/d 2>&1); rc=$?
+expect_eq "model: only fallback takes several → exit 2" "$rc" 2
+out=$("$OFFLOAD" model read --reset 2>&1)
+expect_eq "model: --reset removes the setting" "$(jq -r '.models.read // "unset"' "$OFFLOAD_CONFIG")" "unset"
+# plug and play: what `offload model` sets is what the next call uses
+printf '%s' "$(jq '.models.fallback = []' "$OFFLOAD_CONFIG")" > "$OFFLOAD_CONFIG"
+OFFLOAD_MODEL= "$OFFLOAD" model read codex:gpt-6-luna >/dev/null 2>&1
+out=$(OFFLOAD_MODEL= ag read -q "q" small.txt)
+expect_has "model: the next read runs on the new model" "$out" "[offload read · codex:gpt-6-luna"
+OFFLOAD_MODEL= "$OFFLOAD" model read gemini:flash-lite >/dev/null 2>&1
+out=$(OFFLOAD_MODEL= ag read -q "q" small.txt)
+expect_has "model: switching again takes effect at once" "$out" "[offload read · gemini:flash-lite"
+printf '{"models":{"read":"opnerouter:qwen/qwen3-coder"}}' > "$OFFLOAD_CONFIG"
+out=$(ag doctor); rc=$?
+expect_eq "doctor: mistyped backend is a problem" "$rc" 1
+expect_has "doctor: mistyped backend → did you mean" "$out" "did you mean openrouter:qwen/qwen3-coder?"
+printf '{"tasks":{"t1":{"prompt":"p"}}}' > "$OFFLOAD_CONFIG"
+out=$("$OFFLOAD" model t1 pi: 2>&1)
+expect_eq "model: sets a custom task's model" "$(jq -r '.tasks.t1.model' "$OFFLOAD_CONFIG")" "pi:"
+out=$(ag task t1 small.txt)
+expect_has "model: custom task then runs there" "$out" "[offload task t1 · pi:"
+printf '{"models":{"read":"ollama:qwen3:8b"}}' > "$P/.harness-offload.json"
+out=$("$OFFLOAD" model read groq:x 2>&1)
+expect_has "model: says when the repo config overrides it" "$out" "another config file overrides this"
+out=$("$OFFLOAD" model read groq:x --project 2>&1)
+expect_eq "model: --project writes the repo config" "$(jq -r '.models.read' "$P/.harness-offload.json")" "groq:x"
+rm -f "$P/.harness-offload.json" "$OFFLOAD_CONFIG"
+
+# ------------------------------------------------------- API-key backup
+section "@host-api (the same model family through an API key)"
+export OFFLOAD_CREDENTIALS="$T/credentials.json"
+unset ANTHROPIC_API_KEY GROQ_API_KEY
+out=$(OFFLOAD_HOST=claude "$OFFLOAD" model fallback @host-api @default 2>&1)
+expect_has "@host-api on Claude Code → anthropic:claude-haiku-5-5" "$out" "anthropic:claude-haiku-5-5 via claude's API key"
+expect_has "@host-api warns while there is no key" "$out" "no key yet (offload key anthropic)"
+out=$(OFFLOAD_HOST=codex "$OFFLOAD" model fallback 2>&1)
+expect_has "model shows the backup in the chain" "$out" "@host-api, @default"
+out=$(OFFLOAD_HOST=cursor "$OFFLOAD" model fallback @host-api 2>&1)
+expect_has "@host-api on a harness without an API: skipped" "$out" "cursor has no API-key backup"
+rm -f "$OFFLOAD_CONFIG"
+out=$(OFFLOAD_HOST=claude ag ask -m @host-api "hi"); rc=$?
+expect_eq "@host-api without a key → usage exit 2" "$rc" 2
+expect_has "@host-api without a key → says how to add one" "$out" "offload key anthropic"
+printf '{"host_api_models":{"claude":"codex:gpt-6-luna"}}' > "$OFFLOAD_CONFIG"
+out=$(OFFLOAD_HOST=claude ag ask -m @host-api "via backup")
+expect_has "@host-api resolves through host_api_models" "$out" "[offload ask · codex:gpt-6-luna"
+printf '{"host_api_models":{"claude":"codex:gpt-6-luna"},"agents":{"claude":{"bin":"%s/no-claude"}},"models":{"default":"@host","fallback":["@host-api"]}}' "$T" > "$OFFLOAD_CONFIG"
+out=$(OFFLOAD_MODEL= OFFLOAD_HOST=claude ag ask "plan route gone")
+expect_has "claude -p unavailable → the API-key backup answers" "$out" "CODEX-STUB: plan route gone"
+expect_has "backup answer is labelled with the real model" "$out" "[offload ask · codex:gpt-6-luna"
+printf '{"agents":{"claude":{"bin":"%s/no-claude"}},"models":{"default":"@host","fallback":["@host-api"]}}' "$T" > "$OFFLOAD_CONFIG"
+out=$(OFFLOAD_MODEL= OFFLOAD_HOST=claude ag ask "no key either"); rc=$?
+[ "$rc" != 0 ] && ok "no CLI and no key → fails cleanly (exit $rc)" || bad "no CLI and no key → fails cleanly"
+expect_has "the error says the backup has no key yet" "$out" "@host-api: no API key for anthropic yet"
+rm -f "$OFFLOAD_CONFIG"
+section "offload key (API keys, never shown)"
+out=$(printf 'sk-test-abc123\n' | "$OFFLOAD" key anthropic 2>&1); rc=$?
+expect_eq "key: stores from stdin" "$rc" 0
+expect_eq "key: credentials file is private (600)" "$(stat -c '%a' "$OFFLOAD_CREDENTIALS" 2>/dev/null || stat -f '%Lp' "$OFFLOAD_CREDENTIALS")" "600"
+expect_eq "key: stored under the backend name" "$(jq -r .anthropic "$OFFLOAD_CREDENTIALS")" "sk-test-abc123"
+expect_has "key: tells which harnesses it backs up" "$out" "backup for claude"
+out=$("$OFFLOAD" key 2>&1)
+expect_has "key: list shows it as stored" "$out" "anthropic    stored"
+expect_not "key: list never prints the key" "$out" "sk-test-abc123"
+out=$(OFFLOAD_HOST=claude "$OFFLOAD" model fallback @host-api 2>&1)
+expect_not "@host-api: no warning once the key is stored" "$out" "warning"
+"$OFFLOAD" key anthropic sk-in-argv </dev/null >/dev/null 2>&1; expect_eq "key: refuses a key in argv (shell history)" "$?" 2
+printf '\n' | "$OFFLOAD" key anthropic >/dev/null 2>&1; expect_eq "key: refuses an empty key" "$?" 2
+"$OFFLOAD" key nope </dev/null >/dev/null 2>&1; expect_eq "key: unknown backend → exit 2" "$?" 2
+out=$("$OFFLOAD" key anthropic --remove 2>&1)
+expect_eq "key --remove deletes it" "$(jq -r '.anthropic // "gone"' "$OFFLOAD_CREDENTIALS")" "gone"
+rm -f "$OFFLOAD_CREDENTIALS" "$OFFLOAD_CONFIG"
+
 # ------------------------------------------------------------ http connector
 section "http connector (mock OpenAI-compatible endpoint)"
 HAVE_TS=false
@@ -442,7 +645,20 @@ if command -v python3 >/dev/null 2>&1 && command -v curl >/dev/null 2>&1; then
   else
     printf '  skip  explore over HTTP (needs the TypeScript CLI)\n'
   fi
+  jq --arg u "http://127.0.0.1:$HPORT/v1" '.tasks = {hq: {prompt: "HTTPTASK rules here.", model: "mock:echo"}, hx: {prompt: "HTTPEXPLORE rules here.", tools: "read", model: "mock:echo"}}' "$OFFLOAD_CONFIG" > "$T/c.json" && mv "$T/c.json" "$OFFLOAD_CONFIG"
+  out=$(OFFLOAD_TS_CLI=false NO_PROXY='127.0.0.1,localhost' "$OFFLOAD" task hq small.txt 2>&1)
+  expect_has "http: custom task sends its own instructions" "$out" "SYSTEM_HEAD: HTTPTASK rules here."
+  expect_has "http: custom task footer" "$out" "[offload task hq · mock:echo"
+  if $HAVE_TS; then
+    out=$(NO_PROXY='127.0.0.1,localhost' "$OFFLOAD" task hx 2>&1)
+    expect_has "http: explore-type custom task keeps its instructions (via the TS worker)" "$out" "SYSTEM_HEAD: HTTPEXPLORE rules here."
+    expect_has "http: explore-type custom task gets read-only tools" "$out" "tools=glob,grep,list_dir,read_file"
+  fi
   expect_not "http: secret content never sent" "$(cat "$T/http-mock.log")" "SECRET=abc"
+  jq '.host_api_models = {claude: "mock:echo"}' "$OFFLOAD_CONFIG" > "$T/c.json" && mv "$T/c.json" "$OFFLOAD_CONFIG"
+  out=$(OFFLOAD_HOST=claude NO_PROXY='127.0.0.1,localhost' "$OFFLOAD" ask -m @host-api "backup over http" 2>&1)
+  expect_has "http: @host-api reaches the endpoint" "$out" "MOCK-REPLY"
+  expect_has "http: @host-api footer names the real model" "$out" "[offload ask · mock:echo"
   "$OFFLOAD" ask -m nokey:whatever "hi" >/dev/null 2>&1; rc=$?
   [ "$rc" != 0 ] && ok "http: unknown backend prefix fails cleanly (exit $rc)" || bad "http: unknown backend prefix fails cleanly"
   rm -f "$OFFLOAD_CONFIG"
@@ -532,6 +748,14 @@ expect_has "post-bash: big output replaced by digest" "$d" "STATUS: success"
 expect_has "post-bash: digest keeps verbatim key lines" "$d" "src/x.ts:4:2"
 expect_eq "post-bash: keeps the tool_response shape" "$(printf '%s' "$r" | jq -c '.hookSpecificOutput.updatedToolOutput | keys')" '["interrupted","isImage","stderr","stdout"]'
 expect_eq "post-bash: small output untouched" "$(post "make build" "ok")" ""
+# hooks.digest_timeout_seconds 0: instant digest, the worker is never called
+: > "$T/stub.log"
+printf '{"hooks":{"digest_timeout_seconds":0}}' > "$OFFLOAD_CONFIG"
+d=$(STUB_LOG="$T/stub.log" STUB_ANSWER="STATUS: from model" post "make build" "$big_out" | jq -r '.hookSpecificOutput.updatedToolOutput.stdout')
+rm -f "$OFFLOAD_CONFIG"
+expect_has "post-bash: digest_timeout_seconds 0 still digests" "$d" "src/x.ts:4:2"
+expect_not "post-bash: digest_timeout_seconds 0 skips the model" "$d" "STATUS: from model"
+expect_eq "post-bash: digest_timeout_seconds 0 never starts the worker" "$(wc -l < "$T/stub.log" | tr -d ' ')" 0
 expect_eq "post-bash: viewer commands untouched (grep)" "$(post "grep -rn unit ." "$big_out")" ""
 expect_eq "post-bash: last pipe segment decides (| head)" "$(post "make build 2>&1 | head -700" "$big_out")" ""
 expect_eq "post-bash: background commands untouched" "$(hook post-bash "$(jq -nc --arg o "$big_out" '{tool_input: {command: "make", run_in_background: true}, tool_response: {stdout: $o}}')")" ""
@@ -544,6 +768,54 @@ r=$(OFFLOAD_OPENCODE_BIN=/nonexistent post "make build" "$big_out")
 expect_has "post-bash: without opencode still digests deterministically" "$(printf '%s' "$r" | jq -r '.hookSpecificOutput.updatedToolOutput.stdout')" "key lines, verbatim"
 r=$(hook session-start '{"source":"startup"}')
 expect_has "session-start: injects guide" "$(printf '%s' "$r" | jq -r '.hookSpecificOutput.additionalContext')" "offload read -q"
+expect_not "session-start: no task line without tasks" "$(printf '%s' "$r" | jq -r '.hookSpecificOutput.additionalContext')" "own tasks"
+printf '{"tasks":{"review-sql":{"description":"Find N+1\\nqueries","prompt":"p"},"Bad Name":{"prompt":"p"}}}' > "$OFFLOAD_CONFIG"
+g=$(hook session-start '{"source":"startup"}' | jq -r '.hookSpecificOutput.additionalContext')
+expect_has "session-start: lists the user's own tasks" "$g" "task NAME [PATH...] — the user's own tasks: review-sql (Find N+1 queries)."
+expect_not "session-start: skips invalid task names" "$g" "Bad Name"
+if $HAVE_TS_NODE; then
+  g=$(printf '{"source":"startup"}' | node "$PLUGIN/dist/cli.js" hook codex session-start 2>/dev/null)
+  expect_has "session-start (TS engine): lists the user's own tasks" "$g" "the user's own tasks: review-sql (Find N+1 queries)."
+  # the hook bundle the launcher uses (dist/hook.cjs) answers the same
+  g=$(printf '{"source":"startup"}' | "$PLUGIN/bin/offload-ts" hook codex session-start 2>/dev/null)
+  expect_has "session-start (TS hook bundle via offload-ts): lists the user's own tasks" "$g" "the user's own tasks: review-sql (Find N+1 queries)."
+fi
+rm -f "$OFFLOAD_CONFIG"
+if $HAVE_TS_NODE && [ -f "$PLUGIN/dist/hook.cjs" ]; then
+  ts_hook() { printf '%s' "$2" | "$PLUGIN/bin/offload-ts" hook claude "$1" 2>/dev/null; }
+  big_read=$(jq -nc --arg c "$P" '{cwd: $c, tool_name: "Read", tool_input: {file_path: "big.ts"}}')
+  expect_eq "pre-read (TS hook bundle): big file denied" "$(decision "$(ts_hook pre-read "$big_read")")" deny
+  printf 'one\ntwo\n' > small.txt
+  expect_eq "pre-read (TS hook bundle): small file passes" "$(ts_hook pre-read "$(jq -nc --arg c "$P" '{cwd: $c, tool_name: "Read", tool_input: {file_path: "small.txt"}}')"; echo "rc=$?")" "rc=0"
+  # switched off, the launcher answers without starting Node at all
+  mkdir -p "$T/fakenode" && printf '#!/bin/sh\ntouch "%s/node-ran"\n' "$T" > "$T/fakenode/node" && chmod +x "$T/fakenode/node"
+  out=$(printf '%s' "$big_read" | OFFLOAD_DISABLE=1 PATH="$T/fakenode:$PATH" "$PLUGIN/bin/offload-ts" hook claude pre-read; echo "rc=$?")
+  expect_eq "pre-read (TS hook bundle): OFFLOAD_DISABLE=1 says nothing" "$out" "rc=0"
+  expect_eq "pre-read (TS hook bundle): OFFLOAD_DISABLE=1 starts no Node" "$([ -e "$T/node-ran" ] && echo ran || echo no)" no
+  printf '%s' "$big_read" | PATH="$T/fakenode:$PATH" "$PLUGIN/bin/offload-ts" hook claude pre-read >/dev/null 2>&1
+  expect_eq "pre-read (TS hook bundle): enabled, the launcher does start Node" "$([ -e "$T/node-ran" ] && echo ran || echo no)" ran
+  expect_has "post-bash (TS hook bundle): long output digested" "$(ts_hook post-bash "$(jq -nc --arg c "$P" --rawfile o big.log '{cwd: $c, tool_name: "Bash", tool_input: {command: "make", description: "Build"}, tool_response: {stdout: $o, stderr: ""}}')")" "updatedToolOutput"
+  : > "$T/stub.log"
+  printf '{"hooks":{"digest_timeout_seconds":0}}' > "$OFFLOAD_CONFIG"
+  d=$(STUB_LOG="$T/stub.log" ts_hook post-bash "$(jq -nc --arg c "$P" --rawfile o big.log '{cwd: $c, tool_name: "Bash", tool_input: {command: "make", description: "Build"}, tool_response: {stdout: $o, stderr: ""}}')")
+  rm -f "$OFFLOAD_CONFIG"
+  expect_has "post-bash (TS hook bundle): digest_timeout_seconds 0 still digests" "$d" "updatedToolOutput"
+  expect_eq "post-bash (TS hook bundle): digest_timeout_seconds 0 never starts the worker" "$(wc -l < "$T/stub.log" | tr -d ' ')" 0
+fi
+# config cache: an edit applies on the very next hook, even within the same second
+big_read=$(jq -nc --arg c "$P" '{cwd: $c, tool_name: "Read", tool_input: {file_path: "big.ts"}}')
+printf '{"hooks":{"read_threshold_lines":100000,"read_threshold_tokens":1000000}}' > "$OFFLOAD_CONFIG"
+expect_eq "config cache: raised threshold lets the big read pass" "$(decision "$(hook pre-read "$big_read")")" none
+printf '{"hooks":{"read_threshold_lines":100}}' > "$OFFLOAD_CONFIG"
+expect_eq "config cache: the next edit applies at once" "$(decision "$(hook pre-read "$big_read")")" deny
+# the on-disk cache is the bash engine's (it saves a jq run per hook); the TS engine parses in-process
+if [ "$OFFLOAD" = "$PLUGIN/bin/offload" ]; then
+  cfile=$(ls "$OFFLOAD_STATE_DIR"/cache/config* 2>/dev/null | head -1)
+  expect_eq "config cache: file is private (0600)" "$( [ -n "$cfile" ] && ls -l "$cfile" | cut -c1-10)" "-rw-------"
+fi
+printf '{"hooks": ' > "$OFFLOAD_CONFIG"
+expect_has "config cache: a broken config is still reported" "$(hook pre-read "$big_read" 2>&1 >/dev/null)" "ignoring invalid JSON config"
+rm -f "$OFFLOAD_CONFIG"
 r=$(OFFLOAD_OPENCODE_BIN=/nonexistent hook session-start '{"source":"startup"}')
 expect_has "session-start: warns user when no backend is available" "$(printf '%s' "$r" | jq -r '.systemMessage')" "no worker backend available"
 

@@ -80,7 +80,7 @@ class H(BaseHTTPRequestHandler):
             key = next((k for k in spec.get("properties", {}) if "path" in k.lower()), "filePath")
             return self.stream(tool_call=("read", {key: read_path}), stream=body.get("stream", False))
         text = (f"MOCK-REPLY chars={len(last)} system_chars={len(system)} tools={','.join(sorted(tools)) or 'none'} "
-                f"tool_results={len(tool_results)}\nFIRST_LINE: {last.splitlines()[0] if last else ''}\nLAST_LINE: {last.splitlines()[-1] if last else ''}")
+                f"tool_results={len(tool_results)}\nSYSTEM_HEAD: {system[:48]}\nFIRST_LINE: {last.splitlines()[0] if last else ''}\nLAST_LINE: {last.splitlines()[-1] if last else ''}")
         if tool_results:
             text += "\nTOOL_RESULT: " + str(tool_results[-1].get("content"))[:300]
         self.stream(text=text, stream=body.get("stream", False))

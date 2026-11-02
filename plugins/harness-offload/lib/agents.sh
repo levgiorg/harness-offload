@@ -42,6 +42,17 @@ co_host_model() {
   printf '%s' "$m"
 }
 
+# The same harness's model family through an API key, for @host-api: the
+# backup when the harness's own CLI route stops working (logged out, headless
+# use blocked, plan limits). config host_api_models overrides the defaults.
+co_host_api_model() {
+  local host m
+  host=$(co_detect_host) || return 1
+  m=$(co_cfg ".host_api_models.$host")
+  [ -z "$m" ] && m=$(jq -r --arg h "$host" '.host_api_models[$h] // empty' "$CO_ROOT/config/connectors.json" 2>/dev/null)
+  printf '%s' "$m"
+}
+
 # ---------------------------------------------------------------- routing
 
 # co_route REF TASK — call directly (not in $(…)); sets
@@ -61,6 +72,28 @@ co_route() {
         return $CO_E_USAGE
       fi
       case "$m" in @host|@self) m=@default ;; esac
+      co_route "$m" "$task"
+      return $? ;;
+    @host-api)
+      local h ep name
+      if ! h=$(co_detect_host); then
+        CO_OC_ERROR="@host-api: cannot tell which agent harness is calling (set OFFLOAD_HOST)"
+        return $CO_E_USAGE
+      fi
+      m=$(co_host_api_model)
+      case "$m" in
+        ''|@*) CO_OC_ERROR="@host-api: $h has no API-key backup (set host_api_models.$h to a BACKEND:MODEL)"; return $CO_E_USAGE ;;
+      esac
+      # skipped (not an error worth a cooldown) until a key is there
+      name=${m%%:*}
+      ep=$(co_endpoint_json "$name")
+      if [ -n "$ep" ] && [ -z "$(co_endpoint_key "$name" "$ep")" ]; then
+        case "$(printf '%s' "$ep" | jq -r .base_url)" in
+          *127.0.0.1*|*localhost*) ;;
+          *) CO_OC_ERROR="@host-api: no API key for $name yet (offload key $name, or export $(printf '%s' "$ep" | jq -r '.api_key_env // "its key"'))"
+             return $CO_E_USAGE ;;
+        esac
+      fi
       co_route "$m" "$task"
       return $? ;;
     ''|@default)
@@ -144,15 +177,28 @@ co_spawn_wait() {
     OFFLOAD_DISABLE=1 exec "$@"
   ) < "$in" > "$out" 2> "$err" &
   pid=$!
-  while kill -0 "$pid" 2>/dev/null; do
-    if [ "$(co_elapsed "$start")" -ge "$timeout" ]; then
-      kill "$pid" 2>/dev/null; sleep 1; kill -9 "$pid" 2>/dev/null; wait "$pid" 2>/dev/null
-      CO_RUN_RC=124
-      return 0
-    fi
-    sleep 0.3
-  done
+  # The deadline is a background watchdog; this shell waits on the worker
+  # itself, so its answer is read the moment it exits (no polling delay).
+  local why wd
+  co_tmp why
+  (
+    trap 'exit 0' TERM
+    while kill -0 "$pid" 2>/dev/null; do
+      if [ "$(co_elapsed "$start")" -ge "$timeout" ]; then
+        printf 'timeout\n' > "$why"
+        kill "$pid" 2>/dev/null; sleep 1; kill -9 "$pid" 2>/dev/null
+        exit 0
+      fi
+      # (sleep in the background: a TERM is then handled at once, not after it)
+      sleep 0.3 & wait $!
+    done
+  ) </dev/null >/dev/null 2>&1 &
+  # (no inherited stdout: a hook's caller waits until every holder closes it)
+  wd=$!
   wait "$pid"; CO_RUN_RC=$?
+  kill "$wd" 2>/dev/null; wait "$wd" 2>/dev/null
+  [ "$(cat "$why" 2>/dev/null)" = timeout ] && CO_RUN_RC=124
+  return 0
 }
 
 # The last JSON object a CLI printed, even when log lines precede a
@@ -166,6 +212,14 @@ co_json_last() {
 }
 
 # Turns an error text + exit code into CO_OC_ERROR and a return code.
+# What a CLI said on stderr, short: its first and last non-empty lines (the
+# reason is often first, e.g. "No API key found", with paths or hints after).
+# Twin: errSummary in agents.ts.
+co_err_summary() {
+  LC_ALL=C awk 'NF { sub(/^[ \t]+/, ""); sub(/[ \t]+$/, ""); if (first == "") first = $0; last = $0 }
+    END { s = first; if (last != first) s = s " … " last; print substr(s, 1, 400) }' "$1" 2>/dev/null
+}
+
 co_agent_fail() {
   CO_OC_ERROR="$1"
   [ "${2:-}" = 124 ] && { CO_OC_ERROR="timed out after ${3:-?}s"; return $CO_E_TIMEOUT; }
@@ -182,7 +236,7 @@ co_agent_attempt() {
     CO_OC_ERROR="$bin not found on PATH (needed for $backend:… models)"
     return $CO_E_NOOC
   fi
-  sys=$(cat "$CO_ROOT/prompts/$task.md")
+  sys=$(cat "$(co_prompt_path "$task")")
   timeout=$(co_attempt_timeout)
   co_tmp out; co_tmp err; co_tmp merged
   { printf '<instructions>\n%s\n</instructions>\n\n' "$sys"; cat "$prompt_file"; } > "$merged"
@@ -277,35 +331,37 @@ EOF
       text=$(jq -rs 'map(select(type == "object")) | last | if .is_error then empty else (.result // empty) end' "$out" 2>/dev/null)
       if [ -z "$text" ]; then
         msg=$(jq -rs 'map(select(type == "object")) | last | .result // empty' "$out" 2>/dev/null)
-        co_agent_fail "$backend: ${msg:-$(tail -c 300 "$err")}"; return $?
+        co_agent_fail "$backend: ${msg:-$(co_err_summary "$err")}"; return $?
       fi
       u=$(jq -rs 'map(select(type == "object")) | last | (.total_cost_usd // 0) as $c | .usage // {} | [((.input_tokens // .inputTokens // 0) + (.cache_read_input_tokens // .cacheReadTokens // 0) + (.cache_creation_input_tokens // 0)), (.output_tokens // .outputTokens // 0), $c] | map(tostring) | join(" ")' "$out" 2>/dev/null) ;;
     codex)
       text=$(jq -rRs 'split("\n") | map(fromjson? // empty) | map(select(.type == "item.completed" and .item.type == "agent_message") | .item.text) | last // empty' "$out" 2>/dev/null)
       if [ -z "$text" ]; then
         msg=$(jq -rRs 'split("\n") | map(fromjson? // empty) | map(select(.type == "turn.failed" or .type == "error") | (.error.message // .message // tostring)) | last // empty' "$out" 2>/dev/null)
-        co_agent_fail "codex: ${msg:-$(tail -c 300 "$err")}"; return $?
+        co_agent_fail "codex: ${msg:-$(co_err_summary "$err")}"; return $?
       fi
       u=$(jq -rRs 'split("\n") | map(fromjson? // empty) | map(select(.type == "turn.completed") | .usage) | [(map((.input_tokens // 0) + (.cached_input_tokens // 0)) | add // 0), (map(.output_tokens // 0) | add // 0)] | map(tostring) | join(" ")' "$out" 2>/dev/null) ;;
     gemini)
       text=$(jq -r 'if .error then empty else (.response // empty) end' "$out" 2>/dev/null)
       if [ -z "$text" ]; then
         msg=$(jq -r '.error.message // .error.type // empty' "$out" 2>/dev/null)
+        # it reports startup errors (e.g. no login) as JSON on stderr
+        [ -z "$msg" ] && msg=$(co_json_last "$err" | jq -r '.error.message // .error.type // empty' 2>/dev/null)
         [ "$rc" = 41 ] && { CO_OC_ERROR="gemini: ${msg:-authentication required}"; return $CO_E_AUTH; }
-        co_agent_fail "gemini: ${msg:-$(tail -c 300 "$err")}"; return $?
+        co_agent_fail "gemini: ${msg:-$(co_err_summary "$err")}"; return $?
       fi
       u=$(jq -r '[(.stats.models // {} | [.[] | .tokens.prompt // 0] | add // 0), (.stats.models // {} | [.[] | .tokens.candidates // 0] | add // 0)] | map(tostring) | join(" ")' "$out" 2>/dev/null) ;;
     pi)
       msg=$(jq -rRs 'split("\n") | map(fromjson? // empty) | map(select(.type == "message_end" and .message.role == "assistant" and (.message.stopReason == "error" or .message.stopReason == "aborted")) | (.message.errorMessage // .message.stopReason)) | last // empty' "$out" 2>/dev/null)
       [ -n "$msg" ] && { co_agent_fail "pi: $msg"; return $?; }
       text=$(jq -rRs 'split("\n") | map(fromjson? // empty) | map(select(.type == "message_end" and .message.role == "assistant") | (.message.content // [] | map(select(.type == "text") | .text) | join(""))) | map(select(explode | map(select(. > 32)) | length > 0)) | last // empty' "$out" 2>/dev/null)
-      if [ -z "$text" ]; then co_agent_fail "pi: $(tail -c 300 "$err")"; return $?; fi
+      if [ -z "$text" ]; then co_agent_fail "pi: $(co_err_summary "$err")"; return $?; fi
       u=$(jq -rRs 'split("\n") | map(fromjson? // empty) | map(select(.type == "message_end" and .message.role == "assistant") | .message.usage // {}) | [(map((.input // 0) + (.cacheRead // 0)) | max // 0), (map(.output // 0) | add // 0)] | map(tostring) | join(" ")' "$out" 2>/dev/null) ;;
     copilot)
       text=$(jq -rRs 'split("\n") | map(fromjson? // empty) | map(select(.type == "assistant.message") | (.data.content // "")) | map(select(explode | map(select(. > 32)) | length > 0)) | last // empty' "$out" 2>/dev/null)
       if [ -z "$text" ]; then
         msg=$(jq -rRs 'split("\n") | map(fromjson? // empty) | map(select(.type == "session.error") | "\(.data.errorType // "") \(.data.message // "")") | last // empty' "$out" 2>/dev/null)
-        co_agent_fail "copilot: ${msg:-$(tail -c 300 "$err")}"; return $?
+        co_agent_fail "copilot: ${msg:-$(co_err_summary "$err")}"; return $?
       fi
       u="0 0" ;;
     qwen)
@@ -314,13 +370,13 @@ EOF
       text=$(jq -r 'if .is_error then empty else (.result // empty) end' "$out.r" 2>/dev/null)
       if [ -z "$text" ]; then
         msg=$(jq -r '.result // .error.message // .error // empty' "$out.r" 2>/dev/null)
-        co_agent_fail "qwen: ${msg:-$(tail -c 300 "$err")}"; return $?
+        co_agent_fail "qwen: ${msg:-$(co_err_summary "$err")}"; return $?
       fi
       u=$(jq -r '.usage // {} | [((.input_tokens // 0) + (.cache_read_input_tokens // 0)), (.output_tokens // 0)] | map(tostring) | join(" ")' "$out.r" 2>/dev/null) ;;
     crush)
       text=$(cat "$out")
       if ! printf '%s' "$text" | grep -q '[^[:space:]]'; then
-        co_agent_fail "crush: $(LC_ALL=C tr -s ' \n' ' ' < "$err" | tail -c 300)"; return $?
+        co_agent_fail "crush: $(co_err_summary "$err")"; return $?
       fi
       u="0 0" ;;
   esac
@@ -352,13 +408,13 @@ co_http_attempt() {
   printf '%s' "$ep" | jq -r '.headers // {} | to_entries[] | "\(.key): \(.value)"' > "$hdr" 2>/dev/null
   printf 'content-type: application/json\n' >> "$hdr"
   if [ "$type" = anthropic ]; then
-    jq -n --arg m "$model" --rawfile sys "$CO_ROOT/prompts/$task.md" --rawfile p "$prompt_file" \
+    jq -n --arg m "$model" --rawfile sys "$(co_prompt_path "$task")" --rawfile p "$prompt_file" \
       '{model: $m, max_tokens: 8192, system: $sys, messages: [{role: "user", content: $p}]}' > "$body"
     printf 'anthropic-version: 2023-06-01\n' >> "$hdr"
     [ -n "$key" ] && printf 'x-api-key: %s\n' "$key" >> "$hdr"
     url="$base/v1/messages"
   else
-    jq -n --arg m "$model" --arg v "$variant" --rawfile sys "$CO_ROOT/prompts/$task.md" --rawfile p "$prompt_file" \
+    jq -n --arg m "$model" --arg v "$variant" --rawfile sys "$(co_prompt_path "$task")" --rawfile p "$prompt_file" \
       '{model: $m, messages: [{role: "system", content: $sys}, {role: "user", content: $p}]} + (if $v != "" then {reasoning_effort: $v} else {} end)' > "$body"
     [ -n "$key" ] && printf 'authorization: Bearer %s\n' "$key" >> "$hdr"
     url="$base/chat/completions"

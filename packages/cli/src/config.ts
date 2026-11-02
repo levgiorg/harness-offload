@@ -45,7 +45,7 @@ export function resetConfig(): void {
  * switch privacy guards off; it can only tighten secret_globs. Listing the
  * project in the user config's trusted_projects lifts this. (Twin:
  * CO_PROJECT_FILTER in lib/common.sh.) */
-export const SAFE_PROJECT_KEYS = ["models", "variants", "read", "explore", "digest", "hooks", "enabled", "log_retention_days"];
+export const SAFE_PROJECT_KEYS = ["models", "variants", "read", "explore", "digest", "hooks", "enabled", "log_retention_days", "tasks"];
 const SAFE_OPENCODE_KEYS = ["timeout_seconds", "max_stream_errors"];
 
 function isTrustedProject(base: Obj): boolean {
@@ -147,6 +147,24 @@ export function cfgBool(path: string, def: boolean): boolean {
 export function cfgList(path: string): string[] {
   const v = cfg(path);
   return Array.isArray(v) ? v.map(String) : [];
+}
+
+/** Writes (value) or removes (undefined) a key in the user or project config file. */
+export function writeConfigKey(key: string, value: Json | undefined, project = false): string {
+  const file = project ? projectConfigPath() : userConfigPath();
+  let current: Obj = {};
+  if (existsSync(file)) {
+    const parsed = readJsonFile(file);
+    if (!parsed) throw new Error(`${file} is not valid JSON; fix it first`);
+    current = parsed;
+  } else if (value === undefined) return file;
+  if (value === undefined) {
+    const parts = key.split(".").filter(Boolean);
+    const parent = getPath(current, parts.slice(0, -1).join("."));
+    if (isObj(parent)) delete parent[parts[parts.length - 1]];
+  } else setPath(current, key, value);
+  writeConfigFile(file, current);
+  return file;
 }
 
 /** Writes key=value into the user (or project) config file, creating it. */

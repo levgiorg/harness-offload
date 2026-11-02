@@ -6,6 +6,7 @@ import { Type } from "typebox";
 process.env.OFFLOAD_HOST ||= "pi";
 import { available, bashGuard, postBash, readGuard, sessionGuide } from "../hooks/logic.ts";
 import { runCli, TOOLS } from "./spawn-cli.ts";
+import { taskSummary } from "../tasks.ts";
 
 const textOf = (content: any): string => (Array.isArray(content) ? content.map((c) => (c?.type === "text" ? c.text : "")).join("") : String(content ?? ""));
 
@@ -59,11 +60,13 @@ export default function harnessOffload(pi: any): void {
     }),
   );
 
+  const tasks = taskSummary();
   for (const [name, t] of Object.entries(TOOLS)) {
+    if (name === "offload_task" && !tasks) continue;
     pi.registerTool({
       name,
       label: name.replace("offload_", "Offload "),
-      description: t.description,
+      description: name === "offload_task" ? `${t.description} Tasks: ${tasks}.` : t.description,
       parameters: schema(t.schema as Record<string, string>),
       async execute(_id: string, params: any, signal: AbortSignal | undefined, _onUpdate: unknown, ctx: any) {
         const r = await runCli(t.args(params), ctx?.cwd ?? process.cwd(), "", signal);

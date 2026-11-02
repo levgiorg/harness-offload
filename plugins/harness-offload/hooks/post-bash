@@ -6,21 +6,36 @@
 # Failed commands (non-zero exit) go to PostToolUseFailure, whose output
 # cannot be replaced; Claude Code already trims those to ~10K chars. Use
 # `offload run` for noisy commands that are expected to fail.
-. "$(cd "$(dirname "$0")/.." && pwd)/lib/hook.sh"
-. "$CO_ROOT/lib/digest.sh"
+case "$0" in */*) . "${0%/*}/../lib/hook.sh" ;; *) . ../lib/hook.sh ;; esac
 
 co_cfg_bool '.enabled' true || exit 0
 co_cfg_bool '.hooks.summarize_bash_output' true || exit 0
 # Qwen Code has no documented way to replace a tool result
 [ "$HK_DIALECT" = qwen ] && exit 0
-hk_skip_subagent && exit 0
 
-cmd=$(hk_get '.tool_input.command')
+cmd=$HK_COMMAND
 [ -z "$cmd" ] && exit 0
 case "$cmd" in OFFLOAD_RAW=1*) exit 0 ;; esac
-[ "$(hk_get '.tool_input.run_in_background')" = "true" ] && exit 0
-[ "$(hk_get '.tool_response.interrupted')" = "true" ] && exit 0
-[ "$(hk_get '.tool_response.isImage')" = "true" ] && exit 0
+[ "$HK_BACKGROUND" = "true" ] && exit 0
+[ "$HK_INTERRUPTED" = "true" ] && exit 0
+[ "$HK_IS_IMAGE" = "true" ] && exit 0
+
+max_lines=0 max_bytes=0 budget=0   # set by co_cfgi
+co_cfgi max_lines '.hooks.bash_output_threshold_lines' 250
+co_cfgi max_bytes '.hooks.bash_output_threshold_bytes' 20000
+# Claude Code caps tool_response.stdout at ~30K chars and keeps the whole
+# output in persistedOutputPath — prefer that, or the tail (where errors
+# and summaries live) would be lost. It also shows Claude only a 2KB
+# preview of what we return in that case, so the digest goes compact.
+persisted=$HK_PERSISTED
+[ -n "$persisted" ] && [ -r "$persisted" ] || persisted=""
+# Most commands print little: decide from the sizes measured while parsing
+# the input, before any file is written.
+if [ -z "$persisted" ] && [ "$HK_OUT_LINES" -ge 0 ] &&
+  [ "$HK_OUT_LINES" -le "$max_lines" ] && [ "$HK_OUT_BYTES" -le "$max_bytes" ]; then
+  exit 0
+fi
+hk_skip_subagent && exit 0
 
 # Commands whose output Claude needs verbatim: judge by the last pipeline
 # segment, since that is what produced the output.
@@ -28,13 +43,9 @@ last=$(printf '%s\n' "$cmd" | tail -n 1 | awk '{ n = split($0, p, /\|\||&&|;|\|/
 never=$(co_cfg '.hooks.bash_never_summarize')
 if [ -n "$never" ] && printf '%s\n' "$last" | grep -qE -- "$never"; then exit 0; fi
 
-# Claude Code caps tool_response.stdout at ~30K chars and keeps the whole
-# output in persistedOutputPath — prefer that, or the tail (where errors
-# and summaries live) would be lost. It also shows Claude only a 2KB
-# preview of what we return in that case, so the digest goes compact.
-persisted=$(hk_get '.tool_response.persistedOutputPath')
+. "$CO_ROOT/lib/digest.sh"
 co_tmp outf
-if [ -n "$persisted" ] && [ -r "$persisted" ]; then
+if [ -n "$persisted" ]; then
   cp "$persisted" "$outf" 2>/dev/null || exit 0
   export OFFLOAD_DIGEST_COMPACT=1
 else
@@ -44,18 +55,20 @@ printf '%s' "$HK_INPUT" | jq -r '
 fi
 
 lines=$(co_file_lines "$outf"); bytes=$(co_file_bytes "$outf")
-[ "$lines" -le "$(co_cfg_int '.hooks.bash_output_threshold_lines' 250)" ] &&
-  [ "$bytes" -le "$(co_cfg_int '.hooks.bash_output_threshold_bytes' 20000)" ] && exit 0
+[ "$lines" -le "$max_lines" ] && [ "$bytes" -le "$max_bytes" ] && exit 0
 
-# The model is optional here: without opencode (or within cooldown) the
-# digest is purely deterministic, which still beats a 30K-char dump.
-co_available || export OFFLOAD_NO_MODEL=1
-# total budget for the model summary, fallbacks included (host hook timeouts)
-CO_OC_DEADLINE=$(( $(co_now) + $(co_cfg_int '.hooks.digest_timeout_seconds' 90) ))
+# The model is optional here: without a worker (or within cooldown) the
+# digest is purely deterministic, which still beats a 30K-char dump. The agent
+# waits for this hook, so the model gets hooks.digest_timeout_seconds in all,
+# fallbacks included; 0 = no model in hooks (the digest is then instant).
+co_cfgi budget '.hooks.digest_timeout_seconds' 20
+[ "$budget" -eq 0 ] && export OFFLOAD_NO_MODEL=1
+[ "${OFFLOAD_NO_MODEL:-}" = 1 ] || co_available || export OFFLOAD_NO_MODEL=1
+CO_OC_DEADLINE=$(( $(co_now) + budget ))
 
 log=$(co_new_log "$cmd")
 cp "$outf" "$log" 2>/dev/null || exit 0
-focus=$(hk_get '.tool_input.description')
+focus=$HK_DESCRIPTION
 digest=$(co_digest "$log" "$cmd" "0" "$focus" hook) || exit 0
 [ -z "$digest" ] && exit 0
 

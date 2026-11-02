@@ -3,19 +3,20 @@
 #  1. catches cat/nl/bat/less/more/head/tail/sed -n that would dump a large
 #     file into context (the Bash side door around the Read guard);
 #  2. optionally (hooks.autowrap) routes noisy commands through `offload run`.
-. "$(cd "$(dirname "$0")/.." && pwd)/lib/hook.sh"
-. "$CO_ROOT/lib/outline.sh"
+#
+# Runs before every Bash call: what the command is decides first; whether a
+# worker is available is only asked once there is something to act on.
+case "$0" in */*) . "${0%/*}/../lib/hook.sh" ;; *) . ../lib/hook.sh ;; esac
 
-co_available || exit 0
-hk_skip_subagent && exit 0
-
-cmd=$(hk_get '.tool_input.command')
+cmd=$HK_COMMAND
 [ -z "$cmd" ] && exit 0
 case "$cmd" in OFFLOAD_RAW=1*|*offload\ *) exit 0 ;; esac
+co_cfg_bool '.enabled' true || exit 0
 
-chunk=$(co_cfg_int '.hooks.read_max_chunk_lines' 600)
-max_lines=$(co_cfg_int '.hooks.read_threshold_lines' 600)
-max_tokens=$(co_cfg_int '.hooks.read_threshold_tokens' 6000)
+chunk=0 max_lines=0 max_tokens=0   # set by co_cfgi
+co_cfgi chunk '.hooks.read_max_chunk_lines' 600
+co_cfgi max_lines '.hooks.read_threshold_lines' 600
+co_cfgi max_tokens '.hooks.read_threshold_tokens' 6000
 
 # ---- 1. large-file dumps (only simple commands: pipes/redirects/chains are
 # assumed to be deliberate and are left alone)
@@ -56,8 +57,6 @@ check_dump() {
 
   for f in "${files[@]}"; do
     [ -f "$f" ] || continue
-    hk_ignored "$f" && continue
-    hk_not_for_offload "$f" && continue
     lines=$(co_file_lines "$f"); bytes=$(co_file_bytes "$f"); tokens=$(co_est_tokens "$bytes")
     case "$prog" in
       head|tail)
@@ -78,7 +77,11 @@ check_dump() {
         span=$lines ;;
     esac
     [ "$span" -le "$max_lines" ] && [ "$lines" -le "$max_lines" ] && [ "$tokens" -le "$max_tokens" ] && continue
-    hk_event bash_read_blocked "$(jq -nc --argjson l "$lines" --argjson t "$tokens" --arg p "$prog" '{lines: $l, tokens: $t, prog: $p}')"
+    hk_ignored "$f" && continue
+    hk_not_for_offload "$f" && continue
+    hk_may_act || return 0
+    . "$CO_ROOT/lib/outline.sh"
+    hk_event bash_read_blocked "{\"lines\":$lines,\"tokens\":$tokens,\"prog\":\"$prog\"}"
     hk_guard "$(hk_big_file_message "$f" "$lines" "$tokens" "\`$prog\`")"
   done
   return 0
@@ -89,7 +92,8 @@ check_dump
 if co_cfg_bool '.hooks.autowrap' false; then
   pat=$(co_cfg '.hooks.autowrap_pattern')
   if [ -n "$pat" ] && printf '%s\n' "$cmd" | grep -qE -- "$pat"; then
-    [ "$(hk_get '.tool_input.run_in_background')" = "true" ] && exit 0
+    [ "$HK_BACKGROUND" = "true" ] && exit 0
+    hk_may_act || exit 0
     wrapped="$HK_CLI run -c $(co_shquote "$cmd")"
     hk_event autowrap
     printf '%s' "$HK_INPUT" | jq -c --arg c "$wrapped" '

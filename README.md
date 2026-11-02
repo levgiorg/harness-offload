@@ -35,7 +35,9 @@ offload setup
 
 That's all. By default each harness uses **its own small model on your own plan** (`@host`):
 Claude Code → Haiku, Codex → gpt-6-luna, Gemini CLI → Flash-Lite, Copilot CLI, Qwen Code and Crush → themselves.
-Prefer OpenCode Zen/Go, an API key or a local model? `offload setup` asks.
+Prefer OpenCode Zen/Go, an API key or a local model? One command: `offload model groq:llama-3.3-70b`
+([18 providers + local](docs/backends.md), each tested one by one). If your agent's own route ever stops
+working, an API key takes over: `offload key anthropic` ([how](docs/backends.md#if-your-agents-own-route-stops-working-an-api-key-takes-over)).
 
 ## What it saves
 
@@ -55,8 +57,11 @@ You mostly don't: hooks catch the expensive moves and steer the agent. When you 
 offload read -q "how are late fees applied?" src/ledger.ts   # answer + checked path:line citations
 offload explore "where is the retry policy configured?"      # read-only search across the repo
 offload run -- npm test                                      # long output → digest + verbatim errors
+offload task review-sql src/db/                             # your own task: your instructions, checked citations
 offload dashboard --open                                     # what stayed out of your context
 ```
+
+Your own tasks are a few lines of config — [docs/commands.md](docs/commands.md#your-own-tasks).
 
 <img src="docs/assets/dashboard.png" width="860" alt="The offload dashboard: tokens kept out of context per day, breakdowns by kind and model, and citation checks (example data)">
 
@@ -78,6 +83,7 @@ Everything fails open: if no worker is available, your agent's tools work as bef
 | [Commands](docs/commands.md) | every command, exit codes, troubleshooting |
 | [Configuration](docs/configuration.md) | thresholds, guard modes, per-project settings, privacy |
 | [How it works](docs/how-it-works.md) | design, caveats, why the numbers are estimates |
+| [Performance](docs/performance.md) | what the hooks cost per tool call, with and without offload (measured) |
 | [Security](SECURITY.md) | trust model, worker lockdown, known limits |
 | [Development](docs/development.md) | tests, layout, releases |
 
@@ -93,6 +99,8 @@ coding-agent hooks; OpenCode's headless `opencode run`; the hook and plugin syst
 Codex, Cursor, Gemini CLI and Pi; Boris Cherny's notes on goal- and loop-driven agent workflows; and
 community research on token savings (JetBrains' study of output compressors, the LogDx-CI benchmark).
 No third-party source code is included.
+The stats report embeds latin subsets of the Archivo, Public Sans and Courier Prime typefaces
+(SIL Open Font License 1.1; notices in [LICENSE-FONTS](LICENSE-FONTS)).
 
 ## License
 

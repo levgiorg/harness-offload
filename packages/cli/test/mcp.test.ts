@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
+import { writeFileSync } from "node:fs";
 import { CLI, sandbox } from "./helpers";
 
 describe("mcp server", () => {
@@ -21,6 +22,21 @@ describe("mcp server", () => {
     expect(run.content[0].text).toContain("[exit code 3]");
     const bad: any = await client.callTool({ name: "offload_read", arguments: { question: "q", paths: ["nope.ts"] } });
     expect(bad.isError).toBe(true);
+    await client.close();
+  }, 60_000);
+
+  test("offers the user's own tasks as offload_task", async () => {
+    const s = sandbox();
+    writeFileSync(s.env.OFFLOAD_CONFIG!, JSON.stringify({ tasks: { "review-sql": { description: "Find N+1 queries", prompt: "You review SQL." } } }));
+    const client = new Client({ name: "test", version: "1" });
+    const env = Object.fromEntries(Object.entries({ ...s.env, STUB_ANSWER: "no N+1 here" }).filter(([, v]) => v !== undefined)) as Record<string, string>;
+    await client.connect(new StdioClientTransport({ command: "node", args: [CLI, "mcp"], env, cwd: s.dir }));
+    const tool = (await client.listTools()).tools.find((t) => t.name === "offload_task");
+    expect(tool?.description).toContain("review-sql (Find N+1 queries)");
+    const r: any = await client.callTool({ name: "offload_task", arguments: { name: "review-sql", paths: ["big.ts"] } });
+    expect(r.isError).toBe(false);
+    expect(r.content[0].text).toContain("no N+1 here");
+    expect(r.content[0].text).toContain("[offload task review-sql");
     await client.close();
   }, 60_000);
 });

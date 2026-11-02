@@ -1,4 +1,5 @@
-import { ChildProcess, spawn, SpawnOptions, spawnSync } from "node:child_process";
+import type { ChildProcess, SpawnOptions } from "node:child_process";
+import { childProcess } from "./lazy.ts";
 import { existsSync, readFileSync } from "node:fs";
 import { delimiter, dirname, extname, isAbsolute, join, resolve as resolvePath } from "node:path";
 
@@ -24,7 +25,7 @@ function killTree(child: ChildProcess, sig: NodeJS.Signals = "SIGTERM"): void {
   // after the worker itself exited. Windows: only while the worker still runs.
   if (isWin && child.exitCode !== null) return;
   try {
-    if (isWin) spawnSync("taskkill", ["/T", "/F", "/PID", String(child.pid)], { stdio: "ignore", windowsHide: true });
+    if (isWin) childProcess().spawnSync("taskkill", ["/T", "/F", "/PID", String(child.pid)], { stdio: "ignore", windowsHide: true });
     else process.kill(-child.pid, sig);
   } catch {
     if (child.exitCode !== null || child.signalCode !== null) return;
@@ -102,7 +103,7 @@ function plan(cmd: string, args: string[]): { file: string; args: string[]; opts
 /** Spawns without a shell on every platform (see plan()). */
 export function spawnSafe(cmd: string, args: string[], opts: SpawnOptions): ChildProcess {
   const p = plan(cmd, args);
-  return spawn(p.file, p.args, { ...opts, ...p.opts, shell: false });
+  return childProcess().spawn(p.file, p.args, { ...opts, ...p.opts, shell: false });
 }
 
 // ------------------------------------------------------------------- runner

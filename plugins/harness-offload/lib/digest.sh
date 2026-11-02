@@ -103,6 +103,7 @@ co_digest() {
       if [ "$bytes" -le "$max_in" ]; then cat "$log"; else co_log_excerpt "$log"; fi | co_redact
       printf '</output>\n'
     } > "$prompt"
+    co_backends
     if co_oc_invoke summarize "$prompt" "$(co_work_dir)" "$answer" "${OFFLOAD_MODEL_OVERRIDE:-}"; then
       summary=$(LC_ALL=C awk -v m="$sum_max" -v w="$width" 'NR <= m { print (length($0) > w ? substr($0, 1, w - 3) "..." : $0) }' "$answer")
       model_note="$CO_OC_MODEL"

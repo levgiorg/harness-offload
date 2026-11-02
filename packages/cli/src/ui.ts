@@ -1,8 +1,23 @@
-import pc from "picocolors";
+// ANSI colours, decided per stream once it is first used (a hook writes JSON
+// and must not pay for terminal detection it never needs).
+type Paint = (s: string) => string;
+type Palette = { bold: Paint; dim: Paint; red: Paint; green: Paint; yellow: Paint; blue: Paint; magenta: Paint; cyan: Paint };
+const SGR: Record<keyof Palette, [number, number]> = { bold: [1, 22], dim: [2, 22], red: [31, 39], green: [32, 39], yellow: [33, 39], blue: [34, 39], magenta: [35, 39], cyan: [36, 39] };
 
-const enabled = (stream: NodeJS.WriteStream) => !process.env.NO_COLOR && process.env.TERM !== "dumb" && (stream.isTTY || Boolean(process.env.FORCE_COLOR));
-export const color = enabled(process.stdout) ? pc : pc.createColors(false);
-export const ecolor = enabled(process.stderr) ? pc : pc.createColors(false);
+function palette(on: () => boolean): Palette {
+  let state: boolean | undefined;
+  const out = {} as Palette;
+  for (const [name, [open, close]] of Object.entries(SGR) as [keyof Palette, [number, number]][]) {
+    const o = `\x1b[${open}m`, c = `\x1b[${close}m`;
+    // nested styles keep working: re-open after an inner close of the same kind
+    out[name] = (s: string) => ((state ??= on()) ? o + String(s).split(c).join(c + o) + c : String(s));
+  }
+  return out;
+}
+
+const enabled = (stream: NodeJS.WriteStream) => !process.env.NO_COLOR && process.env.TERM !== "dumb" && (Boolean(stream.isTTY) || Boolean(process.env.FORCE_COLOR));
+export const color = palette(() => enabled(process.stdout));
+export const ecolor = palette(() => enabled(process.stderr));
 
 export const sym = {
   ok: color.green("✓"),

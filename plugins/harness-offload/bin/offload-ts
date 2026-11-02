@@ -5,16 +5,22 @@
 # as the plugin), `harness-offload` on PATH, a built repo checkout, and
 # (except for hooks, which must stay fast and offline) npx. Hooks fail open:
 # with no CLI (or no node) they exit 0 silently.
+# (no external commands before the hook branch: this runs on every tool call)
 src="$0"
 while [ -h "$src" ]; do
-  dir=$(cd -P "$(dirname "$src")" && pwd); src=$(readlink "$src")
+  case "$src" in */*) dir=$(cd -P "${src%/*}" && pwd) ;; *) dir=$(pwd -P) ;; esac
+  src=$(readlink "$src")
   case "$src" in /*) ;; *) src="$dir/$src" ;; esac
 done
-root="$(cd -P "$(dirname "$src")/.." && pwd)"
-version=$(sed -n 's/.*"version": *"\([^"]*\)".*/\1/p' "$root/.claude-plugin/plugin.json" | head -n 1)
+case "$src" in */*) root="${src%/*}/.." ;; *) root=.. ;; esac
 if [ -n "${OFFLOAD_TS_CLI:-}" ]; then
   # shellcheck disable=SC2086
   exec $OFFLOAD_TS_CLI "$@"
+elif [ "${1:-}" = "hook" ] && [ -f "$root/dist/hook.cjs" ] && command -v node >/dev/null 2>&1; then
+  # hooks run on every tool call: switched off → no Node at all; otherwise
+  # the small CommonJS hook bundle, not the whole CLI
+  case "${OFFLOAD_DISABLE:-}" in 1|true) cat >/dev/null 2>&1; exit 0 ;; esac
+  exec node "$root/dist/hook.cjs" "$@"
 elif [ -f "$root/dist/cli.js" ] && command -v node >/dev/null 2>&1; then
   exec node "$root/dist/cli.js" "$@"
 elif command -v harness-offload >/dev/null 2>&1; then
@@ -24,6 +30,7 @@ elif [ -f "$root/../../packages/cli/dist/cli.js" ] && command -v node >/dev/null
 elif [ -f "$root/../../../../dist/cli.js" ] && command -v node >/dev/null 2>&1; then
   exec node "$root/../../../../dist/cli.js" "$@"
 elif [ "${1:-}" != "hook" ] && command -v npx >/dev/null 2>&1; then
+  version=$(sed -n 's/.*"version": *"\([^"]*\)".*/\1/p' "$root/.claude-plugin/plugin.json" | head -n 1)
   exec npx --yes "harness-offload@$version" "$@"
 fi
 [ "${1:-}" = "hook" ] && exit 0

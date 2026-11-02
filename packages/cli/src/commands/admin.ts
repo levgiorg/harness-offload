@@ -12,6 +12,7 @@ import { fmtInt } from "../text.ts";
 import { banner, color, section, sym, table } from "../ui.ts";
 import { VERSION } from "../assets.ts";
 import { ExitError } from "./core.ts";
+import { taskDef, taskNames, taskSystem } from "../tasks.ts";
 
 export async function cmdDoctor(argv: string[]): Promise<number> {
   const { opts } = parseFlags(argv, { ping: {}, reset: {}, json: {} });
@@ -47,7 +48,42 @@ export async function cmdDoctor(argv: string[]): Promise<number> {
     chain.forEach((r) => refs.add(r));
     out.push(`  ${color.cyan(t.padEnd(9))} ${sym.arrow} ${chain.join(color.dim(" → "))}`);
   }
+  const names = taskNames();
+  if (names.length) {
+    out.push(section("Your tasks"));
+    const { refCheck } = await import("./model.ts");
+    for (const n of names) {
+      const d = taskDef(n);
+      if (!d) continue;
+      if (!/^[a-z0-9_-]+$/.test(n) || n.startsWith("-")) {
+        check(false, `${n}: names use lowercase letters, digits, - and _`);
+        continue;
+      }
+      try {
+        taskSystem(d);
+      } catch (e) {
+        check(false, (e as Error).message);
+        continue;
+      }
+      const c = d.model ? await refCheck(d.model) : {};
+      if (c.err) check(false, `task ${n}: ${c.err}`);
+      else {
+        check(true, `task ${n} (${d.tools} · ${d.model || "default model"})`);
+        if (d.model) refs.add(d.model);
+      }
+    }
+  }
   out.push(section("Backends in use"));
+  {
+    const { refCheck } = await import("./model.ts");
+    for (const r of [...refs]) {
+      const c = await refCheck(r);
+      if (c.err) {
+        check(false, r, c.err);
+        refs.delete(r);
+      }
+    }
+  }
   const host = detectHost();
   if (host) check(true, `@host = the calling harness's own plan: ${host} ${sym.arrow} ${hostModel(host) ?? "?"}`);
   else out.push(`  ${color.dim(`- @host = the calling harness's own plan (no harness detected here; hooks and MCP set OFFLOAD_HOST)`)}`);
@@ -59,6 +95,7 @@ export async function cmdDoctor(argv: string[]): Promise<number> {
       if (p.ref !== r) out.push(`  ${color.dim(`${r} ${sym.arrow} ${p.ref}`)}`);
     } catch (e) {
       if (r === "@host" || r === "@self") check("warn", `${r}: resolved per harness at run time`, "none detected in this shell");
+      else if (r === "@host-api") check("warn", `${r}: backup skipped`, (e as Error).message.replace(/^@host-api: /, ""));
       else check(false, r, (e as Error).message);
     }
   }
@@ -228,7 +265,14 @@ export async function cmdModels(argv: string[]): Promise<void> {
       process.stdout.write(`${color.dim(`# ${n}: lists no models; use ${n}:<model-id>`)}\n`);
       continue;
     }
-    const ms = await b.models();
+    let ms: string[];
+    try {
+      ms = await b.models();
+    } catch (e) {
+      process.stdout.write(`${color.dim(`# ${n}: ${(e as Error).message}`)}\n`);
+      continue;
+    }
+    if (!ms.length && argv.length) process.stdout.write(`${color.dim(`# ${n}: listed no models`)}\n`);
     for (const m of ms) process.stdout.write(n === "opencode" ? `${m}\n` : `${n}:${m}\n`);
   }
 }

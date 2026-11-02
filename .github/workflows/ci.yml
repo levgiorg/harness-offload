@@ -84,6 +84,11 @@ jobs:
         run: bash evals/run.sh
       - name: Routing table — TypeScript hooks
         run: bash evals/run.sh --ts
+      - name: Backend matrix — every HTTP preset in both engines (local mock)
+        run: bash plugins/harness-offload/tests/e2e-backends.sh
+      - name: Hook latency — every decision checked; pass-through hooks within budget
+        # (budget ~5x the measured median: catches a hook that starts doing work on every call)
+        run: node bench/hooks.mjs --runs 10 --budget-ms ${{ runner.os == 'macOS' && 400 || 150 }}
 
   lint:
     name: shellcheck + manifests
@@ -115,6 +120,8 @@ jobs:
           grep -q "CO_VERSION=\"$v\"" plugins/harness-offload/lib/common.sh
       - name: Bundled plugin dist is up to date
         run: node packages/cli/scripts/source-hash.mjs --check
+      - name: Font licence travels with the plugin
+        run: cmp LICENSE-FONTS plugins/harness-offload/LICENSE-FONTS
       - name: Bundled plugin CLI runs without a build
         run: |
           node plugins/harness-offload/dist/cli.js --version
@@ -123,7 +130,7 @@ jobs:
         run: npx --yes @anthropic-ai/claude-code plugin validate plugins/harness-offload
       - name: Shell scripts lint clean at warning level
         run: |
-          shellcheck -S warning -e SC2034 plugins/harness-offload/bin/offload-ts plugins/harness-offload/tests/e2e-hosts.sh scripts/*.sh
+          shellcheck -S warning -e SC2034 plugins/harness-offload/bin/offload-ts plugins/harness-offload/tests/e2e-hosts.sh plugins/harness-offload/tests/e2e-backends.sh scripts/*.sh
 
   # The one check to mark as required in branch protection: green only when
   # every job above passed (skipped or cancelled counts as a failure).

@@ -4,7 +4,7 @@
 // and every result is redacted before it goes back to the model.
 import { closeSync, lstatSync, openSync, readdirSync, readSync, realpathSync, statSync } from "node:fs";
 import { isAbsolute, join, relative, resolve, sep } from "node:path";
-import { Worker } from "node:worker_threads";
+import { workerThreads } from "../lazy.ts";
 import { globToRegExp, isSecretName, redact } from "../secrets.ts";
 import { isText } from "../text.ts";
 
@@ -182,7 +182,7 @@ parentPort.postMessage(out);
 
 function grepInWorker(files: [string, string][], pattern: string, flags: string): Promise<string[]> {
   return new Promise((resolveP, reject) => {
-    const w = new Worker(GREP_WORKER, { eval: true, workerData: { files, pattern, flags, maxLine: MAX_LINE } });
+    const w = new (workerThreads().Worker)(GREP_WORKER, { eval: true, workerData: { files, pattern, flags, maxLine: MAX_LINE } });
     const t = setTimeout(() => {
       void w.terminate();
       reject(new Error(`grep stopped after ${GREP_TIMEOUT_MS / 1000}s (pattern too slow? use a simpler regex)`));

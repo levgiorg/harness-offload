@@ -20,6 +20,7 @@ import { workDir } from "../state.ts";
 import { banner, color } from "../ui.ts";
 
 const HOST_MODELS = CONNECTORS.host_models as Record<string, string>;
+const HOST_API = CONNECTORS.host_api_models as Record<string, string>;
 
 interface BackendInfo {
   name: string;
@@ -128,12 +129,14 @@ function writeSettings(target: string, models: Partial<Record<Task | "default", 
 async function nonInteractive(opts: Record<string, unknown>): Promise<number> {
   // default: the calling harness's own plan (claude:haiku in Claude Code, …)
   const model = str(opts.model) || "@host";
+  // --api-backup: an API key takes over when the harness's own route fails
+  const fallback = [...(opts["api-backup"] ? ["@host-api"] : []), ...list(opts.fallback)];
   for (const kv of list(opts.key)) {
     const i = kv.indexOf("=");
     if (i > 0) storeKey(kv.slice(0, i), kv.slice(i + 1));
   }
   const target = opts.project ? projectConfigPath() : userConfigPath();
-  writeSettings(target, { default: model }, list(opts.fallback), str(opts.guard) || "block");
+  writeSettings(target, { default: model }, fallback, str(opts.guard) || "block");
   process.stdout.write(`wrote ${target}\n`);
   let failed = 0;
   for (const h of str(opts.hosts).split(",").filter(Boolean) as HostName[]) {
@@ -147,7 +150,7 @@ async function nonInteractive(opts: Record<string, unknown>): Promise<number> {
 }
 
 export async function cmdSetup(argv: string[]): Promise<number> {
-  const { opts } = parseFlags(argv, { yes: { alias: ["-y"] }, model: { alias: ["-m"], value: true }, fallback: { value: true, multi: true }, hosts: { value: true }, key: { value: true, multi: true }, guard: { value: true }, project: {} });
+  const { opts } = parseFlags(argv, { yes: { alias: ["-y"] }, model: { alias: ["-m"], value: true }, fallback: { value: true, multi: true }, hosts: { value: true }, key: { value: true, multi: true }, guard: { value: true }, project: {}, "api-backup": {} });
   if (opts.yes || !process.stdin.isTTY || !process.stdout.isTTY) return nonInteractive(opts);
 
   process.stdout.write(banner("setup"));
@@ -174,18 +177,32 @@ export async function cmdSetup(argv: string[]): Promise<number> {
     .filter(([, m]) => m)
     .map(([h, m]) => `${HOST_LABELS[h as HostName]} ${color.dim("→")} ${m}`)
     .join(", ");
+  const apiLine = foundHosts
+    .filter((h) => HOST_API[h])
+    .map((h) => `${HOST_LABELS[h]} ${color.dim("→")} ${HOST_API[h]}`)
+    .join(", ");
   const mode = bail(
     await p.select({
       message: "Who should do the cheap work?",
       options: [
         { value: "host", label: "My agent's own subscription (@host)", hint: hostLine || "Claude Code → claude:haiku, Codex → codex:gpt-6-luna, Gemini CLI → gemini:flash-lite" },
         { value: "host+", label: "My agent's own subscription + a fallback from another backend", hint: "used when the plan hits a usage limit" },
+        { value: "api", label: "My agent's model family through an API key (@host-api)", hint: apiLine || "Claude Code → anthropic:claude-haiku-5-5, Codex → openai:gpt-6-luna — pay per use" },
         { value: "pick", label: "Backends I choose", hint: "OpenCode Zen/Go, ChatGPT/Codex, API keys, local models…" },
       ],
       initialValue: readyAgents.length || foundHosts.length ? "host" : "pick",
     }),
   ) as string;
-  if (mode !== "pick") {
+  if (mode === "api") {
+    p.note(
+      [
+        "Each harness calls the same model family through your own API key",
+        "(e.g. Claude Code → anthropic:claude-haiku-5-5, Codex → openai:gpt-6-luna).",
+        "Pay per use, separate from your plan; nothing depends on the harness's CLI.",
+      ].join("\n"),
+      "@host-api — an API key",
+    );
+  } else if (mode !== "pick") {
     p.note(
       [
         "Each harness delegates to a small, fast model on the plan you already pay for",
@@ -200,8 +217,39 @@ export async function cmdSetup(argv: string[]): Promise<number> {
     );
   }
 
+  // An API key as the backup (or the main route): if the harness's own CLI
+  // route stops working — headless use blocked, logged out, plan limits —
+  // the same model family answers through the key instead.
+  let backupHosts: string[] = [];
+  if (mode !== "pick") {
+    const withApi = (foundHosts.length ? foundHosts : (["claude", "codex", "gemini"] as HostName[])).filter((h) => HOST_API[h]);
+    if (withApi.length && mode === "api") backupHosts = withApi;
+    else if (withApi.length) {
+      const want = bail(await p.confirm({ message: "Add an API key as a backup, in case your agent's own route stops working (headless use blocked, logged out, plan limits)?", initialValue: false }));
+      if (want) {
+        backupHosts = bail(
+          await p.multiselect({
+            message: "Backup for which harnesses? (space to toggle)",
+            options: withApi.map((h) => ({ value: h, label: `${HOST_LABELS[h]} ${color.dim("→")} ${HOST_API[h]}`, hint: "pay per use, only when the plan route fails" })),
+            initialValues: withApi,
+            required: true,
+          }),
+        ) as string[];
+      }
+    }
+    const needKey = [...new Set(backupHosts.map((h) => HOST_API[h].slice(0, HOST_API[h].indexOf(":"))))].filter((n) => !backends.find((x) => x.name === n)?.ready);
+    if (needKey.length) p.log.info(`Keys are saved to ${credentialsPath()} (only you can read it). Press Enter to skip one: set its env var later, or run ${color.cyan("offload key NAME")}.`);
+    for (const name of needKey) {
+      const b = backends.find((x) => x.name === name);
+      if (!b) continue;
+      const key = bail(await p.password({ message: `API key for ${b.label} (Enter to skip)` }));
+      if (key) storeKey(name, key);
+      else p.log.warn(`${b.label}: no key yet — the backup is skipped until one is there (offload key ${name})`);
+    }
+  }
+
   let chosen: string[] = [];
-  if (mode !== "host") {
+  if (mode !== "host" && mode !== "api") {
     chosen = bail(
       await p.multiselect({
         message: mode === "pick" ? "Which worker backends should do the cheap work? (space to toggle)" : "Which backend for the fallback? (space to toggle)",
@@ -246,7 +294,10 @@ export async function cmdSetup(argv: string[]): Promise<number> {
     }
   } else if (mode === "host+") {
     fallback = [await pickModel("Fallback model (used when your plan hits a usage limit)", rank(candidates, CHEAP))];
+  } else if (mode === "api") {
+    readModel = exploreModel = writeModel = "@host-api";
   }
+  if (mode !== "api" && mode !== "pick" && backupHosts.length) fallback = ["@host-api", ...fallback];
 
   const guard = bail(
     await p.select({
@@ -285,7 +336,7 @@ export async function cmdSetup(argv: string[]): Promise<number> {
 
   if (bail(await p.confirm({ message: "Run a live test (one tiny request per model)?", initialValue: true }))) {
     // @host resolves to the harness running this shell (if any); hooks and MCP set it per harness
-    for (const ref of [...new Set([readModel, exploreModel, writeModel, ...fallback])].filter((r) => r !== "@host" || detectHost())) {
+    for (const ref of [...new Set([readModel, exploreModel, writeModel, ...fallback])].filter((r) => (r !== "@host" && r !== "@host-api") || detectHost())) {
       s.start(`Pinging ${ref}`);
       try {
         const r = await invoke("ask" as Task, "Reply with exactly the word: pong\n", workDir(), ref);

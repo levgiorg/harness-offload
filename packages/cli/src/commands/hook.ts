@@ -2,12 +2,23 @@
 // answers in that host's dialect. Every failure path prints nothing and exits
 // 0, which every host treats as "no opinion" (fail open).
 import { bashGuard, available, Host, postBash, readGuard, sessionGuide, Verdict } from "../hooks/logic.ts";
+import { readFileSync } from "node:fs";
 import { setProjectDir } from "../paths.ts";
 import { cfgBool } from "../config.ts";
 
 type J = Record<string, any>;
 
+// One blocking read of the piped payload: the stream API would load Node's
+// whole stream/readline machinery (~10 ms) before every tool call. Windows
+// pipes and a non-blocking stdin (EAGAIN) use the stream instead.
 async function readStdin(): Promise<string> {
+  if (process.platform !== "win32") {
+    try {
+      return readFileSync(0, "utf8");
+    } catch {
+      // fall through
+    }
+  }
   const chunks: Buffer[] = [];
   for await (const c of process.stdin) chunks.push(c as Buffer);
   return Buffer.concat(chunks).toString("utf8");

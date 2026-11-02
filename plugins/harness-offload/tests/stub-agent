@@ -17,6 +17,8 @@ if [ -n "${STUB_AGENT_LOG:-}" ]; then
     printf 'stdin-bytes=%s\n' "${#input}"
   } >> "$STUB_AGENT_LOG"
 fi
+# full arguments, one per line (system prompts are long)
+[ -n "${STUB_AGENT_ARGS:-}" ] && printf '%s\n' "$@" > "$STUB_AGENT_ARGS"
 [ "$mode" = slow ] && sleep 30
 case "$name:$mode" in
   claude:auth) echo '{"type":"result","is_error":true,"result":"Invalid API key · Please run /login"}'; exit 1 ;;
@@ -31,7 +33,7 @@ case "$name:$mode" in
   gemini:pretty)
     echo "Loaded cached credentials."
     printf '{\n  "response": "GEMINI-PRETTY: %s",\n  "stats": {"models": {}}\n}\n' "$first" ;;
-  gemini:auth) echo '{"error":{"type":"auth","message":"Please set an Auth method"}}'; exit 41 ;;
+  gemini:auth) printf '{\n  "session_id": "s",\n  "error": {"type": "Error", "message": "Please set an Auth method in your settings.json", "code": 41}\n}\n' >&2; exit 41 ;;
   gemini:*)
     sys=missing; [ -f "${GEMINI_SYSTEM_MD:-/nonexistent}" ] && grep -q . "$GEMINI_SYSTEM_MD" && sys=ok
     jq -nc --arg t "GEMINI-STUB sys=$sys: $first" '{response:$t,stats:{models:{"gemini-x":{tokens:{prompt:40,candidates:3}}}}}' ;;
@@ -39,6 +41,8 @@ case "$name:$mode" in
     last=""; for a in "$@"; do last="$a"; done
     f=$(printf '%s\n' "$last" | user_line)
     jq -nc --arg t "CURSOR-STUB: $f" '{type:"result",is_error:false,result:$t,usage:{inputTokens:30,outputTokens:4}}' ;;
+  pi:auth) jq -nc '{type:"message_end",message:{role:"assistant",content:[],stopReason:"error",errorMessage:"UnrecognizedClientException: The security token included in the request is invalid."}}'; exit 1 ;;
+  pi:nokey) jq -nc '{type:"session"}'; printf 'No API key found for the selected model.\n\nUse /login to log into a provider via OAuth or API key. See:\n  /opt/pi/node_modules/pi-coding-agent/docs/providers.md\n  /opt/pi/node_modules/pi-coding-agent/docs/models.md\n' >&2; exit 1 ;;
   pi:quota) jq -nc '{type:"message_end",message:{role:"assistant",content:[],stopReason:"error",errorMessage:"429 rate limit exceeded"}}'; exit 1 ;;
   pi:*)
     jq -nc '{type:"session"}'
@@ -48,10 +52,12 @@ case "$name:$mode" in
     jq -nc '{type:"user.message",data:{content:"…"}}'
     jq -nc --arg t "COPILOT-STUB: $first" '{type:"assistant.message",data:{content:$t,toolRequests:[]}}'
     echo '{"type":"result","exitCode":0,"usage":{"premiumRequests":0}}' ;;
+  qwen:auth) echo "No auth type is selected. Please configure an auth type (e.g. via settings or --auth-type) before running in non-interactive mode." >&2; exit 1 ;;
   qwen:quota) jq -nc '[{type:"system",subtype:"init"},{type:"result",subtype:"error",is_error:true,result:"429 rate limit exceeded"}]'; exit 1 ;;
   qwen:*)
     s=missing; [ -f "${QWEN_CODE_SYSTEM_SETTINGS_PATH:-/nonexistent}" ] && grep -q enableManagedAutoMemory "$QWEN_CODE_SYSTEM_SETTINGS_PATH" && s=off
     jq -nc --arg t "QWEN-STUB memory=$s: $first" '[{type:"system",subtype:"init"},{type:"result",subtype:"success",is_error:false,result:$t,usage:{input_tokens:70,output_tokens:8}}]' ;;
+  crush:auth) printf '  ERROR\n  No providers configured - please run '"'"'crush'"'"' to set up a provider interactively.\n' >&2; exit 1 ;;
   crush:quota) printf '  ERROR\n  Agent processing failed: too many requests: rate limit\n' >&2; exit 1 ;;
   crush:*)
     off=$(jq -r '.options.disabled_tools | length' .crush.json 2>/dev/null || echo 0)

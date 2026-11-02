@@ -1,22 +1,25 @@
 #!/usr/bin/env bash
 # SessionStart: tell Claude (once, in the cached prefix) what offload offers.
-. "$(cd "$(dirname "$0")/.." && pwd)/lib/hook.sh"
+case "$0" in */*) . "${0%/*}/../lib/hook.sh" ;; *) . ../lib/hook.sh ;; esac
 
 co_cfg_bool '.enabled' true || exit 0
 if ! co_backend_present; then
-  [ "$(hk_get '.source')" = "startup" ] || exit 0
+  [ "$HK_SOURCE" = "startup" ] || exit 0
   jq -nc --arg m "offload: no worker backend available (opencode not found and no other backend configured) — delegation is off and offload hooks pass everything through. Run: offload setup   (or: offload doctor)" \
     '{systemMessage: $m}'
   exit 0
 fi
 
 lines=$(co_cfg '.hooks.read_threshold_lines' 600)
+tasks=$(co_task_summary)
+task_line=""
+[ -n "$tasks" ] && task_line="- $HK_CLI task NAME [PATH...] — the user's own tasks: $tasks."$'\n'
 read -r -d '' guide <<EOF2
 offload is installed: cheap worker models do bulk reading/digesting so it stays out of your context. Use these shell commands:
 - $HK_CLI read -q "QUESTION" PATH... — questions about big files or dirs (PATH may be file:START-END). Answers cite path:Lx-Ly with machine-checked quotes; Read just those lines before editing.
 - $HK_CLI explore "QUESTION" — read-only cheap agent searches the repo itself ("where/how is X done?" across many files).
 - $HK_CLI run -- CMD... — for noisy commands (tests, builds, installs, linters, long logs): prints a digest + verbatim error lines + full-log path, keeps the exit code.
 - $HK_CLI write --spec "..." --ref EXAMPLE_FILE --out NEW_FILE — boilerplate that follows an existing file's patterns (tests, configs, stubs); review the result.
-Keep for yourself: debugging reasoning, design decisions, edits (use Read offset/limit for exact text), small files. Full reads of files over ~$lines lines may be blocked with an outline and these options; large successful Bash output may come back as a digest with a log path.
+${task_line}Keep for yourself: debugging reasoning, design decisions, edits (use Read offset/limit for exact text), small files. Full reads of files over ~$lines lines may be blocked with an outline and these options; large successful Bash output may come back as a digest with a log path.
 EOF2
 hk_note "$guide" SessionStart

@@ -35,21 +35,39 @@ and ledger numbers **Courier Prime**. Scale: 0.875 / 1 / 1.25 / 1.6 / clamp(1.9�
 
 ## Tokens — report (Operate, offline)
 
-| Token | Light | Dark |
-|---|---|---|
-| `--shell` (header band) | `#2140b8` | `#1c379f` |
-| `--bg` / `--panel` | `#eef1f9` / `#fbfcff` | `#0b1230` / `#141c40` |
-| `--line` / `--grid` | `#d6ddef` / `#e3e8f5` | `#2a3566` / `#1f2a55` |
-| `--text` / `--text-2` | `#161a26` / `#4a5373` | `#e9edff` / `#a7b2dc` |
-| `--accent` (bars) | `#2140b8` | `#5f79ec` |
-| `--ok` / `--bad` / `--warn` | `#1b7348` / `#c81e36` / `#8a5300` | `#2a9f6a` / `#ec4f64` / `#e0a347` |
+Layout: the "Standard" report the owner chose on 2026-11-02. Colour and type: the landing page's ("Now"),
+as the owner asked the same day ("the colour and the fonts from the Now edition, keep the rest the same").
+Light by default, dark by `prefers-color-scheme` or `data-theme="dark"`. The three typefaces are embedded
+as latin subsets (about 72 KB of woff2, base64) so the file still opens from `file://` with no network.
 
-System UI font stack and `ui-monospace` (no network fonts: the report opens from `file://`); tabular
-numerals everywhere. Bars ≤ 24px, 4px rounded data end, square at the baseline; hairline grid; hover
-tooltip and a table view. **Stamp chips**: square, 3px double rule, letter-spaced caps with a count, an
-authored SVG check/alert icon; green only for verified, red only for failures/unverified.
+| Token | Light | Dark | Role |
+|---|---|---|---|
+| `--shell` / `--on-shell` / `--on-shell-2` | `#2140b8` / `#f4f7ff` / `#cdd7ff` | `#1c379f` / `#eef1ff` / `#c3cff8` | the carbon-blue top bar, its title, its meta line and the period switch |
+| `--bg` / `--panel` / `--raise` | `#eef1f9` / `#fbfcff` / `#ffffff` | `#0b1230` / `#141c40` / `#1b2550` | ground, cards and panels, tooltip and code wells |
+| `--line` / `--grid` / `--guide` | `#d6ddef` / `#e3e8f5` / `#9aa4c6` | `#2a3566` / `#1f2a55` / `#4d5a8f` | hairlines, chart grid, hover guide line |
+| `--text` / `--text-2` / `--text-3` / `--cell` | `#161a26` / `#4a5373` / `#5c6585` / `#262c40` | `#e9edff` / `#a7b2dc` / `#8c97c3` / `#d3d9f3` | headings and figures / labels / hints and axes (≥5.1:1 on panels) / table cells |
+| `--accent` | `#2140b8` | `#5f79ec` | the chart series (line, area gradient 20% light / 32% dark → 0, end dot), focus ring |
+| `--ok` / `--bad` / `--warn` | `#1b7348` / `#c81e36` / `#8a5300` | `#3cb47c` / `#f06a7c` / `#e0a347` | verified / failed or unverified / the "Example data" label only |
+
+Dark `--ok` and `--bad` are the landing page's hues lifted slightly (from `#2a9f6a` / `#ec4f64`) so pill
+text stays above 4.5:1 on its 10% tint.
+
+Type: Archivo (800, `font-stretch` 112%) for the report title, 750/105% for panel headings, 800 for the
+summary figures; Public Sans for text, labels, tables and axes; Courier Prime for model ids, commands and
+code. Tabular numerals everywhere. Figures 1.85rem, tracking −0.02em. Cards and panels: 12px radius, 1px
+hairline, no shadow. Period switch: segmented control on the blue bar, 8px outer radius, active segment
+`--on-shell` with `--shell` text. Chart: area + 2px line, round
+y-axis steps (0, 50K, 100K…), 300px tall from 900px wide (240px below); hover shows a guide line,
+a ring marker and a tooltip beside the line (flipped near the right edge); keyboard focus draws the
+guide in the accent instead of an outline; the unfinished current hour/day/week is a dashed last segment and
+reads "so far"; date labels are counted back from now. 120ms fades on guide, marker and tooltip; nothing
+else moves. "Show as a table" gives the same numbers. Status: pills (999px radius) tinted 10% in their
+state colour with a matching border and an authored check or alert icon. Phone: the latest delegations
+become stacked records (time + kind, what, model, "N kept", time, citations); model ids break only after
+"/" or ":".
 
 ## Open
-- The impeccable direction roll was not run (unattended; its launcher binary was not executed) — the
-  owner may run it or accept this direction.
+- Direction round 2026-11-02 (impeccable's launcher blocked here; its fallback process was followed): the
+  owner kept the landing page's world and chose the "Standard" report for the dashboard. The concept-seed
+  roll itself was never run; run it where the launcher works if a seeded record is wanted.
 - The stamp's ink is procedural (SVG noise + displacement), not a scanned impression asset.

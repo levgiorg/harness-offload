@@ -34,6 +34,16 @@ const jsonLines = (s: string): any[] =>
     }
   });
 
+/** What a CLI said, short: its first and last non-empty lines (the reason is often
+ * first, e.g. "No API key found", with paths or hints after). Twin: co_err_summary. */
+export function errSummary(text: string): string {
+  const lines = text.split("\n").map((l) => l.trim()).filter(Boolean);
+  if (!lines.length) return "";
+  const first = lines[0];
+  const last = lines[lines.length - 1];
+  return (last !== first ? `${first} … ${last}` : first).slice(0, 400);
+}
+
 const lastJson = (s: string): any => {
   const t = s.trim();
   try {
@@ -156,8 +166,9 @@ export const CLI_AGENTS: Record<string, AgentSpec> = {
       writeFileSync(file, req.system);
       return { GEMINI_SYSTEM_MD: file, GEMINI_CLI_TRUST_WORKSPACE: "true" };
     },
-    parse: (out) => {
-      const j = lastJson(out);
+    parse: (out, err) => {
+      // startup errors (e.g. no login) come as JSON on stderr
+      const j = lastJson(out) ?? lastJson(err);
       if (!j) throw new WorkerError(E.WORKER, "gemini: no JSON output");
       if (j.error) {
         const code = j.error.code === 41 ? E.AUTH : classify(String(j.error.message ?? j.error.type ?? ""));
@@ -339,11 +350,16 @@ export function cliAgentBackend(name: string): Backend {
         res = spec.parse(r.stdout, r.stderr);
       } catch (e) {
         // the CLI's own exit code is more precise than our message heuristics
+        if (e instanceof WorkerError && e.code === E.WORKER && r.code !== 0 && /no (json|result)/i.test(e.message)) {
+          // nothing parseable on stdout: the reason is on stderr (e.g. not logged in)
+          const tail = errSummary(r.stderr);
+          if (tail) throw new WorkerError(mapped ?? classify(tail), `${name}: ${tail}`);
+        }
         if (e instanceof WorkerError) throw mapped !== undefined && e.code === E.WORKER ? new WorkerError(mapped, e.message) : e;
         throw new WorkerError(mapped ?? E.WORKER, `${name}: ${(e as Error).message}`);
       }
       if (!res.text.trim()) {
-        const msg = (r.stderr || r.stdout).trim().split("\n").slice(-3).join(" ").slice(0, 300);
+        const msg = errSummary(r.stderr || r.stdout);
         throw new WorkerError(mapped ?? (r.code !== 0 ? classify(msg) : E.WORKER), `${name}: ${msg || "empty answer"}`);
       }
       return res;

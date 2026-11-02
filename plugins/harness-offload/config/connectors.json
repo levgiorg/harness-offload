@@ -1,5 +1,5 @@
 {
-  "_comment": "HTTP endpoint presets and the default cheap model per harness for the @host model ref. Shared by the bash and TypeScript engines; override with `endpoints` / `host_models` in your config.",
+  "_comment": "HTTP endpoint presets, the default cheap model per harness for the @host model ref, and the API-key backup per harness for @host-api. Shared by the bash and TypeScript engines; override with `endpoints` / `host_models` / `host_api_models` in your config.",
   "endpoints": {
     "openai": {
       "type": "openai",
@@ -93,6 +93,18 @@
       "type": "openai",
       "base_url": "http://127.0.0.1:8000/v1",
       "label": "vLLM (local)"
+    },
+    "dashscope": {
+      "type": "openai",
+      "base_url": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1",
+      "api_key_env": "DASHSCOPE_API_KEY",
+      "label": "Alibaba Model Studio (Qwen)"
+    },
+    "github": {
+      "type": "openai",
+      "base_url": "https://models.github.ai/inference",
+      "api_key_env": "GITHUB_TOKEN",
+      "label": "GitHub Models"
     }
   },
   "host_models": {
@@ -108,5 +120,13 @@
     "qwen": "qwen:",
     "crush": "crush:",
     "amp": "@default"
+  },
+  "host_api_models": {
+    "claude": "anthropic:claude-haiku-5-5",
+    "devin": "anthropic:claude-haiku-5-5",
+    "codex": "openai:gpt-6-luna",
+    "gemini": "google:gemini-flash-lite-latest",
+    "qwen": "dashscope:qwen-flash",
+    "copilot": "github:openai/gpt-4.1-mini"
   }
 }

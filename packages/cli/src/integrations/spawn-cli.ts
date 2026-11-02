@@ -36,6 +36,11 @@ export const TOOLS = {
     schema: { spec: "string", reference: "string[]", out: "string?" },
     args: (p: any) => ["write", "--spec", String(p.spec), ...((p.reference as string[]) ?? []).flatMap((r) => ["--ref", r]), ...(p.out ? ["--out", String(p.out)] : [])],
   },
+  offload_task: {
+    description: "Run one of the user's own offload tasks (custom instructions for the cheap worker): name, plus files/dirs to work on and an optional question.",
+    schema: { name: "string", paths: "string[]?", question: "string?" },
+    args: (p: any) => ["task", String(p.name), ...(p.question ? ["-q", String(p.question)] : []), "--", ...((p.paths as string[]) ?? [])],
+  },
   offload_outline: {
     description: "Symbol outline of a file with line numbers (no model) — find the slice to read.",
     schema: { path: "string" },

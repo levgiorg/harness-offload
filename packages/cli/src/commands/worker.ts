@@ -2,6 +2,7 @@
 // backends it does not implement natively. One model, no fallback chain (the
 // caller owns chains and cooldowns). Prompt on stdin, answer on stdout, exit
 // code = offload's error codes, and a final stderr line with usage.
+import { readFileSync } from "node:fs";
 import { PROMPTS, Task, TASKS } from "../assets.ts";
 import { parseFlags, str } from "../args.ts";
 import { cfgInt, cfgList, cfgStr } from "../config.ts";
@@ -10,11 +11,22 @@ import { E, WorkerError } from "../backends/types.ts";
 import { workDir } from "../state.ts";
 
 export async function cmdWorker(argv: string[]): Promise<number> {
-  const { opts } = parseFlags(argv, { task: { value: true }, cwd: { value: true }, model: { value: true }, variant: { value: true }, timeout: { value: true } });
+  const { opts } = parseFlags(argv, { task: { value: true }, cwd: { value: true }, model: { value: true }, variant: { value: true }, timeout: { value: true }, "system-file": { value: true } });
   const task = str(opts.task) as Task;
   if (!TASKS.includes(task)) {
     process.stderr.write(`offload worker: --task must be one of ${TASKS.join(", ")}\n`);
     return E.USAGE;
+  }
+  // a custom task's instructions (written by the bash engine's cmd_task)
+  let system = PROMPTS[task];
+  const sysFile = str(opts["system-file"]);
+  if (sysFile) {
+    try {
+      system = readFileSync(sysFile, "utf8");
+    } catch (e) {
+      process.stderr.write(`offload worker: cannot read --system-file: ${(e as Error).message}\n`);
+      return E.USAGE;
+    }
   }
   const chunks: Buffer[] = [];
   for await (const c of process.stdin) chunks.push(c as Buffer);
@@ -27,7 +39,7 @@ export async function cmdWorker(argv: string[]): Promise<number> {
   try {
     const r = await b.run({
       task,
-      system: PROMPTS[task],
+      system,
       prompt: Buffer.concat(chunks).toString("utf8"),
       model,
       variant: str(opts.variant) || cfgStr(`variants.${task}`) || undefined,

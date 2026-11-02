@@ -52,7 +52,7 @@ export function endpointNames(): string[] {
   return [...new Set([...Object.keys(PRESETS), ...own])];
 }
 
-function apiKey(ep: Endpoint): string | undefined {
+export function apiKey(ep: Endpoint): string | undefined {
   return ep.api_key || storedKey(ep.name) || (ep.api_key_env ? process.env[ep.api_key_env] : undefined);
 }
 
@@ -107,13 +107,23 @@ export class HttpBackend implements Backend {
       if (key) headers["x-api-key"] = key;
       headers["anthropic-version"] = "2023-06-01";
     } else if (key) headers.authorization = `Bearer ${key}`;
+    let res: Response;
     try {
-      const res = await fetch(url, { headers, signal: AbortSignal.timeout(15_000) });
-      const j: any = await res.json();
-      return (j?.data ?? []).map((m: any) => String(m.id)).sort();
+      res = await fetch(url, { headers, signal: AbortSignal.timeout(15_000) });
     } catch {
-      return [];
+      throw new Error(`cannot reach ${this.ep.base_url}`);
     }
+    let j: any = {};
+    try {
+      j = await res.json();
+    } catch {
+      /* not JSON */
+    }
+    if (!res.ok) {
+      const msg = j?.error?.message ?? j?.message ?? "";
+      throw new Error(`HTTP ${res.status}${msg ? `: ${String(msg).slice(0, 160)}` : ""}`);
+    }
+    return (j?.data ?? []).map((m: any) => String(m.id)).sort();
   }
 
   async run(req: WorkerRequest): Promise<WorkerResult> {

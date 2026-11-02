@@ -10,15 +10,13 @@ import { invoke, InvokeResult } from "../engine.ts";
 import { E, WorkerError } from "../backends/types.ts";
 import { outline } from "../outline.ts";
 import { isSecretPath, isSecretTarget, redact } from "../secrets.ts";
-import { appendStats, newLogPath, workDir } from "../state.ts";
+import { appendStats as appendStatsRow, newLogPath, workDir } from "../state.ts";
+import { setTaskContext, taskContext, taskDef, taskNames, taskSystem, TASK_NAME } from "../tasks.ts";
 import { estTokens, fileLines, fmtInt, isText, numberLines, shquote, stripWrappingFence } from "../text.ts";
 import { verifyCitations } from "../verify.ts";
 
-export class ExitError extends Error {
-  constructor(public code: number, message = "") {
-    super(message);
-  }
-}
+export { ExitError } from "../errors.ts";
+import { ExitError } from "../errors.ts";
 
 const err = (m: string) => process.stderr.write(`offload: ${m}\n`);
 const die = (m: string, code: number = E.USAGE): never => {
@@ -26,6 +24,16 @@ const die = (m: string, code: number = E.USAGE): never => {
   throw new ExitError(code);
 };
 const footer = (s: string) => `\n[offload ${s}]\n`;
+/** "read", "explore", "ask" — or "task NAME" while a custom task runs through that flow. */
+const label = (kind: string) => {
+  const t = taskContext();
+  return t ? `task ${t.name}` : kind;
+};
+const appendStats = (row: Record<string, unknown>) => {
+  const t = taskContext();
+  const { kind, ...rest } = row;
+  appendStatsRow(t ? { kind, task: t.name, ...rest } : row);
+};
 const secs = (t0: number) => Math.round((Date.now() - t0) / 1000);
 
 function reportFailure(what: string, e: unknown): never {
@@ -33,8 +41,8 @@ function reportFailure(what: string, e: unknown): never {
   err(`${what} failed (exit ${w.code}): ${w.message}`);
   const hints: Record<number, string> = {
     [E.QUOTA]: "hint: quota/rate limit — add models.fallback in the config, or do this step yourself.",
-    [E.AUTH]: "hint: log the backend in (e.g. `opencode auth login`) or set its API key with `offload setup`.",
-    [E.MODEL]: "hint: check the model id (`offload models`); set it with `offload config set models.default BACKEND:MODEL`.",
+    [E.AUTH]: "hint: log the backend in (its own CLI login, or `opencode auth login`) or set its API key with `offload setup`; `offload doctor` shows which.",
+    [E.MODEL]: "hint: check the model id (`offload models BACKEND` lists them) and switch with `offload model BACKEND:MODEL`; some providers also say \"model not found\" when the API key is wrong.",
     [E.TIMEOUT]: "hint: raise opencode.timeout_seconds or send less input.",
   };
   if (hints[w.code]) err(hints[w.code]);
@@ -43,7 +51,8 @@ function reportFailure(what: string, e: unknown): never {
 
 async function run(task: Parameters<typeof invoke>[0], prompt: string, cwd: string, model: string, what: string): Promise<InvokeResult> {
   try {
-    return await invoke(task, prompt, cwd, model || undefined);
+    const t = taskContext();
+    return await invoke(task, prompt, cwd, model || undefined, t ? { system: t.system, primary: t.model } : {});
   } catch (e) {
     return reportFailure(what, e);
   }
@@ -161,7 +170,7 @@ export async function cmdRead(argv: string[]): Promise<void> {
     bad = v.bad;
     cite = ` · citations: ${ok} verified, ${bad} unverified`;
   }
-  let out = answer + footer(`read · ${r.model} · ${nfiles} file(s), ${fmtInt(nlines)} lines (~${fmtInt(estTokens(bytes))} tokens) kept out of your context · ${secs(t0)}s${cite}`);
+  let out = answer + footer(`${label("read")} · ${r.model} · ${nfiles} file(s), ${fmtInt(nlines)} lines (~${fmtInt(estTokens(bytes))} tokens) kept out of your context · ${secs(t0)}s${cite}`);
   if (bad > 0) out += "⚠unverified = quote not found near the cited lines; confirm with Read(offset/limit) before acting on it.\n";
   if (skipped.length) out += `skipped: ${skipped.join(" ")}\n`;
   process.stdout.write(out);
@@ -196,7 +205,7 @@ export async function cmdExplore(argv: string[]): Promise<void> {
     bad = v.bad;
     cite = ` · citations: ${ok} verified, ${bad} unverified`;
   }
-  let out = answer + footer(`explore · ${r.model} · worker read ~${fmtInt(r.ctxIn)} tokens of context for you · ${secs(t0)}s${cite}`);
+  let out = answer + footer(`${label("explore")} · ${r.model} · worker read ~${fmtInt(r.ctxIn)} tokens of context for you · ${secs(t0)}s${cite}`);
   if (bad > 0) out += "⚠unverified = quote not found near the cited lines; confirm with Read(offset/limit) before acting on it.\n";
   process.stdout.write(out);
   const bout = Buffer.byteLength(answer);
@@ -352,7 +361,7 @@ export async function cmdAsk(argv: string[]): Promise<void> {
   prompt += `${question}\n`;
   const t0 = Date.now();
   const r = await run("ask", prompt, workDir(), str(opts.model), "ask");
-  process.stdout.write(r.text.replace(/\n?$/, "\n") + footer(`ask · ${r.model} · ${secs(t0)}s`));
+  process.stdout.write(r.text.replace(/\n?$/, "\n") + footer(`${label("ask")} · ${r.model} · ${secs(t0)}s`));
   appendStats({ kind: "ask", model: r.model, seconds: secs(t0), saved_tokens: 0, worker_tokens_in: r.tokensIn, worker_tokens_out: r.tokensOut });
 }
 
@@ -364,3 +373,52 @@ export function cmdOutline(argv: string[]): void {
 }
 
 export { UsageError };
+
+// ------------------------------------------------------------------ custom tasks
+
+export function cmdTasks(): void {
+  const names = taskNames();
+  if (!names.length) {
+    process.stdout.write(
+      "No custom tasks yet. Add one to your config, for example:\n" +
+        `  offload config set tasks.review-sql '{"description":"Find N+1 queries","prompt":"You review SQL access code for N+1 queries.","tools":"none"}'\n` +
+        "then: offload task review-sql src/db/\n",
+    );
+    return;
+  }
+  let out = "Custom tasks (offload task NAME [-q QUESTION] [PATH...]):\n";
+  for (const n of names) {
+    const d = taskDef(n);
+    out += `  ${n.padEnd(20)} ${d?.description ?? ""}  [${d?.tools ?? "none"} · ${d?.model || "default model"}]\n`;
+  }
+  process.stdout.write(out);
+}
+
+/** offload task NAME [-q Q] [-m REF] [--stdin] [PATH...] — runs through read, ask or explore. */
+export async function cmdTask(argv: string[]): Promise<void> {
+  const name = argv[0] ?? "";
+  if (!name || name === "--list" || name === "-l") return cmdTasks();
+  if (!/^[a-z0-9_-]+$/.test(name) || name.startsWith("-")) die(`task: names use lowercase letters, digits, - and _ (${name})`);
+  if (!TASK_NAME.test(name)) die(`task: names are at most 40 characters (${name})`);
+  const def = taskDef(name);
+  if (!def) die(`task: no task named ${name} (offload tasks lists them)`);
+  const { opts, rest } = parseFlags(argv.slice(1), { question: { alias: ["-q"], value: true }, model: { alias: ["-m"], value: true }, stdin: {} });
+  let system: string;
+  try {
+    system = taskSystem(def!);
+  } catch (e) {
+    return die((e as Error).message);
+  }
+  setTaskContext({ name, system, model: def!.model || undefined });
+  try {
+    let question = str(opts.question) || "Do the task described in your instructions.";
+    const m = str(opts.model) ? ["-m", str(opts.model)] : [];
+    if (def!.tools === "read") {
+      if (rest.length) question += ` (start with: ${rest.join(" ")})`;
+      await cmdExplore([...m, "--", question]);
+    } else if (rest.length) await cmdRead([...m, "-q", question, "--", ...rest]);
+    else await cmdAsk([...m, ...(opts.stdin ? ["--stdin"] : []), "--", question]);
+  } finally {
+    setTaskContext(undefined);
+  }
+}

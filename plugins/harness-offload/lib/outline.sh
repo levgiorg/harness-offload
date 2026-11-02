@@ -4,10 +4,11 @@
 # Read(offset/limit) without spending a turn on delegation.
 
 co_outline_regex() {
-  local f="$1" ext base
-  base=$(basename "$f")
-  ext=$(printf '%s' "${base##*.}" | LC_ALL=C tr '[:upper:]' '[:lower:]')
-  if [ "$ext" = "$(printf '%s' "$base" | LC_ALL=C tr '[:upper:]' '[:lower:]')" ]; then
+  local f="$1" ext base lbase
+  co_base base "$f"
+  co_lower ext "${base##*.}"
+  co_lower lbase "$base"
+  if [ "$ext" = "$lbase" ]; then
     # no extension: fall back to the shebang
     case "$(head -n 1 "$f" 2>/dev/null)" in
       '#!'*python*) ext=py ;;

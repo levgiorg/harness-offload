@@ -2,7 +2,7 @@
 
 `~/.config/harness-offload/config.json` (user) and `<repo>/.harness-offload.json` (project). Edit
 with `offload config set KEY VALUE [--project]`; inspect with `offload config show`. A repository's file
-is **untrusted**: it may set models, thresholds and hook behaviour and add secret globs, but not
+is **untrusted**: it may set models, tasks, thresholds and hook behaviour and add secret globs, but not
 binaries, endpoints, the backend, the state directory or privacy relaxations — unless you run
 `offload config trust` in it (`offload doctor` lists ignored keys). Defaults:
 [`plugins/harness-offload/config/defaults.json`](plugins/harness-offload/config/defaults.json).
@@ -10,8 +10,10 @@ binaries, endpoints, the backend, the state directory or privacy relaxations —
 | Key | Default | Meaning |
 |---|---|---|
 | `models.{default,read,explore,summarize,write,ask}` | `default`: `@host` | `BACKEND:MODEL` per task; empty → `default` |
-| `models.fallback` | `["@default"]` | tried in order when a model fails |
+| `models.fallback` | `["@default"]` | tried in order when a model fails (easiest: `offload model …`) |
+| `tasks.<name>` | none | your own tasks: `{description, prompt \| prompt_file, model, tools: "none"\|"read"}` — see [commands](commands.md#your-own-tasks); allowed in a repo's file |
 | `host_models.<host>` | see connectors | what `@host` means in each harness |
+| `host_api_models.<host>` | see connectors | what `@host-api` means: the same model family through an API key ([backends](backends.md#if-your-agents-own-route-stops-working-an-api-key-takes-over)) |
 | `trusted_projects` | `[]` | project dirs whose `.harness-offload.json` is fully trusted (`offload config trust`) |
 | `backend` | `opencode` | backend for bare `provider/model` refs |
 | `endpoints.<name>` | presets | `{type, base_url, api_key_env}` for your own gateways |
@@ -21,6 +23,7 @@ binaries, endpoints, the backend, the state directory or privacy relaxations —
 | `hooks.read_max_chunk_lines` | `600` | largest slice allowed (`Read` offset/limit, `head -n`, `sed -n`) |
 | `hooks.summarize_bash_output` | `true` | post-command digests |
 | `hooks.bash_output_threshold_lines` / `_bytes` | `250` / `20000` | when output gets digested |
+| `hooks.digest_timeout_seconds` | `20` | how long the agent may wait for the worker's summary of a long output (fallbacks included); after that, or with `0`, the digest is the instant deterministic one (key lines + tail) |
 | `hooks.bash_never_summarize` | viewers regex | commands whose output is never digested (`grep`, `cat`, `git diff`, …) |
 | `hooks.autowrap` | `false` | rewrite noisy commands to `offload run -c '…'` (changes what permission rules see) |
 | `hooks.subagents` | `true` | also guard subagents' tool calls |
@@ -45,4 +48,5 @@ with `OFFLOAD_RAW=1 ` to bypass the shell guard and digest.
   lines, log names and stats, and in worker answers.
 - Trust model, safeguards and known limits: [SECURITY.md](SECURITY.md).
 - Some providers train on prompts — pick ones that don't for private code.
-- API keys stored by `offload setup` live in `~/.config/harness-offload/credentials.json` (mode `600`).
+- API keys stored by `offload setup` or `offload key NAME` live in `~/.config/harness-offload/credentials.json`
+  (mode `600`); `offload key` reads them hidden or from stdin, never from the command line, and never prints them.

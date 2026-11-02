@@ -40,7 +40,9 @@ export function resetOpencodeMajor(): void {
 }
 
 /** OPENCODE_CONFIG_CONTENT with offload's deny-by-default worker agents. */
-export function opencodeConfig(major: number): Record<string, unknown> {
+export function opencodeConfig(major: number, overrides: Partial<Record<string, string>> = {}): Record<string, unknown> {
+  // a custom task replaces the instructions of the flow it runs through
+  const P = { ...PROMPTS, ...overrides } as typeof PROMPTS;
   let user: Record<string, unknown> = {};
   try {
     const v = JSON.parse(process.env.OPENCODE_CONFIG_CONTENT || "{}");
@@ -61,32 +63,32 @@ export function opencodeConfig(major: number): Record<string, unknown> {
       mode: "primary", hidden: true, description: name, system,
       permissions: [{ action: "*", resource: "*", effect: "deny" }],
     });
-    const explore: any = v2("offload read-only explorer", PROMPTS.explore);
+    const explore: any = v2("offload read-only explorer", P.explore);
     explore.steps = steps;
     explore.permissions.push(...["read", "grep", "glob"].map((action) => ({ action, resource: "*", effect: "allow" })));
     explore.permissions.push(...secrets.map((resource) => ({ action: "read", resource, effect: "deny" })));
     return merge(user, {
       snapshots: false,
       agents: {
-        "offload-read": v2("offload bulk reader", PROMPTS.read),
-        "offload-summarize": v2("offload output digester", PROMPTS.summarize),
-        "offload-write": v2("offload code writer", PROMPTS.write),
-        "offload-ask": v2("offload one-shot helper", PROMPTS.ask),
+        "offload-read": v2("offload bulk reader", P.read),
+        "offload-summarize": v2("offload output digester", P.summarize),
+        "offload-write": v2("offload code writer", P.write),
+        "offload-ask": v2("offload one-shot helper", P.ask),
         "offload-explore": explore,
       },
     });
   }
   const v1 = (name: string, prompt: string, temperature: number) => ({ mode: "primary", description: name, prompt, temperature, permission: { "*": "deny" } });
-  const explore: any = v1("offload read-only explorer", PROMPTS.explore, 0.1);
+  const explore: any = v1("offload read-only explorer", P.explore, 0.1);
   explore.steps = steps;
   explore.permission = { "*": "deny", read: { "*": "allow", ...Object.fromEntries(secrets.map((g) => [g, "deny"])) }, grep: "allow", glob: "allow", list: "allow" };
   return merge(user, {
     snapshot: false,
     agent: {
-      "offload-read": v1("offload bulk reader", PROMPTS.read, 0.1),
-      "offload-summarize": v1("offload output digester", PROMPTS.summarize, 0.1),
-      "offload-write": v1("offload code writer", PROMPTS.write, 0.2),
-      "offload-ask": v1("offload one-shot helper", PROMPTS.ask, 0.3),
+      "offload-read": v1("offload bulk reader", P.read, 0.1),
+      "offload-summarize": v1("offload output digester", P.summarize, 0.1),
+      "offload-write": v1("offload code writer", P.write, 0.2),
+      "offload-ask": v1("offload one-shot helper", P.ask, 0.3),
       "offload-explore": explore,
     },
   });
@@ -173,7 +175,7 @@ export class OpencodeBackend implements Backend {
     }
     const env: NodeJS.ProcessEnv = {
       ...process.env,
-      OPENCODE_CONFIG_CONTENT: JSON.stringify(opencodeConfig(major)),
+      OPENCODE_CONFIG_CONTENT: JSON.stringify(opencodeConfig(major, req.system !== PROMPTS[req.task] ? { [req.task]: req.system } : {})),
       OPENCODE_DISABLE_AUTOUPDATE: "1",
       OFFLOAD_DISABLE: "1",
       PWD: req.cwd,

@@ -8,6 +8,7 @@ import { z } from "zod";
 import { VERSION } from "../assets.ts";
 import { cfgBool, cfgInt } from "../config.ts";
 import { runProcess } from "../proc.ts";
+import { taskSummary } from "../tasks.ts";
 
 function self(): string[] {
   const a1 = process.argv[1] ?? "";
@@ -117,6 +118,18 @@ export async function cmdMcp(_argv: string[]): Promise<number> {
     "offload_ask",
     { title: "Ask the cheap model", description: "One-off question to the cheap worker model (optionally about a file).", inputSchema: { question: z.string(), file: z.string().optional(), cwd, model } },
     async ({ question, file, cwd: dir, model: m }, extra) => result(await runSelf(["ask", ...(file ? ["-f", file] : []), ...(m ? ["-m", m] : []), "--", question], dir, "", extra.signal)),
+  );
+  const tasks = taskSummary();
+  if (tasks) server.registerTool(
+    "offload_task",
+    {
+      title: "Run one of your own offload tasks",
+      annotations: { readOnlyHint: true, openWorldHint: false },
+      description: `Run one of the user's own tasks (custom instructions for the cheap worker) on files/dirs, or with no paths. Tasks: ${tasks}.`,
+      inputSchema: { name: z.string().describe("Task name"), paths: z.array(z.string()).optional().describe("Files, directories or file:START-END"), question: z.string().optional(), cwd, model },
+    },
+    async ({ name, paths, question, cwd: dir, model: m }, extra) =>
+      result(await runSelf(["task", name, ...(question ? ["-q", question] : []), ...(m ? ["-m", m] : []), "--", ...(paths ?? [])], dir, "", extra.signal)),
   );
   server.registerTool(
     "offload_outline",

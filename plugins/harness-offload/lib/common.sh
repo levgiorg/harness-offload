@@ -14,19 +14,59 @@ CO_VERSION="0.2.0"
 
 co_err() { printf 'offload: %s\n' "$*" >&2; }
 
-co_now() { date +%s; }
+# bash 4.2+ formats the time itself; bash 3.2 (macOS) asks date.
+if [ "${BASH_VERSINFO[0]:-3}" -gt 4 ] || { [ "${BASH_VERSINFO[0]:-3}" -eq 4 ] && [ "${BASH_VERSINFO[1]:-0}" -ge 2 ]; }; then
+  co_now() { local t; printf -v t '%(%s)T' -1; printf '%s' "$t"; }
+else
+  co_now() { date +%s; }
+fi
 
 # Milliseconds are not portable (BSD date has no %N); seconds are enough.
 co_elapsed() { echo $(( $(co_now) - $1 )); }
+
+# co_base VAR PATH — basename without a process (trailing slashes ignored).
+co_base() {
+  local __p="$2"
+  while :; do
+    case "$__p" in
+      /) break ;;
+      */) __p=${__p%/} ;;
+      *) break ;;
+    esac
+  done
+  [ "$__p" = / ] || __p=${__p##*/}
+  printf -v "$1" '%s' "$__p"
+}
+
+# co_lower VAR TEXT — lowercase; a builtin on bash 4+, tr on macOS's bash 3.2.
+if [ "${BASH_VERSINFO[0]:-3}" -ge 4 ]; then
+  eval 'co_lower() { printf -v "$1" "%s" "${2,,}"; }'
+else
+  co_lower() {
+    local __l
+    __l=$(printf '%s' "$2" | LC_ALL=C tr '[:upper:]' '[:lower:]')
+    printf -v "$1" '%s' "$__l"
+  }
+fi
 
 co_trim() { printf '%s' "$1" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//'; }
 
 # Thousands separator without relying on locale-aware printf.
 co_fmt_int() {
-  printf '%s' "$1" | awk '{ s=$0; out=""; while (length(s) > 3) { out="," substr(s, length(s)-2) out; s=substr(s, 1, length(s)-3) } print s out }'
+  local s="$1" out=""
+  while [ ${#s} -gt 3 ]; do
+    out=",${s:$((${#s} - 3))}$out"
+    s=${s:0:$((${#s} - 3))}
+  done
+  printf '%s' "$s$out"
 }
 
-co_file_bytes() { wc -c < "$1" 2>/dev/null | tr -d ' ' || echo 0; }
+co_file_bytes() {
+  local b
+  b=$(wc -c < "$1" 2>/dev/null) || b=0
+  b=${b//[!0-9]/}
+  printf '%s' "${b:-0}"
+}
 
 # wc -l misses a final line without a trailing newline; awk counts it.
 co_file_lines() { awk 'END { print NR }' "$1" 2>/dev/null || echo 0; }
@@ -36,12 +76,12 @@ co_est_tokens() { echo $(( ($1 + 3) / 4 )); }
 
 # True when the file looks like text (no NUL byte in the first 8 KB).
 co_is_text() {
-  local f="$1" n1 n2
-  [ -f "$f" ] || return 1
-  n1=$(head -c 8192 "$f" 2>/dev/null | wc -c | tr -d ' ')
-  # LC_ALL=C: BSD tr aborts on invalid/cut-in-half UTF-8 in a UTF-8 locale.
-  n2=$(head -c 8192 "$f" 2>/dev/null | LC_ALL=C tr -d '\000' | wc -c | tr -d ' ')
-  [ "$n1" = "$n2" ]
+  local f="$1" LC_ALL=C x rc
+  [ -f "$f" ] && [ -r "$f" ] || return 1
+  # read stops at the first NUL (status 0) or after 8192 bytes; reaching the
+  # end of the file without a NUL is status 1. No process needed.
+  IFS= read -r -d '' -n 8192 x < "$f"; rc=$?
+  [ "$rc" -ne 0 ] || [ ${#x} -ge 8192 ]
 }
 
 # Safe single-quote shell quoting, for commands we print for Claude to run.
@@ -107,7 +147,7 @@ CO_PROJECT_FILTER='
   | if (($base.trusted_projects // []) | map(select(. == $dir)) | length) > 0 then $base * $proj
     else
       ($proj | with_entries(select(.key == "models" or .key == "variants" or .key == "read" or .key == "explore"
-        or .key == "digest" or .key == "hooks" or .key == "enabled" or .key == "log_retention_days"))) as $safe
+        or .key == "digest" or .key == "hooks" or .key == "enabled" or .key == "log_retention_days" or .key == "tasks"))) as $safe
     | (($proj.opencode // {}) | if type == "object" then with_entries(select(.key == "timeout_seconds" or .key == "max_stream_errors")) else {} end) as $oc
     | (($proj.privacy // {}) | if type == "object" then (.secret_globs // []) else [] end | if type == "array" then map(select(type == "string")) else [] end) as $globs
     | ($base * $safe * {opencode: $oc}) | .privacy.secret_globs = ((.privacy.secret_globs // []) + $globs)
@@ -122,7 +162,7 @@ co_project_config_ignored() {
   if printf '%s' "$CO_CONFIG" | jq -e --arg d "$(co_project_dir)" '(.trusted_projects // []) | map(select(. == $d)) | length > 0' >/dev/null 2>&1; then return 0; fi
   jq -r 'if type != "object" then empty else
       ([keys[] | select(. != "models" and . != "variants" and . != "read" and . != "explore" and . != "digest"
-        and . != "hooks" and . != "enabled" and . != "log_retention_days" and . != "opencode" and . != "privacy")]
+        and . != "hooks" and . != "enabled" and . != "log_retention_days" and . != "tasks" and . != "opencode" and . != "privacy")]
       + ((.opencode // {}) | if type == "object" then [keys[] | select(. != "timeout_seconds" and . != "max_stream_errors") | "opencode." + .] else [] end)
       + ((.privacy // {}) | if type == "object" then [keys[] | select(. != "secret_globs") | "privacy." + .] else [] end))
       | join(", ") end' "$proj" 2>/dev/null
@@ -131,9 +171,144 @@ co_project_config_ignored() {
 # Loads defaults <- user config <- project config (filtered) <- env
 # overrides into CO_CONFIG (a JSON string). Broken files are reported and
 # skipped, never fatal: a typo in a config must not wedge Claude's tools.
+#
+# Hooks run on every tool call, so this is one jq process: it validates,
+# merges, filters and applies the overrides, and also turns every simple key
+# into shell variables that co_cfg/co_cfg_list read without a process:
+# CO_T__hooks__read_guard=s (s scalar, o object, l list of one-line strings,
+# l0 empty list, a anything else) and CO_K__hooks__read_guard=block. Keys
+# outside [A-Za-z0-9_] (or with "__", or a leading/trailing "_") are left to
+# jq. CO_CFG_VARS lists the names so a reload can drop them.
 CO_CONFIG=""
+CO_CFG_FAST=""
+CO_CFG_VARS=""
+CO_CONFIG_PROGRAM='
+  def obj: try (fromjson | if type == "object" then . else null end) catch null;
+  def good: (explode | all(.[]; (. >= 65 and . <= 90) or (. >= 97 and . <= 122) or (. >= 48 and . <= 57) or . == 95))
+    and length > 0 and (contains("__") | not) and (startswith("_") | not) and (endswith("_") | not);
+  def flat($n):
+    if type == "object" then
+      (if $n != "" then ["CO_T\($n)", "o"] else empty end),
+      (to_entries[] | select(.key | good) | .key as $k | .value | flat($n + "__" + $k))
+    elif type == "array" then
+      if length == 0 then ["CO_T\($n)", "l0"]
+      elif all(.[]; type == "string" and (contains("\n") | not)) then ["CO_T\($n)", "l"], ["CO_K\($n)", join("\n")]
+      else ["CO_T\($n)", "a"] end
+    elif type == "null" then empty
+    elif type == "string" and contains("\n") then ["CO_T\($n)", "a"]
+    else ["CO_T\($n)", "s"], ["CO_K\($n)", tostring] end;
+  ($d | obj // {}) as $def
+  | (if $upath == "" then null else ($u | obj) end) as $user
+  | (if $ppath == "" then null else ($pr | obj) end) as $projv
+  | ($def * ($user // {})) as $base
+  | (if $projv == null then $base
+     else ([$projv] as $p | $base | (PROJECT_FILTER)) end) as $merged
+  | ($merged
+    | (if $model   != "" then .models.default = $model else . end)
+    | (if $guard   != "" then .hooks.read_guard = $guard else . end)
+    | (if $timeout != "" then .opencode.timeout_seconds = ($timeout | tonumber) else . end)
+    | (if $bin     != "" then .opencode.bin = $bin else . end)
+    | (if $disabled == "1" or $disabled == "true" then .enabled = false else . end)
+    | (if $state   != "" then .state_dir = $state else . end)
+    | (if $min_lines != "" then .hooks.read_threshold_lines = ($min_lines | tonumber) else . end)) as $final
+  | [$final | flat("")] as $vars
+  | "CO_CFG_BAD=" + ([(if $upath != "" and $user == null then $upath else empty end),
+      (if $ppath != "" and $projv == null then $ppath else empty end)] | join("\n") | @sh),
+    "CO_CONFIG=" + ($final | tojson | @sh),
+    ($vars[] | .[0] + "=" + (.[1] | @sh)),
+    "CO_CFG_VARS=" + ([$vars[] | .[0]] | join(" ") | @sh),
+    "CO_CFG_FAST=1"'
+
 co_config_load() {
   [ -n "$CO_CONFIG" ] && return 0
+  local user proj pdir min_lines="${OFFLOAD_MIN_LINES:-}" timeout="${OFFLOAD_TIMEOUT:-}" out f
+  CO_CFG_BAD=""
+  # a reload (CO_CONFIG reset after a change) must not see the old keys
+  # shellcheck disable=SC2086
+  [ -n "$CO_CFG_VARS" ] && unset $CO_CFG_VARS
+  CO_CFG_VARS="" CO_CFG_FAST=""
+  user="${OFFLOAD_CONFIG:-${XDG_CONFIG_HOME:-$HOME/.config}/harness-offload/config.json}"   # = co_user_config_path
+  pdir=${CO_PROJECT_DIR:-}
+  [ -n "$pdir" ] || pdir=$(co_project_dir)
+  proj="$pdir/.harness-offload.json"
+  [ -f "$user" ] || user=""
+  [ -f "$proj" ] || proj=""
+  # Environment overrides — handy for one-off runs and for tests.
+  # OFFLOAD_MIN_LINES is a shortcut for hooks.read_threshold_lines.
+  # (No jq regex anywhere: Apple's /usr/bin/jq may be built without one.)
+  case "$min_lines" in ''|*[!0-9]*) min_lines="" ;; esac
+  case "$timeout" in ''|*[!0-9]*) timeout="" ;; esac
+
+  # The result is cached per project, keyed by everything it depends on: the
+  # environment overrides, the paths and the full text of the three files
+  # (read here without starting a process). Any edit changes the key, so a
+  # stale entry can't be used; the cache is only read when this user owns it.
+  # OFFLOAD_NO_CONFIG_CACHE=1 turns it off.
+  local key="" cache="" cdir c CO_CFG_KEY=""
+  if [ -z "${OFFLOAD_NO_CONFIG_CACHE:-}" ]; then
+    key="v1|$CO_ROOT|$user|$proj|$pdir|${OFFLOAD_MODEL:-}|${OFFLOAD_READ_GUARD:-}|$timeout|${OFFLOAD_OPENCODE_BIN:-}|${OFFLOAD_DISABLE:-}|${OFFLOAD_STATE_DIR:-}|$min_lines"
+    for f in "$CO_ROOT/config/defaults.json" "$user" "$proj"; do
+      c=""
+      [ -n "$f" ] && IFS= read -r -d '' c < "$f"
+      key="$key|${#c}|$c"
+    done
+    cdir="${OFFLOAD_STATE_DIR:-${XDG_CACHE_HOME:-$HOME/.cache}/harness-offload}/cache"
+    c=${pdir//[!A-Za-z0-9._-]/_}
+    [ ${#c} -gt 180 ] && c=${c:$((${#c} - 180))}
+    cache="$cdir/config$c"
+    if [ -f "$cache" ] && [ -O "$cache" ] && [ -O "$cdir" ]; then
+      out=""
+      IFS= read -r -d '' out < "$cache"
+      case "$out" in
+        *"CO_CFG_FAST=1"*)
+          eval "$out"
+          if [ "$CO_CFG_KEY" = "$key" ]; then
+            co_config_warn
+            return 0
+          fi
+          # shellcheck disable=SC2086
+          [ -n "$CO_CFG_VARS" ] && unset $CO_CFG_VARS
+          CO_CFG_VARS="" CO_CFG_FAST="" CO_CONFIG="" ;;
+      esac
+    fi
+  fi
+  out=$(jq -nr \
+    --rawfile d "$CO_ROOT/config/defaults.json" \
+    --rawfile u "${user:-/dev/null}" --arg upath "$user" \
+    --rawfile pr "${proj:-/dev/null}" --arg ppath "$proj" --arg dir "$pdir" \
+    --arg model "${OFFLOAD_MODEL:-}" \
+    --arg guard "${OFFLOAD_READ_GUARD:-}" \
+    --arg timeout "$timeout" \
+    --arg bin "${OFFLOAD_OPENCODE_BIN:-}" \
+    --arg disabled "${OFFLOAD_DISABLE:-}" \
+    --arg state "${OFFLOAD_STATE_DIR:-}" \
+    --arg min_lines "$min_lines" \
+    "${CO_CONFIG_PROGRAM%%PROJECT_FILTER*}$CO_PROJECT_FILTER${CO_CONFIG_PROGRAM#*PROJECT_FILTER}" 2>/dev/null) || out=""
+  case "$out" in
+    *"CO_CFG_FAST=1") eval "$out" ;;
+    *) co_config_load_slow; return 0 ;;
+  esac
+  if [ -n "$cache" ]; then
+    # (private: the merged config can hold an endpoint's api_key)
+    { [ -d "$cdir" ] || mkdir -p -m 700 "$cdir" 2>/dev/null; } &&
+      (umask 077 && printf 'CO_CFG_KEY=%q\n%s\n' "$key" "$out" > "$cache.$$") 2>/dev/null &&
+      mv -f "$cache.$$" "$cache" 2>/dev/null || rm -f "$cache.$$" 2>/dev/null
+  fi
+  co_config_warn
+}
+
+# Reports config files that were skipped as invalid (CO_CFG_BAD, one per line).
+co_config_warn() {
+  local f
+  while IFS= read -r f; do
+    [ -n "$f" ] && co_err "ignoring invalid JSON config: $f"
+  done <<EOF
+$CO_CFG_BAD
+EOF
+}
+
+# The step-by-step loader, kept for a jq that rejects the program above.
+co_config_load_slow() {
   local files="$CO_ROOT/config/defaults.json" f user proj
   user=$(co_user_config_path)
   proj=$(co_project_config_path)
@@ -156,10 +331,6 @@ $f"
     merged=$(printf '%s' "$merged" | jq --slurpfile p "$proj" --arg dir "$(co_project_dir)" "$CO_PROJECT_FILTER" 2>/dev/null) ||
       merged=$(printf '%s\n' "$files" | while IFS= read -r f; do cat "$f"; echo; done | jq -s 'reduce .[] as $c ({}; . * $c)')
   fi
-
-  # Environment overrides — handy for one-off runs and for tests.
-  # OFFLOAD_MIN_LINES is a shortcut for hooks.read_threshold_lines.
-  # (No jq regex anywhere: Apple's /usr/bin/jq may be built without one.)
   local min_lines="${OFFLOAD_MIN_LINES:-}" timeout="${OFFLOAD_TIMEOUT:-}" base="$merged"
   case "$min_lines" in ''|*[!0-9]*) min_lines="" ;; esac
   case "$timeout" in ''|*[!0-9]*) timeout="" ;; esac
@@ -181,28 +352,95 @@ $f"
   CO_CONFIG="$merged"
 }
 
-# co_cfg '.path.to.key' [default] — scalar lookup (arrays come back as JSON).
-co_cfg() {
+# co_cfgv VAR '.path.to.key' [default] — sets VAR to the setting (scalars as
+# text, arrays/objects as JSON); co_cfg prints it. A simple path is answered
+# from the CO_T__/CO_K__ variables; anything else asks jq.
+co_cfgv() {
+  local __v __t __n
   co_config_load
-  local v
+  if [ -n "$CO_CFG_FAST" ]; then
+    case "$2" in
+      *[!A-Za-z0-9_.]*|*..*|*.|*__*|*._*|*_.*|*_) ;;
+      .[A-Za-z0-9]*)
+        __n=${2//./__}
+        eval "__t=\${CO_T$__n-}"
+        case "$__t" in
+          s)
+            eval "__v=\$CO_K$__n"
+            if [ -z "$__v" ] || [ "$__v" = "null" ]; then __v=${3:-}; fi
+            printf -v "$1" '%s' "$__v"
+            return 0 ;;
+          '') printf -v "$1" '%s' "${3:-}"; return 0 ;;
+        esac ;;
+    esac
+  fi
   # (not `// empty`: that would turn an explicit false into the default)
-  v=$(printf '%s' "$CO_CONFIG" | jq -r "($1) | if . == null then empty elif type == \"array\" or type == \"object\" then tojson else tostring end" 2>/dev/null)
-  if [ -z "$v" ] || [ "$v" = "null" ]; then printf '%s' "${2:-}"; else printf '%s' "$v"; fi
+  __v=$(printf '%s' "$CO_CONFIG" | jq -r "($2) | if . == null then empty elif type == \"array\" or type == \"object\" then tojson else tostring end" 2>/dev/null)
+  if [ -z "$__v" ] || [ "$__v" = "null" ]; then __v=${3:-}; fi
+  printf -v "$1" '%s' "$__v"
+}
+
+co_cfg() {
+  local v
+  co_cfgv v "$1" "${2:-}"
+  printf '%s' "$v"
 }
 
 co_cfg_bool() {
-  case "$(co_cfg "$1" "${2:-false}")" in true|1|yes|on) return 0 ;; *) return 1 ;; esac
+  local v
+  co_cfgv v "$1" "${2:-false}"
+  case "$v" in true|1|yes|on) return 0 ;; *) return 1 ;; esac
+}
+
+# co_cfgi VAR '.path' DEFAULT — a non-negative integer setting (else DEFAULT).
+co_cfgi() {
+  local __i
+  co_cfgv __i "$2" "$3"
+  case "$__i" in ''|*[!0-9]*) __i=$3 ;; esac
+  printf -v "$1" '%s' "$__i"
 }
 
 co_cfg_int() {
   local v
-  v=$(co_cfg "$1" "$2")
-  case "$v" in ''|*[!0-9]*) printf '%s' "$2" ;; *) printf '%s' "$v" ;; esac
+  co_cfgi v "$1" "$2"
+  printf '%s' "$v"
+}
+
+# "review-sql (Find N+1 queries), scan" — the user's own tasks, for session
+# guides (at most 12; names must be valid task names). Twin: taskSummary.
+co_task_summary() {
+  local n d out="" count=0 total=0
+  while IFS= read -r n; do
+    [ -n "$n" ] || continue
+    case "$n" in *[!a-z0-9_-]*|-*) continue ;; esac
+    [ ${#n} -le 40 ] || continue
+    total=$((total + 1))
+    [ "$count" -lt 12 ] || continue
+    count=$((count + 1))
+    d=$(co_cfg ".tasks[\"$n\"].description" | LC_ALL=C tr '\n\t\r' '   ' | LC_ALL=C tr -s ' ' | LC_ALL=C sed 's/^ //; s/ $//' | cut -c1-80)
+    out="$out${out:+, }$n${d:+ ($d)}"
+  done <<EOF
+$(co_cfg_list '(.tasks // {}) | if type == "object" then keys else [] end')
+EOF
+  [ "$total" -gt 12 ] && out="$out, … ($((total - 12)) more: offload tasks)"
+  printf '%s' "$out"
 }
 
 # Newline-separated list from a JSON array setting.
 co_cfg_list() {
   co_config_load
+  if [ -n "$CO_CFG_FAST" ]; then
+    case "$1" in
+      *[!A-Za-z0-9_.]*|*..*|*.|*__*|*._*|*_.*|*_) ;;
+      .[A-Za-z0-9]*)
+        local __n=${1//./__} __t __v
+        eval "__t=\${CO_T$__n-}"
+        case "$__t" in
+          l) eval "__v=\$CO_K$__n"; printf '%s\n' "$__v"; return 0 ;;
+          l0|s|'') return 0 ;;
+        esac ;;
+    esac
+  fi
   printf '%s' "$CO_CONFIG" | jq -r "($1) // [] | .[]" 2>/dev/null
 }
 
@@ -210,9 +448,9 @@ co_cfg_list() {
 
 co_state_dir() {
   local d
-  d=$(co_cfg '.state_dir')
+  co_cfgv d '.state_dir'
   [ -z "$d" ] && d="${XDG_STATE_HOME:-$HOME/.local/state}/harness-offload"
-  mkdir -p "$d/logs" "$d/cooldowns" 2>/dev/null
+  [ -d "$d/logs" ] && [ -d "$d/cooldowns" ] || mkdir -p "$d/logs" "$d/cooldowns" 2>/dev/null
   printf '%s' "$d"
 }
 
@@ -236,23 +474,34 @@ co_prune_logs() {
 # True when the path looks like it holds secrets. Matches the basename against
 # privacy.secret_globs, with privacy.secret_allow_globs as exceptions.
 co_is_secret_path() {
-  local base pat
+  local base orig pat allow deny
   # case-insensitive (macOS/Windows file systems), trailing dots/spaces ignored
-  base=$(basename "$1" | LC_ALL=C tr '[:upper:]' '[:lower:]' | LC_ALL=C sed 's/[. ]*$//')
-  [ -z "$base" ] && base=$(basename "$1")
+  co_base orig "$1"
+  co_lower base "$orig"
+  while :; do
+    case "$base" in
+      *[.\ ]) base=${base%?} ;;
+      *) break ;;
+    esac
+  done
+  [ -z "$base" ] && base=$orig
+  allow=$(co_cfg_list '.privacy.secret_allow_globs')
+  deny=$(co_cfg_list '.privacy.secret_globs')
+  co_lower allow "$allow"
+  co_lower deny "$deny"
   while IFS= read -r pat; do
     [ -z "$pat" ] && continue
     # shellcheck disable=SC2254
     case "$base" in $pat) return 1 ;; esac
   done <<EOF
-$(co_cfg_list '.privacy.secret_allow_globs' | LC_ALL=C tr '[:upper:]' '[:lower:]')
+$allow
 EOF
   while IFS= read -r pat; do
     [ -z "$pat" ] && continue
     # shellcheck disable=SC2254
     case "$base" in $pat) return 0 ;; esac
   done <<EOF
-$(co_cfg_list '.privacy.secret_globs' | LC_ALL=C tr '[:upper:]' '[:lower:]')
+$deny
 EOF
   return 1
 }
@@ -320,8 +569,16 @@ co_have_opencode() {
 
 # Hooks fail open: when offload cannot deliver (disabled, no opencode, every
 # model cooling down after errors) they let Claude's own tools run unimpeded.
+# Sources the worker code (OpenCode transport, agent CLIs, HTTP) once.
+co_backends() {
+  [ -n "${CO_BACKENDS_LOADED:-}" ] && return 0
+  # shellcheck source=opencode.sh
+  . "$CO_ROOT/lib/opencode.sh"
+}
+
 co_available() {
   co_cfg_bool '.enabled' true || return 1
+  co_backends
   command -v jq >/dev/null 2>&1 || return 1
   co_backend_present || return 1
   co_any_model_ready
@@ -331,6 +588,7 @@ co_available() {
 # (opencode, the agent CLI, curl, or the TypeScript CLI — see co_route).
 co_backend_present() {
   local m task
+  co_backends
   for task in read summarize; do
     m=$(co_model_chain "$task" | head -n 1)
     co_route "$m" "$task" 2>/dev/null || continue

@@ -59,7 +59,7 @@ jobs:
       - name: Build npm package
         working-directory: packages/cli
         run: |
-          bun install --frozen-lockfile && bun run build && cp ../../LICENSE .
+          bun install --frozen-lockfile && bun run build && cp ../../LICENSE ../../LICENSE-FONTS .
           # npmjs.com can't resolve repo-relative links: point images and docs at GitHub
           repo="${GITHUB_REPOSITORY}"
           sed -E -e "s#src=\"(docs/[^\"]+)\"#src=\"https://raw.githubusercontent.com/$repo/main/\1\"#g" \

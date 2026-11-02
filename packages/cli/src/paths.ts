@@ -1,6 +1,6 @@
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { execFileSync } from "node:child_process";
+import { childProcess } from "./lazy.ts";
 import { existsSync, statSync } from "node:fs";
 
 const isWin = process.platform === "win32";
@@ -27,7 +27,7 @@ export function projectDir(): string {
   const fromEnv = process.env.OFFLOAD_PROJECT_DIR || process.env.CLAUDE_PROJECT_DIR;
   if (fromEnv && existsSync(fromEnv) && statSync(fromEnv).isDirectory()) return (projectDirCache = fromEnv);
   try {
-    const top = execFileSync("git", ["rev-parse", "--show-toplevel"], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim();
+    const top = childProcess().execFileSync("git", ["rev-parse", "--show-toplevel"], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim();
     if (top) return (projectDirCache = top);
   } catch {
     /* not a git repo */

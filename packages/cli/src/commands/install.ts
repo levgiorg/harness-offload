@@ -1,3 +1,4 @@
+import { CONNECTORS } from "../assets.ts";
 import { detectHosts, HOST_LABELS, HOSTS, HostName, install, installedHosts, isHost, uninstall } from "../hosts/install.ts";
 import { color, sym } from "../ui.ts";
 
@@ -15,6 +16,12 @@ export async function cmdInstall(cmd: string, argv: string[]): Promise<number> {
     for (const s of steps) {
       process.stdout.write(`  ${s.ok ? sym.ok : sym.bad} ${s.text}\n`);
       if (!s.ok) failed++;
+    }
+    // if the harness's own route ever stops working, an API key can take over
+    const backup = cmd === "install" ? CONNECTORS.host_api_models?.[h] : undefined;
+    if (backup) {
+      const name = backup.slice(0, backup.indexOf(":"));
+      process.stdout.write(`  ${color.dim(`backup if ${HOST_LABELS[h]}'s own route stops working: offload key ${name} && offload model fallback @host-api @default  (→ ${backup})`)}\n`);
     }
   }
   process.stdout.write("\n");

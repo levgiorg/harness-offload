@@ -3,6 +3,36 @@
 Mock-based suites run in CI on every push (conformance ×2 engines, routing table ×2, TS unit/adapter/MCP/installer tests).
 Real-model runs are recorded here.
 
+## 2026-11-02 — hook latency, with and without offload ([performance.md](performance.md))
+
+- **Real Claude Code 2.1.316**, scripted mock API (instant answers), the same 17 tool calls per session,
+  7 runs each: without offload 1,136 ms; with the previous plugin 5,707 ms (+257 ms per tool call); with this
+  one 2,086 ms (**+56 ms per tool call**). Bytes of tool results the model reads: 228,648 → 26,763 in both
+  plugin versions (same decisions).
+- **Every hook, both engines** (`bench/hooks.mjs`, 30 runs, outcome-checked): a pass-through call 104–175 →
+  **16–21 ms** (bash) and ~105 → **36–42 ms** (Node hooks); blocked read 233 → 79 / 109 → 52 ms; long-output
+  digest with the stub worker 862 → 274 / 126 → 72 ms; `OFFLOAD_DISABLE=1` 35 → 5 / 115 → 5 ms.
+- Inside real Claude Code with the stub worker: the guide reaches the model, a 900-line Read is stopped with
+  the outline (923 chars), a 3,000-line output comes back as the digest (all four FAIL lines verbatim) inside
+  Claude Code's 2 KB preview, a 20-line slice passes untouched.
+- Not run: `tests/run.sh --e2e` (needs a real `opencode`, whose install is blocked here — decision #40).
+
+## 2026-11-02 — your own tasks, `offload model`, every backend one by one
+
+- **A custom task on the Claude plan, both engines:** `tasks.exit-codes` ("list every exit code constant…",
+  `model: claude:haiku`) on `lib/opencode.sh` (531 lines): all 8 constants with numbers and meanings in both
+  engines, **16/16 and 17/17 citations verified**, ~6,650 tokens kept out of context, 10–12 s; stats record
+  `"task":"exit-codes"`. Worker cost per run ≈ 14.8k tokens in / 2.3k out on the plan.
+- **Backend matrix** (`tests/e2e-backends.sh --live --claude-live`, both engines): **502/502** —
+  16 HTTP presets + a custom endpoint against a mock (path, auth header, model id, tools, 401/429/404, model
+  list, `offload model`); the 13 cloud presets' real URLs with a fake key → exit 11 (Fireworks → 13, it
+  answers "model not found" for unknown keys); Ollama/LM Studio/vLLM with no server → exit 14 in ≤1 s;
+  Codex, Gemini, Pi, Copilot, Qwen and Crush CLIs (real binaries, logged out) → flags accepted, exit 11;
+  `claude -p` real call → `pong`. Cursor CLI not installed here (skipped).
+- Found and fixed by that run: Qwen "No auth type is selected", Pi "No API key found" / "security token is
+  invalid", Crush "No providers configured" were exit 14 → now 11; Gemini's login error (JSON on stderr) is
+  shown verbatim; `offload models fireworks` with a bad key printed nothing → now `# fireworks: HTTP 401: …`.
+
 ## 2026-11-02 — same subscription (`@host`), more harnesses
 
 - **Claude plan as the worker, bash engine only (no Node):** `OFFLOAD_HOST=claude offload read -q "what does co_route do?" lib/agents.sh`

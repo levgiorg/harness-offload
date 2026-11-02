@@ -1,6 +1,6 @@
 import { CONNECTORS } from "../assets.ts";
 import { cfg, cfgStr } from "../config.ts";
-import { endpoint, endpointNames, HttpBackend } from "./http.ts";
+import { apiKey, endpoint, endpointNames, HttpBackend } from "./http.ts";
 import { OpencodeBackend } from "./opencode.ts";
 import { cliAgentBackend, CLI_AGENTS } from "./agents.ts";
 import type { Backend } from "./types.ts";
@@ -42,6 +42,16 @@ export function hostModel(host = detectHost()): string | undefined {
   return CONNECTORS.host_models[host];
 }
 
+/** "@host-api" → the same harness's model family through an API key: the backup
+ * when the harness's own CLI route stops working (logged out, headless use
+ * blocked, plan limits). Config host_api_models overrides the defaults. */
+export function hostApiModel(host = detectHost()): string | undefined {
+  if (!host) return undefined;
+  const own = cfg(`host_api_models.${host}`);
+  if (typeof own === "string") return own || undefined;
+  return CONNECTORS.host_api_models?.[host];
+}
+
 /**
  * "@host" → the harness's own subscription (see hostModel).
  * "opencode-go/glm-5" (no known prefix) → default backend (opencode).
@@ -54,6 +64,19 @@ export function parseRef(ref: string): ModelRef {
     const m = hostModel();
     if (m === undefined) throw new Error("@host: cannot tell which agent harness is calling (set OFFLOAD_HOST=claude|codex|gemini|cursor|pi|opencode)");
     if (m === "@host" || m === "@self") return { backend: def, model: "", ref: "@default" };
+    return parseRef(m);
+  }
+  if (ref === "@host-api") {
+    const h = detectHost();
+    if (!h) throw new Error("@host-api: cannot tell which agent harness is calling (set OFFLOAD_HOST)");
+    const m = hostApiModel(h);
+    if (!m || m.startsWith("@")) throw new Error(`@host-api: ${h} has no API-key backup (set host_api_models.${h} to a BACKEND:MODEL)`);
+    // skipped (not an error worth a cooldown) until a key is there
+    const name = m.slice(0, m.indexOf(":"));
+    const ep = endpoint(name);
+    if (ep && !/127\.0\.0\.1|localhost/.test(ep.base_url) && !apiKey(ep)) {
+      throw new Error(`@host-api: no API key for ${name} yet (offload key ${name}, or export ${ep.api_key_env ?? "its key"})`);
+    }
     return parseRef(m);
   }
   if (!ref || ref === "@default") return { backend: def, model: "", ref: "@default" };

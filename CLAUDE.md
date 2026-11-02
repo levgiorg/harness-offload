@@ -26,13 +26,18 @@ bash plugins/harness-offload/tests/run.sh                         # conformance,
 OFFLOAD_CLI=$PWD/packages/cli/dist/offload-node bash plugins/harness-offload/tests/run.sh   # same, TS engine
 bash evals/run.sh && bash evals/run.sh --ts                       # routing table
 bash plugins/harness-offload/tests/e2e-hosts.sh                   # real Copilot/Crush/Qwen (COPILOT_BIN, CRUSH_BIN, QWEN_CMD)
+bash plugins/harness-offload/tests/e2e-backends.sh [--live] [--agents]   # every backend one by one (mock; real URLs; real CLIs)
 node packages/cli/scripts/source-hash.mjs --check                 # dist freshness (CI)
+node bench/hooks.mjs [--budget-ms 150]                            # hook latency, both engines (CI)
+bash bench/claude-e2e.sh                                          # real Claude Code with vs without the plugin
 ```
 
 ## Rules
 - **Two engines, one behaviour.** Change bash and TypeScript together; the conformance suite runs on both.
 - Shared assets live only in `plugins/harness-offload/` (generated into the TS package).
 - **Fail open** (hooks, in-process plugins). **Workers never act**: read-only or no tools, `OFFLOAD_DISABLE=1`.
+- **Hooks are on the hot path** (every tool call): cheap checks first, worker code loaded only to act, no new
+  process per lookup (bash) — re-run `node bench/hooks.mjs` after changing one (docs/performance.md).
 - A repo's `.harness-offload.json` is untrusted (no binaries/endpoints/privacy relaxations) unless `offload config trust`.
 - Bash must run on macOS bash 3.2 + BSD tools; no jq regex; `LC_ALL=C` for tr/sed/awk.
 - No real model calls in tests (stubs: `tests/stub-agent`, `tests/mock_openai.py`, `tests/stub-opencode`).
