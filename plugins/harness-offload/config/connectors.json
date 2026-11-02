@@ -104,9 +104,9 @@
     "opencode": "@default",
     "kilo": "@default",
     "devin": "claude:haiku",
-    "copilot": "@default",
-    "qwen": "@default",
-    "crush": "@default",
+    "copilot": "copilot:",
+    "qwen": "qwen:",
+    "crush": "crush:",
     "amp": "@default"
   }
 }

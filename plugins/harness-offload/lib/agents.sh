@@ -5,7 +5,7 @@
 # Same contract as co_oc_attempt: answer in answer_file, CO_OC_* set, exit
 # codes from opencode.sh. The TypeScript engine has the twin implementations.
 
-CO_AGENT_BACKENDS="claude codex gemini cursor pi"
+CO_AGENT_BACKENDS="claude codex gemini cursor pi copilot qwen crush"
 
 co_is_agent_backend() {
   case " $CO_AGENT_BACKENDS " in *" $1 "*) return 0 ;; esac
@@ -229,6 +229,41 @@ EOF
       fi
       a+=("$(printf '\n\nAnswer as instructed above.')")
       in="$prompt_file" ;;
+    copilot)
+      # prompt on stdin (with -p Copilot ignores stdin); explicit tool allowlist
+      a=(--output-format json -s --no-custom-instructions --no-ask-user --disable-builtin-mcps --no-auto-update)
+      [ -n "$model" ] && a+=(--model "$model")
+      [ -n "$variant" ] && a+=(--reasoning-effort "$variant")
+      if [ "$task" = explore ]; then a+=(--allow-all-tools --available-tools view grep glob); else a+=(--available-tools none); fi
+      in="$merged" ;;
+    qwen)
+      # background memory extraction would spend extra calls on the user's quota
+      printf '{"memory":{"enableManagedAutoMemory":false,"enableManagedAutoDream":false}}\n' > "$merged.qwen.json"
+      pre+=("QWEN_CODE_SYSTEM_SETTINGS_PATH=$merged.qwen.json")
+      a=(--output-format json --system-prompt "$sys" --approval-mode plan --chat-recording false -e none)
+      [ -n "$model" ] && a+=(-m "$model")
+      if [ "$task" = explore ]; then a+=(--core-tools read_file grep_search glob); else a+=(--core-tools none); fi
+      a+=(-- "Answer as instructed above.")
+      in="$prompt_file" ;;
+    crush)
+      # `crush run` approves every tool call: plain questions only, in offload's
+      # own work dir, with every built-in tool and the user's MCP servers off
+      if [ "$task" = explore ]; then
+        CO_OC_ERROR="crush: \`crush run\` approves every tool call, so it is not used as a read-only explorer; the next model in the chain takes over"
+        return $CO_E_USAGE
+      fi
+      local ccfg="${CRUSH_GLOBAL_CONFIG:-${XDG_CONFIG_HOME:-$HOME/.config}/crush}/crush.json"
+      jq -n --argjson mcp "$(jq -c '.mcp // {} | keys' "$ccfg" 2>/dev/null || echo '[]')" '
+        {options: {disabled_tools: ["agent","bash","crush_info","crush_logs","job_output","job_kill","download","edit","multiedit",
+          "lsp_diagnostics","lsp_references","lsp_restart","lsp_symbols","lsp_definition","lsp_call_hierarchy","lsp_rename",
+          "lsp_replace_symbol","fetch","agentic_fetch","glob","grep","ls","question","sourcegraph","todos","view","write",
+          "list_mcp_resources","read_mcp_resource"]}}
+        + (if ($mcp | length) > 0 then {mcp: ($mcp | map({key: ., value: {disabled: true}}) | from_entries)} else {} end)' > "$workdir/.crush.json" 2>/dev/null
+      a=(run -q)
+      [ -n "$model" ] && a+=(-m "$model")
+      [ -n "$variant" ] && a+=(--reasoning-effort "$variant")
+      a+=("Answer as instructed above.")
+      in="$merged" ;;
   esac
   co_spawn_wait "$timeout" "$in" "$out" "$err" "$workdir" "${pre[@]}" "$bin" "${a[@]}"
   rc=$CO_RUN_RC
@@ -266,6 +301,28 @@ EOF
       text=$(jq -rRs 'split("\n") | map(fromjson? // empty) | map(select(.type == "message_end" and .message.role == "assistant") | (.message.content // [] | map(select(.type == "text") | .text) | join(""))) | map(select(explode | map(select(. > 32)) | length > 0)) | last // empty' "$out" 2>/dev/null)
       if [ -z "$text" ]; then co_agent_fail "pi: $(tail -c 300 "$err")"; return $?; fi
       u=$(jq -rRs 'split("\n") | map(fromjson? // empty) | map(select(.type == "message_end" and .message.role == "assistant") | .message.usage // {}) | [(map((.input // 0) + (.cacheRead // 0)) | max // 0), (map(.output // 0) | add // 0)] | map(tostring) | join(" ")' "$out" 2>/dev/null) ;;
+    copilot)
+      text=$(jq -rRs 'split("\n") | map(fromjson? // empty) | map(select(.type == "assistant.message") | (.data.content // "")) | map(select(explode | map(select(. > 32)) | length > 0)) | last // empty' "$out" 2>/dev/null)
+      if [ -z "$text" ]; then
+        msg=$(jq -rRs 'split("\n") | map(fromjson? // empty) | map(select(.type == "session.error") | "\(.data.errorType // "") \(.data.message // "")") | last // empty' "$out" 2>/dev/null)
+        co_agent_fail "copilot: ${msg:-$(tail -c 300 "$err")}"; return $?
+      fi
+      u="0 0" ;;
+    qwen)
+      jq -c 'if type == "array" then . else [.] end | map(select(type == "object" and .type == "result")) | last // {}' "$out" > "$out.r" 2>/dev/null ||
+        jq -cs 'map(select(type == "object" and .type == "result")) | last // {}' "$out" > "$out.r" 2>/dev/null
+      text=$(jq -r 'if .is_error then empty else (.result // empty) end' "$out.r" 2>/dev/null)
+      if [ -z "$text" ]; then
+        msg=$(jq -r '.result // .error.message // .error // empty' "$out.r" 2>/dev/null)
+        co_agent_fail "qwen: ${msg:-$(tail -c 300 "$err")}"; return $?
+      fi
+      u=$(jq -r '.usage // {} | [((.input_tokens // 0) + (.cache_read_input_tokens // 0)), (.output_tokens // 0)] | map(tostring) | join(" ")' "$out.r" 2>/dev/null) ;;
+    crush)
+      text=$(cat "$out")
+      if ! printf '%s' "$text" | grep -q '[^[:space:]]'; then
+        co_agent_fail "crush: $(LC_ALL=C tr -s ' \n' ' ' < "$err" | tail -c 300)"; return $?
+      fi
+      u="0 0" ;;
   esac
   printf '%s\n' "$text" > "$answer_file"
   read -r CO_OC_TOKENS_IN CO_OC_TOKENS_OUT CO_OC_COST <<EOF

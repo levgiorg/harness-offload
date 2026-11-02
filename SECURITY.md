@@ -21,8 +21,10 @@ Review which providers you use and whether they train on prompts.
   log file names, stats), and of worker answers.
 - Workers run deny-all: OpenCode agents with catch-all deny permissions; `claude -p` without
   settings/MCP/slash commands and with secret files in `--disallowedTools` for explore; `codex exec` in a
-  read-only sandbox; Gemini in plan mode; Cursor in ask mode; Pi without tools (read-only tools for
-  explore). Every worker gets `OFFLOAD_DISABLE=1` (no recursion into offload's own hooks).
+  read-only sandbox; Gemini and Qwen Code in plan mode; Cursor in ask mode; Copilot CLI with
+  `--available-tools none` (view/grep/glob for explore); Pi without tools (read-only tools for explore);
+  Crush (whose `crush run` approves every tool call) only for plain questions, in offload's work
+  directory with every built-in tool and the user's MCP servers disabled. Every worker gets `OFFLOAD_DISABLE=1` (no recursion into offload's own hooks).
 - Hooks and in-process plugins fail open: an internal error never blocks your agent's tools.
 - Time limits everywhere: per-model timeouts, a total budget for hook digests, MCP call limits, client
   cancellation kills the work; worker process trees are killed on timeout and when offload exits.
@@ -33,7 +35,7 @@ Review which providers you use and whether they train on prompts.
 
 ## Known limits
 
-- Agent-CLI explore workers other than Claude (Codex, Gemini, Cursor, Pi) have no per-file deny rules;
+- Agent-CLI explore workers other than Claude (Codex, Gemini, Copilot, Qwen, Cursor, Pi) have no per-file deny rules;
   they can read secret files inside the project, so their answers are redacted, but prefer `@host` on
   Claude Code, OpenCode or an HTTP backend for explore in repositories with secrets.
 - MCP `offload_run` executes shell commands outside a host's own sandbox (Codex, Cursor). It is

@@ -2,7 +2,8 @@
 # End-to-end runs inside real agent harnesses, each in a throwaway HOME, driven
 # by a scripted mock model (tests/mock_openai.py, mode "script"): the model
 # reads a 3,000-line file, then runs `seq 1 400`, then answers. We check what
-# the harness sent back to the model after Harness Offload's hooks ran.
+# the harness sent back to the model after Harness Offload's hooks ran, then
+# use the same harness as the worker (`-m @host`) from both engines.
 #
 #   bash tests/e2e-hosts.sh [copilot] [crush] [qwen]     (default: every host found)
 #
@@ -39,6 +40,22 @@ start_mock() { # start_mock SCRIPT_JSON LOG
 # The last request's tool results (what the model saw after the hooks), one per line.
 tool_results() { tail -n 1 "$1" | jq -r '.messages[] | select(.role == "tool") | .content | if type == "array" then map(.text // "") | join("") else . end' 2>/dev/null; }
 
+# worker HOST ENV... — `offload ask -m @host` from both engines, the harness as the worker
+worker() {
+  local host="$1" eng out rc; shift
+  printf '{"steps":[{"text":"WORKER-OK from %s"}]}' "$host" > "$T/worker-$host.json"
+  start_mock "$T/worker-$host.json" "$T/worker-$host.log" || { bad "$host worker: mock did not start"; return; }
+  for eng in bash ts; do
+    if [ "$eng" = bash ]; then set -- "$PLUGIN/bin/offload"; else set -- node "$CLI_JS"; fi
+    # shellcheck disable=SC2046
+    out=$(cd "$T" && env -i $(common_env "$host-$eng") $WENV OFFLOAD_HOST="$host" OFFLOAD_MODEL= timeout 180 "$@" ask -m @host "Reply with one word." 2>&1); rc=$?
+    case "$out" in
+      *"WORKER-OK"*|*"ok"*) [ "$rc" = 0 ] && ok "$host worker ($eng engine): @host → $host CLI answered" || bad "$host worker ($eng engine): exit $rc" ;;
+      *) bad "$host worker ($eng engine): $(printf '%s' "$out" | tail -n 3 | tr '\n' ' ' | cut -c1-200)" ;;
+    esac
+  done
+}
+
 check() { # check HOST LOG [no-digest]
   local host="$1" log="$2" seen="$T/$1.seen"
   tool_results "$log" > "$seen"
@@ -71,6 +88,9 @@ run_copilot() {
     COPILOT_PROVIDER_BASE_URL="http://127.0.0.1:$PORT/v1" COPILOT_PROVIDER_TYPE=openai COPILOT_PROVIDER_API_KEY=x COPILOT_MODEL=mock-model \
     timeout 180 "$bin" -p "please test" --allow-all-tools --no-auto-update --trust-folder >/dev/null 2>&1)
   check copilot "$T/copilot.log"
+  WENV="HOME=$h COPILOT_OFFLINE=true COPILOT_AUTO_UPDATE=false COPILOT_PROVIDER_BASE_URL=http://127.0.0.1:$PORT/v1 COPILOT_PROVIDER_TYPE=openai COPILOT_PROVIDER_API_KEY=x COPILOT_MODEL=mock-model PATH_EXTRA=$(dirname "$bin")"
+  ln -sf "$bin" "$T/bin/copilot"
+  worker copilot
 }
 
 run_crush() {
@@ -93,6 +113,19 @@ EOF
   (cd "$ws" && env -i $(common_env crush) HOME="$T/home-crush" XDG_CONFIG_HOME="$cfg" XDG_DATA_HOME="$T/data-crush" \
     timeout 180 "$bin" run "please test" >/dev/null 2>&1)
   check crush "$T/crush.log"
+  WENV="HOME=$T/home-crush XDG_CONFIG_HOME=$cfg XDG_DATA_HOME=$T/data-crush"
+  ln -sf "$bin" "$T/bin/crush"
+  worker crush
+  # `crush run` approves every tool call: a model that tries a command must not get one
+  printf '{"steps":[{"tool":"bash","args":{"command":"touch %s/PWNED","description":"x"}},{"text":"WORKER-OK"}]}' "$T" > "$T/crush-pwn.json"
+  start_mock "$T/crush-pwn.json" "$T/crush-pwn.log" || { bad "crush lockdown: mock did not start"; return; }
+  # shellcheck disable=SC2046
+  (cd "$T" && env -i $(common_env crush-lock) $WENV OFFLOAD_HOST=crush timeout 180 "$PLUGIN/bin/offload" ask -m @host "do it" >/dev/null 2>&1)
+  if [ ! -e "$T/PWNED" ] && [ "$(jq -sc 'map((.tools // []) | length) | add // 0' "$T/crush-pwn.log")" = 0 ]; then
+    ok "crush worker: no tools offered, no command ran"
+  else
+    bad "crush worker: tools reached the model or a command ran"
+  fi
 }
 
 run_qwen() {
@@ -107,6 +140,12 @@ run_qwen() {
   (cd "$ws" && env -i $(common_env qwen) HOME="$h" OPENAI_API_KEY=x OPENAI_BASE_URL="http://127.0.0.1:$PORT/v1" OPENAI_MODEL=mock-model \
     QWEN_CODE_SUPPRESS_YOLO_WARNING=1 timeout 180 $cmd --auth-type openai -m mock-model --approval-mode yolo -p "please test" >/dev/null 2>&1)
   check qwen "$T/qwen.log" no-digest
+  # the worker uses the user's own Qwen auth: here, OpenAI-compatible settings pointing at the mock
+  mkdir -p "$h/.qwen"
+  printf '{"security":{"auth":{"selectedType":"openai"}},"model":{"name":"mock-model"}}' > "$h/.qwen/settings.json"
+  WENV="HOME=$h OPENAI_API_KEY=x OPENAI_BASE_URL=http://127.0.0.1:$PORT/v1 OPENAI_MODEL=mock-model"
+  printf '#!/bin/sh\nexec %s "$@"\n' "$cmd" > "$T/bin/qwen"; chmod +x "$T/bin/qwen"
+  worker qwen
 }
 
 for h in $hosts; do

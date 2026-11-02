@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Stand-in for the agent CLIs offload can use as workers (claude, codex,
-# gemini, cursor-agent, pi). Symlink it under those names. Prints each CLI's
+# gemini, cursor-agent, pi, copilot, qwen, crush). Symlink it under those names. Prints each CLI's
 # headless JSON shape; logs args/env to $STUB_AGENT_LOG.
 #   STUB_AGENT_MODE=ok|auth|quota|slow|empty
 name=$(basename "$0")
@@ -43,6 +43,19 @@ case "$name:$mode" in
   pi:*)
     jq -nc '{type:"session"}'
     jq -nc --arg t "PI-STUB: $first" '{type:"message_end",message:{role:"assistant",content:[{type:"text",text:$t}],usage:{input:60,output:6}}}' ;;
+  copilot:quota) echo '{"type":"session.error","data":{"errorType":"rate_limit","message":"429 too many requests"}}'; echo '{"type":"result","exitCode":1}'; exit 1 ;;
+  copilot:*)
+    jq -nc '{type:"user.message",data:{content:"…"}}'
+    jq -nc --arg t "COPILOT-STUB: $first" '{type:"assistant.message",data:{content:$t,toolRequests:[]}}'
+    echo '{"type":"result","exitCode":0,"usage":{"premiumRequests":0}}' ;;
+  qwen:quota) jq -nc '[{type:"system",subtype:"init"},{type:"result",subtype:"error",is_error:true,result:"429 rate limit exceeded"}]'; exit 1 ;;
+  qwen:*)
+    s=missing; [ -f "${QWEN_CODE_SYSTEM_SETTINGS_PATH:-/nonexistent}" ] && grep -q enableManagedAutoMemory "$QWEN_CODE_SYSTEM_SETTINGS_PATH" && s=off
+    jq -nc --arg t "QWEN-STUB memory=$s: $first" '[{type:"system",subtype:"init"},{type:"result",subtype:"success",is_error:false,result:$t,usage:{input_tokens:70,output_tokens:8}}]' ;;
+  crush:quota) printf '  ERROR\n  Agent processing failed: too many requests: rate limit\n' >&2; exit 1 ;;
+  crush:*)
+    off=$(jq -r '.options.disabled_tools | length' .crush.json 2>/dev/null || echo 0)
+    printf 'CRUSH-STUB tools-off=%s: %s\n' "$off" "$first" ;;
   *:empty) echo '{}' ;;
 esac
 exit 0

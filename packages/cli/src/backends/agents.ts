@@ -1,7 +1,8 @@
 // Other coding-agent CLIs used as workers ("connectors"): each is run
 // headless, prompt on stdin where supported, with tools off (or read-only for
 // explore), and its JSON output parsed for the final answer.
-import { writeFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
+import { homedir } from "node:os";
 import { join } from "node:path";
 import { cfgStr } from "../config.ts";
 import { workDir } from "../state.ts";
@@ -55,6 +56,19 @@ const lastJson = (s: string): any => {
 };
 
 const empty = (text: string, extra: Partial<WorkerResult> = {}): WorkerResult => ({ text, tokensIn: 0, tokensOut: 0, ctxIn: 0, cost: 0, ...extra });
+
+/** Crush's built-in tools (v0.99) and the user's MCP servers, all disabled for a worker run. */
+const CRUSH_TOOLS = ["agent", "bash", "crush_info", "crush_logs", "job_output", "job_kill", "download", "edit", "multiedit", "lsp_diagnostics", "lsp_references", "lsp_restart", "lsp_symbols", "lsp_definition", "lsp_call_hierarchy", "lsp_rename", "lsp_replace_symbol", "fetch", "agentic_fetch", "glob", "grep", "ls", "question", "sourcegraph", "todos", "view", "write", "list_mcp_resources", "read_mcp_resource"];
+export function crushLockdown(): Record<string, unknown> {
+  const dir = process.env.CRUSH_GLOBAL_CONFIG || join(process.env.XDG_CONFIG_HOME || join(homedir(), ".config"), "crush");
+  const mcp: Record<string, { disabled: true }> = {};
+  try {
+    for (const name of Object.keys(JSON.parse(readFileSync(join(dir, "crush.json"), "utf8")).mcp ?? {})) mcp[name] = { disabled: true };
+  } catch {
+    /* no JSON config */
+  }
+  return { options: { disabled_tools: CRUSH_TOOLS }, ...(Object.keys(mcp).length ? { mcp } : {}) };
+}
 
 /** Combined system + user prompt for CLIs without a system-prompt flag. */
 const merged = (req: WorkerRequest) => `<instructions>\n${req.system}\n</instructions>\n\n${req.prompt}`;
@@ -197,6 +211,88 @@ export const CLI_AGENTS: Record<string, AgentSpec> = {
       }
       return empty(text, { tokensIn: tin, tokensOut: tout, ctxIn: tin, cost });
     },
+  },
+  copilot: {
+    label: "GitHub Copilot CLI (copilot) — your Copilot plan",
+    bin: "copilot",
+    install: "npm i -g @github/copilot  (then run copilot once and /login)",
+    args: (req) => {
+      // prompt on stdin (with -p, Copilot ignores stdin); no repo instructions,
+      // no questions, no built-in MCP servers; an explicit tool allowlist
+      const a = ["--output-format", "json", "-s", "--no-custom-instructions", "--no-ask-user", "--disable-builtin-mcps", "--no-auto-update"];
+      if (req.model) a.push("--model", req.model);
+      if (req.variant) a.push("--reasoning-effort", req.variant);
+      if (req.task === "explore") a.push("--allow-all-tools", "--available-tools", "view", "grep", "glob");
+      else a.push("--available-tools", "none");
+      return { args: a, input: merged(req) };
+    },
+    parse: (out) => {
+      let text = "";
+      let failure = "";
+      for (const e of jsonLines(out)) {
+        if (e.type === "assistant.message" && typeof e.data?.content === "string" && e.data.content.trim()) text = e.data.content;
+        if (e.type === "session.error") failure = `${e.data?.errorType ?? ""} ${e.data?.message ?? ""}`.trim();
+      }
+      if (!text.trim() && failure) throw new WorkerError(classify(failure), `copilot: ${failure}`);
+      return empty(text);
+    },
+  },
+  qwen: {
+    label: "Qwen Code (qwen) — your Qwen account or keys",
+    bin: "qwen",
+    install: "npm i -g @qwen-code/qwen-code  (then run qwen once and /auth)",
+    args: (req) => {
+      // stdin is the material, the positional prompt follows it; plan mode is read-only
+      const a = ["--output-format", "json", "--system-prompt", req.system, "--approval-mode", "plan", "--chat-recording", "false", "-e", "none"];
+      if (req.model) a.push("-m", req.model);
+      a.push("--core-tools", ...(req.task === "explore" ? ["read_file", "grep_search", "glob"] : ["none"]));
+      a.push("--", "Answer as instructed above.");
+      return { args: a, input: req.prompt };
+    },
+    env: (req, dir) => {
+      // background memory extraction would spend extra calls on the user's quota
+      const file = join(dir, "qwen-worker-settings.json");
+      writeFileSync(file, JSON.stringify({ memory: { enableManagedAutoMemory: false, enableManagedAutoDream: false } }));
+      return { QWEN_CODE_SYSTEM_SETTINGS_PATH: file };
+    },
+    parse: (out) => {
+      let events: any[] = [];
+      try {
+        const j = JSON.parse(out.trim());
+        events = Array.isArray(j) ? j : [j];
+      } catch {
+        events = jsonLines(out);
+      }
+      const r = [...events].reverse().find((e) => e?.type === "result");
+      if (!r) throw new WorkerError(E.WORKER, "qwen: no result in its output");
+      if (r.is_error) {
+        const msg = String(r.result ?? r.error?.message ?? r.error ?? "error");
+        throw new WorkerError(classify(msg), `qwen: ${msg}`);
+      }
+      const u = r.usage ?? {};
+      const tin = (u.input_tokens ?? 0) + (u.cache_read_input_tokens ?? 0);
+      return empty(String(r.result ?? ""), { tokensIn: tin, tokensOut: u.output_tokens ?? 0, ctxIn: tin });
+    },
+  },
+  crush: {
+    label: "Crush (crush run) — your Crush providers",
+    bin: "crush",
+    install: "brew install charmbracelet/tap/crush  or  npm i -g @charmland/crush",
+    args: (req) => {
+      // `crush run` approves every tool call, so it only gets plain questions,
+      // in offload's own work dir, with every tool switched off (see env)
+      if (req.task === "explore") throw new WorkerError(E.USAGE, "crush: `crush run` approves every tool call, so it is not used as a read-only explorer; the next model in the chain takes over");
+      const a = ["run", "-q"];
+      if (req.model) a.push("-m", req.model);
+      if (req.variant) a.push("--reasoning-effort", req.variant);
+      a.push("Answer as instructed above.");
+      return { args: a, input: merged(req) };
+    },
+    env: (req) => {
+      writeFileSync(join(req.cwd, ".crush.json"), JSON.stringify(crushLockdown()));
+      return {};
+    },
+    parse: (out) => empty(out.trim()),
   },
   cursor: {
     label: "Cursor CLI (cursor-agent -p) — Cursor plan",

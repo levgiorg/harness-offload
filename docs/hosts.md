@@ -44,16 +44,16 @@ What each integration installs, how it talks to the host, and what to know.
 - **Install:** `offload install copilot` (= `copilot plugin marketplace add …` + `copilot plugin install harness-offload@harness-offload`). Copilot loads the Claude Code plugin as is ("live" from a local marketplace).
 - The same bash hooks detect `COPILOT_CLI=1` and speak Copilot's dialect: read arguments `path`/`view_range`, output via `modifiedResult`, the guide as top-level `additionalContext`, the CLI by absolute path (Copilot doesn't put `bin/` on PATH).
 - Verified with Copilot CLI 1.0.105: a 3,000-line `view` is denied with the outline, `seq 1 400` comes back as a digest, the guide is injected.
-- `@host` → `@default` (OpenCode). To spend your Copilot plan, log OpenCode into GitHub Copilot (`opencode auth login`) and pick a `github-copilot/…` model.
+- `@host` → `copilot:` — the Copilot CLI itself as the worker (`copilot --output-format json`, prompt on stdin, no repo instructions, `--available-tools none`, or `view grep glob` for explore), on your Copilot plan. Set `host_models.copilot` to an included model (e.g. `copilot:gpt-5-mini`) to avoid premium requests. Verified with the real CLI in both engines.
 
 ## Qwen Code
 - **Install:** `offload install qwen` (= `qwen extensions install <plugin> --consent`): Qwen converts the Claude plugin into an extension.
 - Reads (`read_file`, 0-based offsets) and shell dumps are guarded; the guide is injected at session start. Qwen has no documented way to replace a tool's output, so long command output is not digested — the guide steers noisy commands to `offload run`.
-- Verified with Qwen Code 0.26.5.
+- `@host` → `qwen:` — Qwen Code as the worker (`--output-format json`, our system prompt, plan mode, read-only tools for explore, chat recording and background memory extraction off), on your Qwen account. Verified with Qwen Code 0.26.5.
 
 ## Crush
 - **Install:** `offload install crush` merges into `~/.config/crush/crush.json` (backup next to it): `PreToolUse` hook on `^(view|bash)$`, `PostToolUse` on `^bash$` (`updated_output` digest), and the guide as a `global_context_paths` entry (Crush's `SessionStart` output is ignored; setting the list keeps Crush's two defaults). `offload uninstall crush` removes exactly those entries.
-- Verified with Crush 0.99.0.
+- `@host` → `crush:` — `crush run` as the worker with your providers. Because `crush run` approves every tool call, the worker runs in offload's own work directory with a `.crush.json` that disables every built-in tool and your MCP servers, and it is never used for `explore` (the next model takes over). Verified with Crush 0.99.0, including a model that tries to run a command.
 
 ## Aider
 - No hooks or MCP. `offload install aider` writes a conventions file; start Aider with `aider --read <that file>` (or list it under `read:` in `~/.aider.conf.yml`) and the model will call `offload read/explore/run` through `/run`.

@@ -313,7 +313,7 @@ fi
 # ------------------------------------------------------- agent connectors
 section "agent connectors (stub claude/codex/gemini/cursor-agent/pi)"
 AB="$T/agent-bin"; mkdir -p "$AB"
-for n in claude codex gemini cursor-agent pi; do ln -sf "$HERE/stub-agent" "$AB/$n"; done
+for n in claude codex gemini cursor-agent pi copilot qwen crush; do ln -sf "$HERE/stub-agent" "$AB/$n"; done
 chmod +x "$HERE/stub-agent"
 export STUB_AGENT_LOG="$T/agent.log"
 ag() { PATH="$AB:$PATH" "$OFFLOAD" "$@" 2>&1; }
@@ -345,6 +345,26 @@ out=$(STUB_AGENT_MODE=pretty ag ask -m gemini:x "pretty")
 expect_has "gemini: pretty-printed JSON after log lines" "$out" "GEMINI-PRETTY: pretty"
 : > "$STUB_AGENT_LOG"; ag explore -m claude:haiku "where?" >/dev/null
 expect_has "claude explore: secret files denied to its Read tool" "$(cat "$STUB_AGENT_LOG")" "arg[Read(**/.env)"
+out=$(ag ask -m copilot: "hello copilot")
+expect_has "copilot: answer (prompt on stdin, JSONL events)" "$out" "COPILOT-STUB: hello copilot"
+: > "$STUB_AGENT_LOG"; ag ask -m copilot:gpt-5-mini "x" >/dev/null
+expect_has "copilot: no tools for a plain question" "$(cat "$STUB_AGENT_LOG")" "arg[none]"
+: > "$STUB_AGENT_LOG"; ag explore -m copilot: "where?" >/dev/null
+expect_has "copilot: explore gets view/grep/glob only" "$(cat "$STUB_AGENT_LOG")" "arg[glob]"
+out=$(ag ask -m qwen: "hello qwen")
+expect_has "qwen: answer, background memory switched off" "$out" "QWEN-STUB memory=off: hello qwen"
+out=$(ag ask -m crush: "hello crush")
+expect_has "crush: answer, every Crush tool switched off (crush run auto-approves)" "$out" "CRUSH-STUB tools-off=29: hello crush"
+ag explore -m crush: "where?" >/dev/null 2>&1; expect_eq "crush: never used as an explorer (usage exit 2)" "$?" 2
+STUB_AGENT_MODE=quota ag ask -m copilot:x "hi" >/dev/null; expect_eq "copilot: rate limit → exit 10" "$?" 10
+STUB_AGENT_MODE=quota ag ask -m qwen:x "hi" >/dev/null; expect_eq "qwen: rate limit → exit 10" "$?" 10
+STUB_AGENT_MODE=quota ag ask -m crush:x "hi" >/dev/null; expect_eq "crush: too many requests → exit 10" "$?" 10
+out=$(COPILOT_CLI=1 ag ask -m @host "copilot plan")
+expect_has "@host in Copilot CLI → its own CLI" "$out" "COPILOT-STUB: copilot plan"
+out=$(QWEN_CODE_SESSION_ID=s ag ask -m @host "qwen plan")
+expect_has "@host in Qwen Code → its own CLI" "$out" "QWEN-STUB"
+out=$(CRUSH=1 ag ask -m @host "crush plan")
+expect_has "@host in Crush → its own CLI" "$out" "CRUSH-STUB tools-off=29: crush plan"
 STUB_AGENT_MODE=auth ag ask -m claude:haiku "hi" >/dev/null; expect_eq "claude: login problem → exit 11" "$?" 11
 STUB_AGENT_MODE=quota ag ask -m claude:sonnet "hi" >/dev/null; expect_eq "claude: usage limit → exit 10" "$?" 10
 STUB_AGENT_MODE=quota ag ask -m codex:x "hi" >/dev/null; expect_eq "codex: usage limit → exit 10" "$?" 10
