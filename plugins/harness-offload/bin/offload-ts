@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
 # Launcher for the TypeScript CLI (hooks of non-Claude hosts, MCP server).
 #   offload-ts ARGS...      e.g. offload-ts hook codex pre-tool / offload-ts mcp
-# Finds: $OFFLOAD_TS_CLI, `harness-offload` on PATH, a built repo checkout, and
+# Finds: $OFFLOAD_TS_CLI, the plugin's own bundle (dist/cli.js, same version
+# as the plugin), `harness-offload` on PATH, a built repo checkout, and
 # (except for hooks, which must stay fast and offline) npx. Hooks fail open:
-# with no CLI they exit 0 silently.
+# with no CLI (or no node) they exit 0 silently.
 src="$0"
 while [ -h "$src" ]; do
   dir=$(cd -P "$(dirname "$src")" && pwd); src=$(readlink "$src")
@@ -14,6 +15,8 @@ version=$(sed -n 's/.*"version": *"\([^"]*\)".*/\1/p' "$root/.claude-plugin/plug
 if [ -n "${OFFLOAD_TS_CLI:-}" ]; then
   # shellcheck disable=SC2086
   exec $OFFLOAD_TS_CLI "$@"
+elif [ -f "$root/dist/cli.js" ] && command -v node >/dev/null 2>&1; then
+  exec node "$root/dist/cli.js" "$@"
 elif command -v harness-offload >/dev/null 2>&1; then
   exec harness-offload "$@"
 elif [ -f "$root/../../packages/cli/dist/cli.js" ] && command -v node >/dev/null 2>&1; then
@@ -24,5 +27,5 @@ elif [ "${1:-}" != "hook" ] && command -v npx >/dev/null 2>&1; then
   exec npx --yes "harness-offload@$version" "$@"
 fi
 [ "${1:-}" = "hook" ] && exit 0
-echo "offload: the harness-offload CLI is needed for this (npm i -g harness-offload)" >&2
+echo "offload: Node.js 18+ (or the harness-offload CLI: npm i -g harness-offload) is needed for this" >&2
 exit 15

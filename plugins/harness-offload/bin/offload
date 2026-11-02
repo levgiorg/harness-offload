@@ -487,8 +487,7 @@ cmd_doctor() {
     ver=$("$bin" --version 2>/dev/null | tail -1)
     echo "  $ok opencode $ver ($(command -v "$bin" 2>/dev/null || echo "$bin"))"
   else
-    echo "  $bad opencode not found as '$bin' — install from https://opencode.ai, then: opencode auth login"
-    problems=$((problems + 1))
+    echo "  - opencode not found as '$bin' (only needed for OpenCode models — https://opencode.ai)"
   fi
 
   local u p
@@ -515,24 +514,50 @@ cmd_doctor() {
   done
   local all_models
   all_models=$(for task in read explore summarize write ask; do co_model_chain "$task"; done | awk 'NF && !s[$0]++')
+  local host hm label ep uses_oc=false
+  if host=$(co_detect_host); then
+    hm=$(co_host_model 2>/dev/null)
+    echo "  $ok @host = the calling harness's own plan: $host → ${hm:-?}"
+  else
+    echo "  - @host = the calling harness's own plan (no harness detected here; hooks and MCP set OFFLOAD_HOST)"
+  fi
   while IFS= read -r m; do
     [ -z "$m" ] && continue
-    if co_is_ts_ref "$m"; then
-      if cli=$(co_ts_cli); then echo "  $ok $m (via $cli)"; else echo "  $bad $m needs the harness-offload CLI: npm i -g harness-offload"; problems=$((problems + 1)); fi
-    elif [ "$m" = "@default" ]; then
-      echo "  $warn @default = OpenCode's own default model. Pin a cheap one: offload config set models.default PROVIDER/MODEL"
-    elif [ -n "$models_list" ] && ! printf '%s\n' "$models_list" | grep -qxF "$m"; then
-      echo "  $bad $m is not in \`opencode models\` (typo, or provider not logged in: opencode auth login)"
-      problems=$((problems + 1))
-    elif [ -n "$models_list" ]; then
-      echo "  $ok $m available"
+    if ! co_route "$m" read; then
+      case "$m" in @host|@self) echo "  $warn $m: resolved per harness at run time (none detected in this shell)" ;;
+        *) echo "  $bad $m: $CO_OC_ERROR"; problems=$((problems + 1)) ;; esac
+      continue
     fi
-    if cool=$(co_model_cooling "$m"); then echo "  $warn $m cooling down: $cool (offload doctor --reset)"; fi
+    label="$m"; [ "$CO_RT_REF" != "$m" ] && label="$m → $CO_RT_REF"
+    case "$CO_RT_KIND" in
+      agent)
+        if co_route_ready; then echo "  $ok $label (via $(command -v "$(co_agent_bin "$CO_RT_BACKEND")") — uses its own login/plan)"
+        else echo "  $bad $label needs the $(co_agent_bin "$CO_RT_BACKEND") CLI on PATH (or agents.$CO_RT_BACKEND.bin)"; problems=$((problems + 1)); fi ;;
+      http)
+        ep=$(co_endpoint_json "$CO_RT_BACKEND")
+        if [ -n "$(co_endpoint_key "$CO_RT_BACKEND" "$ep")" ] || printf '%s' "$ep" | grep -q '127.0.0.1\|localhost'; then echo "  $ok $label (HTTP $(printf '%s' "$ep" | jq -r .base_url))"
+        else echo "  $bad $label: no API key (set $(printf '%s' "$ep" | jq -r '.api_key_env // "one"') or run: offload setup)"; problems=$((problems + 1)); fi ;;
+      ts)
+        if cli=$(co_ts_cli); then echo "  $ok $label (via $cli)"; else echo "  $bad $label needs Node.js 18+ or the harness-offload CLI: npm i -g harness-offload"; problems=$((problems + 1)); fi ;;
+      *)
+        uses_oc=true
+        if [ -z "$CO_RT_MODEL" ]; then
+          echo "  $warn @default = OpenCode's own default model. Pin a cheap one: offload config set models.default PROVIDER/MODEL (or @host)"
+        elif [ -n "$models_list" ] && ! printf '%s\n' "$models_list" | grep -qxF "$CO_RT_MODEL"; then
+          echo "  $bad $label is not in \`opencode models\` (typo, or provider not logged in: opencode auth login)"
+          problems=$((problems + 1))
+        elif [ -n "$models_list" ]; then
+          echo "  $ok $label available"
+        elif ! co_have_opencode; then
+          echo "  $bad $label needs opencode"; problems=$((problems + 1))
+        fi ;;
+    esac
+    if cool=$(co_model_cooling "$CO_RT_REF"); then echo "  $warn $CO_RT_REF cooling down: $cool (offload doctor --reset)"; fi
   done <<EOF
 $all_models
 EOF
 
-  if co_have_opencode; then
+  if $uses_oc && co_have_opencode; then
     if doctor_agents_load; then
       echo "  $ok worker agents load in opencode (v$(co_oc_major))"
     else
@@ -541,7 +566,7 @@ EOF
     fi
   fi
 
-  if $ping && co_have_opencode; then
+  if $ping; then
     echo "  live ping:"
     local prompt answer rc
     co_tmp prompt; co_tmp answer
@@ -549,8 +574,7 @@ EOF
     while IFS= read -r m; do
       [ -z "$m" ] && continue
       : > "$answer"
-      if [ "$m" = "@default" ]; then co_oc_attempt offload-ask "@default" "$prompt" "$(co_work_dir)" "" "$answer"
-      else co_oc_attempt offload-ask "$m" "$prompt" "$(co_work_dir)" "" "$answer"; fi
+      co_oc_attempt offload-ask "$m" "$prompt" "$(co_work_dir)" "" "$answer"
       rc=$?
       if [ "$rc" = 0 ]; then echo "    $ok $m → $(head -c 40 "$answer" | LC_ALL=C tr '\n' ' ') (${CO_OC_SECONDS}s)"
       else echo "    $bad $m → exit $rc: $(printf '%s' "$CO_OC_ERROR" | head -1 | LC_ALL=C cut -c1-160)"; problems=$((problems + 1)); fi

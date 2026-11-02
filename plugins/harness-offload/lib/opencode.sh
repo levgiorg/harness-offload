@@ -238,15 +238,27 @@ co_oc_forget_session() {
 # $OFFLOAD_TS_CLI, `harness-offload` on PATH, the bundled dist/cli.js, npx.
 co_ts_cli() {
   if [ -n "${OFFLOAD_TS_CLI:-}" ]; then printf '%s' "$OFFLOAD_TS_CLI"; return 0; fi
-  if command -v harness-offload >/dev/null 2>&1; then printf 'harness-offload'; return 0; fi
   local js
-  # the plugin's own bundle, a repo checkout (plugins/harness-offload →
-  # packages/cli), or the npm package's bundled marketplace
-  for js in "$CO_ROOT/dist/cli.js" "$CO_ROOT/../../packages/cli/dist/cli.js" "$CO_ROOT/../../../../dist/cli.js"; do
-    if [ -f "$js" ] && command -v node >/dev/null 2>&1; then printf 'node %s' "$js"; return 0; fi
+  # the plugin's own bundle first (same version as this engine); then
+  # `harness-offload` on PATH; a repo checkout; the npm package's marketplace
+  for js in "$CO_ROOT/dist/cli.js" @path "$CO_ROOT/../../packages/cli/dist/cli.js" "$CO_ROOT/../../../../dist/cli.js"; do
+    if [ "$js" = @path ]; then
+      command -v harness-offload >/dev/null 2>&1 && { printf 'harness-offload'; return 0; }
+    elif [ -f "$js" ] && command -v node >/dev/null 2>&1; then printf 'node %s' "$js"; return 0; fi
   done
   if command -v npx >/dev/null 2>&1; then printf 'npx --yes harness-offload@%s' "$CO_VERSION"; return 0; fi
   return 1
+}
+
+# Runs the TypeScript CLI with ARGS (paths with spaces stay intact).
+co_ts_run() {
+  local cli
+  cli=$(co_ts_cli) || return $CO_E_NOOC
+  case "$cli" in
+    "node "*) node "${cli#node }" "$@" ;;
+    # shellcheck disable=SC2086
+    *) $cli "$@" ;;
+  esac
 }
 
 # True for BACKEND:MODEL references (the prefix has no slash); OpenCode ids
@@ -271,8 +283,7 @@ co_ts_attempt() {
   fi
   co_tmp errf
   start=$(co_now)
-  # shellcheck disable=SC2086
-  $cli worker --task "${agent#offload-}" --cwd "$workdir" --model "$model" ${variant:+--variant "$variant"} \
+  co_ts_run worker --task "${agent#offload-}" --cwd "$workdir" --model "$model" ${variant:+--variant "$variant"} \
     --timeout "$(co_cfg_int '.opencode.timeout_seconds' 180)" < "$prompt_file" > "$answer_file" 2> "$errf"
   rc=$?
   CO_OC_SECONDS=$(co_elapsed "$start")

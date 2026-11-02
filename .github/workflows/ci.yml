@@ -100,5 +100,11 @@ jobs:
             [ "$(jq -r .version "$f")" = "$v" ] || { echo "$f is not $v"; exit 1; }
           done
           grep -q "CO_VERSION=\"$v\"" plugins/harness-offload/lib/common.sh
+      - name: Bundled plugin dist is up to date
+        run: node packages/cli/scripts/source-hash.mjs --check
+      - name: Bundled plugin CLI runs without a build
+        run: |
+          node plugins/harness-offload/dist/cli.js --version
+          OFFLOAD_HOST=claude node plugins/harness-offload/dist/cli.js config show > /dev/null
       - name: Claude Code plugin validation
         run: npx --yes @anthropic-ai/claude-code plugin validate plugins/harness-offload || echo "::warning::claude plugin validate unavailable"

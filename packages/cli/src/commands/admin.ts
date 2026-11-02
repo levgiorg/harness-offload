@@ -3,7 +3,7 @@ import { parseFlags, str } from "../args.ts";
 import { TASKS } from "../assets.ts";
 import { cfgStr, ignoredProjectKeys, loadConfig, readConfigFile, setConfigValue, warnings, writeConfigFile } from "../config.ts";
 import { modelChain } from "../engine.ts";
-import { allBackendNames, backendFor, parseRef } from "../backends/registry.ts";
+import { allBackendNames, backendFor, detectHost, hostModel, parseRef } from "../backends/registry.ts";
 import { opencodeConfig, opencodeMajor } from "../backends/opencode.ts";
 import { projectConfigPath, projectDir, userConfigPath } from "../paths.ts";
 import { runProcess, which } from "../proc.ts";
@@ -48,7 +48,20 @@ export async function cmdDoctor(argv: string[]): Promise<number> {
     out.push(`  ${color.cyan(t.padEnd(9))} ${sym.arrow} ${chain.join(color.dim(" → "))}`);
   }
   out.push(section("Backends in use"));
-  const used = new Set([...refs].map((r) => parseRef(r).backend));
+  const host = detectHost();
+  if (host) check(true, `@host = the calling harness's own plan: ${host} ${sym.arrow} ${hostModel(host) ?? "?"}`);
+  else out.push(`  ${color.dim(`- @host = the calling harness's own plan (no harness detected here; hooks and MCP set OFFLOAD_HOST)`)}`);
+  const used = new Set<string>();
+  for (const r of refs) {
+    try {
+      const p = parseRef(r);
+      used.add(p.backend);
+      if (p.ref !== r) out.push(`  ${color.dim(`${r} ${sym.arrow} ${p.ref}`)}`);
+    } catch (e) {
+      if (r === "@host" || r === "@self") check("warn", `${r}: resolved per harness at run time`, "none detected in this shell");
+      else check(false, r, (e as Error).message);
+    }
+  }
   for (const name of used) {
     const b = backendFor(name);
     if (!b) {
