@@ -1,4 +1,5 @@
 import {
+  VERSION,
   runProcess2,
   which2
 } from "./chunk-25ca7170.js";
@@ -128,6 +129,7 @@ function pluginSource() {
   return process.env.OFFLOAD_PLUGIN_SOURCE || checkoutRoot2() || GITHUB_REPO;
 }
 var home = () => process.env.OFFLOAD_HOME || homedir2();
+var tilde = (p) => p.startsWith(home() + "/") ? "~" + p.slice(home().length) : p;
 var record = (host, data) => {
   const f = join2(stateDir2(), "installs.json");
   let all = {};
@@ -137,7 +139,7 @@ var record = (host, data) => {
   if (data === undefined)
     delete all[host];
   else
-    all[host] = data;
+    all[host] = { ...data, version: VERSION, at: new Date().toISOString().slice(0, 10) };
   writeFileSync(f, JSON.stringify(all, null, 2) + `
 `);
 };
@@ -153,8 +155,8 @@ async function detectHosts() {
   }
   return out;
 }
-async function exec(cmd, args) {
-  const r = await runProcess2(cmd, args, { timeoutMs: 180000 });
+async function exec(cmd, args, cwd) {
+  const r = await runProcess2(cmd, args, { timeoutMs: 180000, cwd });
   const tail = (r.stdout + r.stderr).trim().split(`
 `).slice(-2).join(" ").slice(0, 200);
   return { ok: r.code === 0, text: `${cmd} ${args.join(" ")}${r.code === 0 ? "" : `  → exit ${r.code}: ${tail}`}` };
@@ -203,7 +205,9 @@ function geminiExtension(dir, launcher) {
   rewriteForWindows(join2(dir, "hooks", "hooks.json"), /"[^"]*offload-ts"/g);
   rewriteForWindows(join2(dir, "gemini-extension.json"), /"[^"]*offload-ts"/g);
 }
+var PROJECT_SCOPE = ["claude"];
 async function install(host, opts = {}) {
+  const scope = opts.scope === "project" && PROJECT_SCOPE.includes(host) ? "project" : "user";
   const steps = [];
   if (!opts.dryRun)
     useOwnCopy2();
@@ -216,11 +220,12 @@ async function install(host, opts = {}) {
     case "claude": {
       const root = pluginSource();
       if (opts.dryRun)
-        return [{ ok: true, text: `claude plugin marketplace add ${root} && claude plugin install harness-offload@harness-offload` }];
-      steps.push(await exec("claude", ["plugin", "marketplace", "add", root]));
-      steps.push(await exec("claude", ["plugin", "install", "harness-offload@harness-offload"]));
+        return [{ ok: true, text: `claude plugin marketplace add ${root} --scope ${scope} && claude plugin install harness-offload@harness-offload --scope ${scope}` }];
+      const cwd = scope === "project" ? process.cwd() : undefined;
+      steps.push(await exec("claude", ["plugin", "marketplace", "add", root, "--scope", scope], cwd));
+      steps.push(await exec("claude", ["plugin", "install", "harness-offload@harness-offload", "--scope", scope], cwd));
       steps.push({ ok: true, note: true, text: "restart Claude Code (or /reload-plugins) to load it" });
-      record(host, { marketplace: root });
+      record(host, { marketplace: root, scope, ...cwd ? { project: cwd } : {} });
       break;
     }
     case "codex": {
@@ -291,7 +296,7 @@ async function install(host, opts = {}) {
         }
         writeFileSync(`${file}.bak-harness-offload`, readFileSync(file));
       }
-      const { sessionGuide } = await import("./chunk-c5evmd8r.js");
+      const { sessionGuide } = await import("./chunk-dmw5qgta.js");
       writeFileSync(guide, sessionGuide("crush", isWin ? winCommand() : JSON.stringify(join2(pluginDir2(), "bin", "offload"))) + `
 `);
       const ours = (h) => h?.name === "harness-offload";
@@ -369,7 +374,7 @@ export { default } from ${JSON.stringify(pathToFileURL(distFile2("amp.js")).href
       const file = join2(stateDir2(), "aider-conventions.md");
       if (opts.dryRun)
         return [{ ok: true, text: `write ${file}` }];
-      const { sessionGuide } = await import("./chunk-c5evmd8r.js");
+      const { sessionGuide } = await import("./chunk-dmw5qgta.js");
       const cli = isWin ? winCommand() : JSON.stringify(join2(pluginDir2(), "bin", "offload"));
       writeFileSync(file, `# Harness Offload
 
@@ -396,10 +401,14 @@ ${r.snippet}` });
 async function uninstall(host) {
   const steps = [];
   switch (host) {
-    case "claude":
-      steps.push(await exec("claude", ["plugin", "uninstall", "harness-offload@harness-offload"]));
-      steps.push(await exec("claude", ["plugin", "marketplace", "remove", "harness-offload"]));
+    case "claude": {
+      const r = recorded(host);
+      const scope = r.scope === "project" ? "project" : "user";
+      const cwd = scope === "project" && r.project && existsSync2(r.project) ? r.project : undefined;
+      steps.push(await exec("claude", ["plugin", "uninstall", "harness-offload@harness-offload", "--scope", scope], cwd));
+      steps.push(await exec("claude", ["plugin", "marketplace", "remove", "harness-offload"], cwd));
       break;
+    }
     case "codex":
       steps.push(await exec("codex", ["plugin", "remove", "harness-offload@harness-offload"]));
       steps.push(await exec("codex", ["plugin", "marketplace", "remove", "harness-offload"]));
@@ -493,5 +502,36 @@ function installedHosts() {
     return [];
   }
 }
+async function describe(host, scope = "user") {
+  const project = scope === "project" && PROJECT_SCOPE.includes(host);
+  switch (host) {
+    case "claude":
+      return { host, what: `runs claude plugin install harness-offload --scope ${project ? "project" : "user"}`, where: project ? `${tilde(join2(process.cwd(), ".claude", "settings.json"))} (commit it to share it with your team)` : "Claude Code keeps it in ~/.claude/plugins" };
+    case "codex":
+      return { host, what: "runs codex plugin add harness-offload", where: "Codex keeps it in ~/.codex", note: "then trust the hooks once: open /hooks in Codex" };
+    case "cursor":
+      return { host, what: `+ ${tilde(join2(home(), ".cursor", "plugins", "local", "harness-offload"))}/`, where: "new folder: a copy of the plugin", note: "then in Cursor: Developer: Reload Window" };
+    case "gemini":
+      return { host, what: `+ ${tilde(join2(home(), ".gemini", "extensions", "harness-offload"))}/`, where: "new folder: a Gemini CLI extension (hooks, tools, GEMINI.md)" };
+    case "copilot":
+      return { host, what: "runs copilot plugin install harness-offload", where: "Copilot CLI keeps it in ~/.copilot" };
+    case "qwen":
+      return { host, what: "runs qwen extensions install harness-offload", where: "Qwen Code keeps it in ~/.qwen/extensions", note: "Qwen Code can't replace command output, so long outputs are not digested there" };
+    case "crush":
+      return { host, what: `~ ${tilde(join2(crushDir(), "crush.json"))}`, where: "your Crush settings: adds 2 hooks and a guide (backup: crush.json.bak-harness-offload)" };
+    case "pi":
+      return { host, what: "runs pi install harness-offload", where: "Pi keeps it in its package list" };
+    case "opencode": {
+      const dir = await opencodeMajor() >= 2 ? "plugins" : "plugin";
+      return { host, what: `+ ${tilde(join2(home(), ".config", "opencode", dir, "harness-offload.js"))}`, where: "new file: one line that loads the plugin" };
+    }
+    case "kilo":
+      return { host, what: `+ ${tilde(join2(home(), ".config", "kilo", "plugin", "harness-offload.js"))}`, where: "new file: one line that loads the plugin" };
+    case "devin":
+      return { host, what: "runs devin plugins install harness-offload", where: "Devin keeps it with its plugins" };
+    default:
+      return { host, what: `offload install ${host}`, where: "see docs/hosts.md" };
+  }
+}
 
-export { pluginDir2, packageRoot2, distFile2, checkoutRoot2, ownCopyDir2, useOwnCopy2, HOSTS, isHost, HOST_LABELS, detectHosts, install, uninstall, installedHosts };
+export { pluginDir2, packageRoot2, distFile2, checkoutRoot2, ownCopyDir2, useOwnCopy2, HOSTS, isHost, HOST_LABELS, tilde, detectHosts, PROJECT_SCOPE, install, uninstall, installedHosts, describe };

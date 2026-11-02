@@ -5,9 +5,9 @@ import {
 } from "./chunk-djerf2vs.js";
 import"./chunk-5at3kbd8.js";
 import"./chunk-d1jn8t5x.js";
-import"./chunk-fxbkapb7.js";
-import"./chunk-vvzeww8q.js";
-import"./chunk-xnp9r6tm.js";
+import"./chunk-e1kbmva9.js";
+import"./chunk-d21r4btv.js";
+import"./chunk-xvtqn1sr.js";
 import {
   PAUSED_MESSAGE2,
   welcomeMessage2,
@@ -17,7 +17,7 @@ import {
   bashGuard2,
   postBash2,
   sessionGuide2
-} from "./chunk-6vvyrzfe.js";
+} from "./chunk-p98jjwxc.js";
 import"./chunk-tb9htz8z.js";
 
 // src/commands/hook.ts

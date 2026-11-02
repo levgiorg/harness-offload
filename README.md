@@ -19,28 +19,38 @@ Claude Code · Codex · Gemini CLI · Copilot CLI · Cursor · OpenCode · Pi ·
 
 ## Install
 
-**Claude Code** — one line in your terminal (needs `bash` and `jq`, nothing else):
-
 ```bash
-claude plugin install harness-offload --marketplace levgiorg/harness-offload
+npx harness-offload@latest install
 ```
 
-**Every agent on your computer at once** — Claude Code, Codex, Cursor, Gemini CLI, Copilot CLI, Qwen Code,
-Crush, Pi, OpenCode, Kilo:
+It asks which of your agents to set it up in (Claude Code, Codex, Cursor, Gemini CLI, Copilot CLI, Qwen Code,
+Crush, Pi, OpenCode, Kilo — the ones it finds are ticked) and whether for all your projects or just this one,
+shows exactly what will change, and installs only after you say yes. Each agent then reads with **its own small
+model on the plan you already pay for**: Claude Code → Haiku, Codex → gpt-6-luna, Gemini CLI → Flash-Lite…
 
-```bash
-npx harness-offload install
-```
+**Only Claude Code?** `claude plugin install harness-offload --marketplace levgiorg/harness-offload`
 
-No questions. It finds your agents, sets each one up and tells you who does the reading: by default **each
-agent's own small model on the plan you already pay for** (Claude Code → Haiku, Codex → gpt-6-luna, Gemini CLI →
-Flash-Lite…). Your next session opens with one line saying so.
+<details>
+<summary>What it changes, and where</summary>
 
-- **Change who reads:** `npx harness-offload model groq:llama-3.3-70b` ([18 providers + local](docs/backends.md)),
-  or in Claude Code `/harness-offload:setup`. A backup API key if your agent's own route stops working:
-  `npx harness-offload key anthropic` ([how](docs/backends.md#if-your-agents-own-route-stops-working-an-api-key-takes-over)).
-- **Remove:** `npx harness-offload uninstall` (everywhere; `--all` also deletes settings and stats), or for
-  Claude Code alone `claude plugin uninstall harness-offload@harness-offload`.
+| Agent | What happens | Where |
+|---|---|---|
+| Claude Code | `claude plugin install … --scope user` (or `project`) | managed by Claude Code (`~/.claude`, or the project's `.claude/settings.json`) |
+| Codex · Copilot CLI · Qwen Code · Pi · Devin | their own plugin/extension command | managed by each agent |
+| Gemini CLI | a new extension folder | `~/.gemini/extensions/harness-offload/` |
+| Cursor | a copy of the plugin | `~/.cursor/plugins/local/harness-offload/` |
+| OpenCode · Kilo | one one-line plugin file | `~/.config/opencode/plugins/`, `~/.config/kilo/plugin/` |
+| Crush | 2 hooks and a guide added to your settings (backup kept) | `~/.config/crush/crush.json` |
+| Offload itself | its own copy, so agents don't depend on the npx cache | `~/.local/share/harness-offload/` |
+
+Nothing runs at `npm install` time; only `install` changes anything. Details per agent: [docs/hosts.md](docs/hosts.md).
+</details>
+
+- **Check:** `npx harness-offload doctor` · **Update:** run the install command again (it says `updated 0.2.0 → …`)
+- **Change who reads** (another model, an API key, a local model): `npx harness-offload model …` ([18 providers + local](docs/backends.md)), or `/harness-offload:setup` in Claude Code
+- **No questions** (scripts, CI, or from inside an agent): `npx harness-offload@latest install --yes [--agents claude,codex] [--scope project]`
+- **Remove:** `npx harness-offload uninstall` (asks; your settings stay unless you say so) · Claude Code alone: `claude plugin uninstall harness-offload@harness-offload`
+- **Let your agent do it:** paste *"Run `npx harness-offload@latest install --dry-run`, show me what it would change, then run it with `--yes --agents <this agent>`."*
 
 ## What it saves
 

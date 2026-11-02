@@ -2,3 +2,7 @@ node_modules/
 dist/
 src/generated/
 assets/
+# copied from the repo root by scripts/release-files.mjs
+/README.md
+/LICENSE
+/LICENSE-FONTS

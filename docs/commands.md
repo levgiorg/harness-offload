@@ -18,8 +18,9 @@
 ## Reference
 
 ```text
-offload read -q QUESTION PATH...        offload setup               offload install <host...>
-offload explore QUESTION                offload doctor [--ping]     offload uninstall <host...>
+offload install [--yes] [--agents a,b] [--scope user|project] [--dry-run]   (no agent named: asks first)
+offload uninstall [--yes] [--agents a,b] [--all] [--dry-run]              offload install|uninstall <host...>
+offload read -q QUESTION PATH...        offload setup               offload doctor [--ping]
 offload run [-q FOCUS] -- CMD...        offload models [BACKEND]    offload stats [--days N]
 offload summarize [-q FOCUS] [FILE]     offload config show|set|trust offload mcp
 offload dashboard [--open] [--sample]   offload demo

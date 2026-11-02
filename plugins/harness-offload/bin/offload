@@ -49,8 +49,8 @@ offload — keep big reads, long logs and repo-wide searches out of your coding 
   offload doctor [--ping] [--reset]     Check setup; --ping makes a tiny live call per model.
   offload stats [--days N] [--json]     Delegations and estimated tokens saved (14-day sparkline).
   offload dashboard [--open] [--sample] HTML report of the same (needs Node 18+).
-  offload install                       Set offload up in every agent on this computer (no questions).
-  offload uninstall [--all]             Remove it from every agent (--all: settings, keys and stats too).
+  offload install                       Asks which agents and where, shows what will change, installs on yes.
+  offload uninstall                     The same, in reverse (--yes / --agents / --all to skip the questions).
   offload install|uninstall HOST        Just one harness (claude, codex, cursor, gemini, copilot, qwen, crush, …).
   offload config [show|path|init|set KEY VALUE|trust] [--project]
 

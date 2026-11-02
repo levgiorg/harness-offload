@@ -41,12 +41,12 @@ import {
   parseRef,
   backendFor,
   allBackendNames
-} from "./chunk-fxbkapb7.js";
+} from "./chunk-e1kbmva9.js";
 import {
   modelChain2
-} from "./chunk-vvzeww8q.js";
-import"./chunk-xnp9r6tm.js";
-import"./chunk-z3nern1b.js";
+} from "./chunk-d21r4btv.js";
+import"./chunk-xvtqn1sr.js";
+import"./chunk-9jbxp39k.js";
 import {
   taskNames,
   taskDef,
@@ -97,7 +97,7 @@ async function cmdDoctor(argv) {
   const names = taskNames();
   if (names.length) {
     out.push(section("Your tasks"));
-    const { refCheck } = await import("./chunk-fgfhfvdp.js");
+    const { refCheck } = await import("./chunk-wt8bhp3m.js");
     for (const n of names) {
       const d = taskDef(n);
       if (!d)
@@ -124,7 +124,7 @@ async function cmdDoctor(argv) {
   }
   out.push(section("Backends in use"));
   {
-    const { refCheck } = await import("./chunk-fgfhfvdp.js");
+    const { refCheck } = await import("./chunk-wt8bhp3m.js");
     for (const r of [...refs]) {
       const c = await refCheck(r);
       if (c.err) {
@@ -191,7 +191,7 @@ async function cmdDoctor(argv) {
   }
   if (opts.ping) {
     out.push(section("Live ping"));
-    const { invoke } = await import("./chunk-d4spfkkv.js");
+    const { invoke } = await import("./chunk-wc7mmwxc.js");
     for (const r of refs) {
       const t0 = Date.now();
       try {

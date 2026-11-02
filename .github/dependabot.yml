@@ -2,10 +2,10 @@ version: 2
 updates:
   - package-ecosystem: bun
     directory: /packages/cli
-    schedule: { interval: weekly }
+    schedule: { interval: weekly, day: saturday, time: "19:30", timezone: Europe/Athens }
   - package-ecosystem: github-actions
     directory: /
-    schedule: { interval: weekly }
+    schedule: { interval: weekly, day: saturday, time: "19:30", timezone: Europe/Athens }
     # one PR for all action bumps: they share workflow files and are reviewed together
     groups:
       actions:

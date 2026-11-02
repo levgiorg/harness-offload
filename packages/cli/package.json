@@ -38,7 +38,7 @@
     "LICENSE-FONTS"
   ],
   "engines": {
-    "node": ">=18.17"
+    "node": ">=22"
   },
   "scripts": {
     "gen": "node scripts/gen-assets.mjs",
@@ -48,7 +48,10 @@
     "typecheck": "tsc --noEmit",
     "pretest": "node scripts/gen-assets.mjs",
     "test": "bun test",
-    "compile": "bun run scripts/compile.ts"
+    "compile": "bun run scripts/compile.ts",
+    "release:files": "node scripts/release-files.mjs",
+    "release:check": "node scripts/release-files.mjs && node scripts/pack-check.mjs",
+    "prepublishOnly": "node scripts/release-files.mjs && node scripts/pack-check.mjs"
   },
   "dependencies": {
     "@clack/prompts": "^1.8.1",

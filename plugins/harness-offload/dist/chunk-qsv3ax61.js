@@ -40,17 +40,17 @@ import {
   CLI_AGENTS,
   detectHost,
   backendFor
-} from "./chunk-fxbkapb7.js";
+} from "./chunk-e1kbmva9.js";
 import {
   invoke2
-} from "./chunk-vvzeww8q.js";
+} from "./chunk-d21r4btv.js";
 import {
   HOSTS,
   isHost,
   HOST_LABELS,
   detectHosts,
   install
-} from "./chunk-3vj6ejb8.js";
+} from "./chunk-7abztbby.js";
 
 // src/commands/setup.ts
 import { chmodSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";

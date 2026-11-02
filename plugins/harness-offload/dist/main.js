@@ -8,9 +8,15 @@ import {
 } from "./chunk-25ca7170.js";
 
 // src/cli.ts
-var core = () => import("./chunk-hw7zptat.js");
-var admin = () => import("./chunk-8v4vbrmj.js");
+var core = () => import("./chunk-d299513t.js");
+var admin = () => import("./chunk-963sw0dp.js");
+var SELF = () => process.env.npm_command === "exec" ? "npx harness-offload" : "offload";
 var HELP = () => `${banner()}
+  ${color.bold("Get started")}
+    ${`${SELF()} install`.padEnd(40)}asks which agents and where, shows what will change,
+    ${"".padEnd(40)}installs only after you say yes
+    ${`${SELF()} uninstall`.padEnd(40)}the same, in reverse
+
   ${color.bold("Delegate")}
     offload read -q QUESTION PATH...        answer a question about files (dirs, file:START-END ok);
                                             citations are checked against the files
@@ -29,8 +35,7 @@ var HELP = () => `${banner()}
     offload key [NAME] [--remove]           store an API key (hidden prompt or stdin; file mode 600)
     offload setup                           interactive wizard: backends, keys, models, hosts
     offload demo                            10-second tour, no model calls
-    offload install                         set offload up in every agent on this computer (no questions)
-    offload uninstall [--all]               remove it from every agent (--all: settings, keys, stats too)
+    offload install --yes [--agents a,b] [--scope user|project] [--dry-run]   the same without questions
     offload install <host> | uninstall <host>   just one: claude · codex · cursor · gemini · copilot · qwen
                                             crush · pi · opencode · kilo · devin · aider · mcp
     offload sync                            refresh every installed integration (after an upgrade)
@@ -92,21 +97,21 @@ async function main(argv) {
       (await core()).cmdTasks();
       return 0;
     case "model":
-      return (await import("./chunk-fgfhfvdp.js")).cmdModel(rest);
+      return (await import("./chunk-wt8bhp3m.js")).cmdModel(rest);
     case "key":
-      return (await import("./chunk-g435xd15.js")).cmdKey(rest);
+      return (await import("./chunk-hzv6r0c6.js")).cmdKey(rest);
     case "outline":
       (await core()).cmdOutline(rest);
       return 0;
     case "dashboard":
-      return (await import("./chunk-mewmaw8t.js")).cmdDashboard(rest);
+      return (await import("./chunk-16ft39c9.js")).cmdDashboard(rest);
     case "doctor":
       return (await admin()).cmdDoctor(rest);
     case "stats":
       (await admin()).cmdStats(rest);
       return 0;
     case "demo":
-      return (await import("./chunk-y7xfmsnb.js")).cmdDemo();
+      return (await import("./chunk-w3qrr5fk.js")).cmdDemo();
     case "statusline":
       (await admin()).cmdStatusline();
       return 0;
@@ -117,18 +122,18 @@ async function main(argv) {
       await (await admin()).cmdModels(rest);
       return 0;
     case "setup":
-      return (await import("./chunk-e7g4mpsg.js")).cmdSetup(rest);
+      return (await import("./chunk-qsv3ax61.js")).cmdSetup(rest);
     case "install":
     case "uninstall":
-      return (await import("./chunk-517ff2ds.js")).cmdInstall(cmd, rest);
+      return (await import("./chunk-w46ysp7c.js")).cmdInstall(cmd, rest);
     case "sync":
-      return (await import("./chunk-517ff2ds.js")).cmdSync(rest);
+      return (await import("./chunk-w46ysp7c.js")).cmdSync(rest);
     case "mcp":
       return (await import("./chunk-azdqyab2.js")).cmdMcp(rest);
     case "hook":
-      return (await import("./chunk-frshp2gb.js")).cmdHook(rest);
+      return (await import("./chunk-c47b8jeg.js")).cmdHook(rest);
     case "worker":
-      return (await import("./chunk-wzhadqat.js")).cmdWorker(rest);
+      return (await import("./chunk-v1ypnv85.js")).cmdWorker(rest);
   }
   process.stderr.write(`offload: unknown command: ${cmd}
 `);

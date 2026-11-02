@@ -10,7 +10,15 @@ import { banner, color } from "./ui.ts";
 const core = () => import("./commands/core.ts");
 const admin = () => import("./commands/admin.ts");
 
+// run through npx there is no `offload` on PATH yet: show the command that works
+const SELF = () => (process.env.npm_command === "exec" ? "npx harness-offload" : "offload");
+
 const HELP = () => `${banner()}
+  ${color.bold("Get started")}
+    ${`${SELF()} install`.padEnd(40)}asks which agents and where, shows what will change,
+    ${"".padEnd(40)}installs only after you say yes
+    ${`${SELF()} uninstall`.padEnd(40)}the same, in reverse
+
   ${color.bold("Delegate")}
     offload read -q QUESTION PATH...        answer a question about files (dirs, file:START-END ok);
                                             citations are checked against the files
@@ -29,8 +37,7 @@ const HELP = () => `${banner()}
     offload key [NAME] [--remove]           store an API key (hidden prompt or stdin; file mode 600)
     offload setup                           interactive wizard: backends, keys, models, hosts
     offload demo                            10-second tour, no model calls
-    offload install                         set offload up in every agent on this computer (no questions)
-    offload uninstall [--all]               remove it from every agent (--all: settings, keys, stats too)
+    offload install --yes [--agents a,b] [--scope user|project] [--dry-run]   the same without questions
     offload install <host> | uninstall <host>   just one: claude · codex · cursor · gemini · copilot · qwen
                                             crush · pi · opencode · kilo · devin · aider · mcp
     offload sync                            refresh every installed integration (after an upgrade)

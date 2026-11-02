@@ -30,6 +30,7 @@ bash plugins/harness-offload/tests/e2e-backends.sh [--live] [--agents]   # every
 node packages/cli/scripts/source-hash.mjs --check                 # dist freshness (CI)
 node bench/hooks.mjs [--budget-ms 150]                            # hook latency, both engines (CI)
 bash bench/claude-e2e.sh                                          # real Claude Code with vs without the plugin
+cd packages/cli && npm run release:check && node scripts/pack-smoke.mjs   # what npm would ship + smoke-install the real tarball
 ```
 
 ## Rules

@@ -41,8 +41,6 @@ jobs:
     name: GitHub release + npm
     runs-on: ubuntu-latest
     needs: binaries
-    env:
-      NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
     steps:
       - uses: actions/checkout@v7
       - uses: oven-sh/setup-bun@v2
@@ -56,15 +54,19 @@ jobs:
         with:
           path: dist
           merge-multiple: true
+      - name: The tag matches the package version
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          v=$(jq -r .version packages/cli/package.json)
+          [ "${GITHUB_REF_NAME}" = "v$v" ] || { echo "tag ${GITHUB_REF_NAME} but package.json says $v"; exit 1; }
       - name: Build npm package
         working-directory: packages/cli
         run: |
-          bun install --frozen-lockfile && bun run build && cp ../../LICENSE ../../LICENSE-FONTS .
-          # npmjs.com can't resolve repo-relative links: point images and docs at GitHub
-          repo="${GITHUB_REPOSITORY}"
-          sed -E -e "s#src=\"(docs/[^\"]+)\"#src=\"https://raw.githubusercontent.com/$repo/main/\1\"#g" \
-                 -e "s#\]\((docs/[^)]+|SECURITY\.md|CONTRIBUTING\.md|LICENSE)\)#](https://github.com/$repo/blob/main/\1)#g" \
-                 ../../README.md > README.md
+          bun install --frozen-lockfile && bun run build
+          # README (links pointed at GitHub), LICENSE, LICENSE-FONTS; then check what would ship
+          node scripts/release-files.mjs
+          node scripts/pack-check.mjs
+          node scripts/pack-smoke.mjs
       - name: Plugin zip
         run: |
           cd plugins && zip -qr ../dist/harness-offload-plugin.zip harness-offload -x 'harness-offload/tests/*' && cd ..
@@ -73,9 +75,12 @@ jobs:
         with:
           files: dist/*
           generate_release_notes: true
+      # Trusted publishing (OIDC): no npm token anywhere; npm adds provenance by itself.
+      # Set up once on npmjs.com → harness-offload → Settings → Trusted Publisher
+      # (GitHub Actions · levgiorg/harness-offload · release.yml). See docs/development.md.
       - name: Publish to npm
-        if: env.NPM_TOKEN != ''
+        if: startsWith(github.ref, 'refs/tags/v')
         working-directory: packages/cli
-        run: npm publish --provenance --access public
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          npm install -g npm@^11.5.1
+          npm publish --access public

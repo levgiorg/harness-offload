@@ -28,14 +28,14 @@ import {
   CLI_AGENTS,
   parseRef,
   backendFor
-} from "./chunk-fxbkapb7.js";
+} from "./chunk-e1kbmva9.js";
 import {
   modelChain2
-} from "./chunk-vvzeww8q.js";
+} from "./chunk-d21r4btv.js";
 import {
   digest,
   outline2
-} from "./chunk-xnp9r6tm.js";
+} from "./chunk-xvtqn1sr.js";
 import {
   taskSummary
 } from "./chunk-tb9htz8z.js";
@@ -272,7 +272,7 @@ async function postBash2(opts) {
   const never = cfgStr("hooks.bash_never_summarize");
   if (never) {
     try {
-      const { posixToJs } = await import("./chunk-zyxpe3rp.js");
+      const { posixToJs } = await import("./chunk-2fsscxcd.js");
       if (new RegExp(posixToJs(never)).test(last))
         return;
     } catch {

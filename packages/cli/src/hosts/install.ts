@@ -9,6 +9,7 @@ import { stateDir } from "../state.ts";
 import { checkoutRoot, distFile, marketplaceRoot, packageRoot, pluginDir, useOwnCopy } from "./assets.ts";
 import { opencodeMajor } from "../backends/opencode.ts";
 import { cfgStr } from "../config.ts";
+import { VERSION } from "../assets.ts";
 
 export const HOSTS = ["claude", "codex", "cursor", "gemini", "copilot", "qwen", "crush", "pi", "opencode", "kilo", "devin", "aider", "mcp"] as const;
 /** Integrations that work but are not listed anywhere yet (Amp: built from its docs, never run live). */
@@ -81,6 +82,8 @@ export function pluginSource(): string {
 }
 
 const home = () => process.env.OFFLOAD_HOME || homedir();
+/** "~/.gemini/…" instead of the full home path, for what we show people. */
+export const tilde = (p: string) => (p.startsWith(home() + "/") ? "~" + p.slice(home().length) : p);
 const record = (host: string, data: unknown) => {
   const f = join(stateDir(), "installs.json");
   let all: Record<string, unknown> = {};
@@ -90,7 +93,7 @@ const record = (host: string, data: unknown) => {
     /* new */
   }
   if (data === undefined) delete all[host];
-  else all[host] = data;
+  else all[host] = { ...(data as object), version: VERSION, at: new Date().toISOString().slice(0, 10) };
   writeFileSync(f, JSON.stringify(all, null, 2) + "\n");
 };
 
@@ -104,8 +107,8 @@ export async function detectHosts(): Promise<Record<HostName, boolean>> {
   return out;
 }
 
-async function exec(cmd: string, args: string[]): Promise<Step> {
-  const r = await runProcess(cmd, args, { timeoutMs: 180_000 });
+async function exec(cmd: string, args: string[], cwd?: string): Promise<Step> {
+  const r = await runProcess(cmd, args, { timeoutMs: 180_000, cwd });
   const tail = (r.stdout + r.stderr).trim().split("\n").slice(-2).join(" ").slice(0, 200);
   return { ok: r.code === 0, text: `${cmd} ${args.join(" ")}${r.code === 0 ? "" : `  → exit ${r.code}: ${tail}`}` };
 }
@@ -154,7 +157,13 @@ function geminiExtension(dir: string, launcher: string): void {
   rewriteForWindows(join(dir, "gemini-extension.json"), /"[^"]*offload-ts"/g);
 }
 
-export async function install(host: HostName, opts: { dryRun?: boolean } = {}): Promise<Step[]> {
+/** All my projects (the agent's home-folder settings) or this project only. */
+export type Scope = "user" | "project";
+/** Agents that can be set up for one project only (others always go in the home folder). */
+export const PROJECT_SCOPE: readonly HostName[] = ["claude"];
+
+export async function install(host: HostName, opts: { dryRun?: boolean; scope?: Scope } = {}): Promise<Step[]> {
+  const scope: Scope = opts.scope === "project" && PROJECT_SCOPE.includes(host) ? "project" : "user";
   const steps: Step[] = [];
   if (!opts.dryRun) useOwnCopy();
   const bin = host === "opencode" ? cfgStr("opencode.bin", "opencode") : HOST_BIN[host];
@@ -165,11 +174,13 @@ export async function install(host: HostName, opts: { dryRun?: boolean } = {}): 
   switch (host) {
     case "claude": {
       const root = pluginSource();
-      if (opts.dryRun) return [{ ok: true, text: `claude plugin marketplace add ${root} && claude plugin install harness-offload@harness-offload` }];
-      steps.push(await exec("claude", ["plugin", "marketplace", "add", root]));
-      steps.push(await exec("claude", ["plugin", "install", "harness-offload@harness-offload"]));
+      if (opts.dryRun) return [{ ok: true, text: `claude plugin marketplace add ${root} --scope ${scope} && claude plugin install harness-offload@harness-offload --scope ${scope}` }];
+      // project scope is written into this folder's .claude/settings.json
+      const cwd = scope === "project" ? process.cwd() : undefined;
+      steps.push(await exec("claude", ["plugin", "marketplace", "add", root, "--scope", scope], cwd));
+      steps.push(await exec("claude", ["plugin", "install", "harness-offload@harness-offload", "--scope", scope], cwd));
       steps.push({ ok: true, note: true, text: "restart Claude Code (or /reload-plugins) to load it" });
-      record(host, { marketplace: root });
+      record(host, { marketplace: root, scope, ...(cwd ? { project: cwd } : {}) });
       break;
     }
     case "codex": {
@@ -325,10 +336,15 @@ export async function install(host: HostName, opts: { dryRun?: boolean } = {}): 
 export async function uninstall(host: HostName): Promise<Step[]> {
   const steps: Step[] = [];
   switch (host) {
-    case "claude":
-      steps.push(await exec("claude", ["plugin", "uninstall", "harness-offload@harness-offload"]));
-      steps.push(await exec("claude", ["plugin", "marketplace", "remove", "harness-offload"]));
+    case "claude": {
+      // where it was installed: the home folder, or one project's .claude/settings.json
+      const r = recorded(host);
+      const scope = r.scope === "project" ? "project" : "user";
+      const cwd = scope === "project" && r.project && existsSync(r.project) ? r.project : undefined;
+      steps.push(await exec("claude", ["plugin", "uninstall", "harness-offload@harness-offload", "--scope", scope], cwd));
+      steps.push(await exec("claude", ["plugin", "marketplace", "remove", "harness-offload"], cwd));
       break;
+    }
     case "codex":
       steps.push(await exec("codex", ["plugin", "remove", "harness-offload@harness-offload"]));
       steps.push(await exec("codex", ["plugin", "marketplace", "remove", "harness-offload"]));
@@ -421,5 +437,48 @@ export function installedHosts(): HostName[] {
     return Object.keys(all).filter((h): h is HostName => (HOSTS as readonly string[]).includes(h));
   } catch {
     return [];
+  }
+}
+
+/** What installing into an agent does, in the words the plan shows people. */
+export interface PlanItem {
+  host: HostName;
+  /** what happens: a command we run (the agent's own), or + a new file/folder, or ~ an edit of a file of yours */
+  what: string;
+  /** where it ends up */
+  where: string;
+  /** what is left for the person to do, if anything */
+  note?: string;
+}
+
+export async function describe(host: HostName, scope: Scope = "user"): Promise<PlanItem> {
+  const project = scope === "project" && PROJECT_SCOPE.includes(host);
+  switch (host) {
+    case "claude":
+      return { host, what: `runs claude plugin install harness-offload --scope ${project ? "project" : "user"}`, where: project ? `${tilde(join(process.cwd(), ".claude", "settings.json"))} (commit it to share it with your team)` : "Claude Code keeps it in ~/.claude/plugins" };
+    case "codex":
+      return { host, what: "runs codex plugin add harness-offload", where: "Codex keeps it in ~/.codex", note: "then trust the hooks once: open /hooks in Codex" };
+    case "cursor":
+      return { host, what: `+ ${tilde(join(home(), ".cursor", "plugins", "local", "harness-offload"))}/`, where: "new folder: a copy of the plugin", note: "then in Cursor: Developer: Reload Window" };
+    case "gemini":
+      return { host, what: `+ ${tilde(join(home(), ".gemini", "extensions", "harness-offload"))}/`, where: "new folder: a Gemini CLI extension (hooks, tools, GEMINI.md)" };
+    case "copilot":
+      return { host, what: "runs copilot plugin install harness-offload", where: "Copilot CLI keeps it in ~/.copilot" };
+    case "qwen":
+      return { host, what: "runs qwen extensions install harness-offload", where: "Qwen Code keeps it in ~/.qwen/extensions", note: "Qwen Code can't replace command output, so long outputs are not digested there" };
+    case "crush":
+      return { host, what: `~ ${tilde(join(crushDir(), "crush.json"))}`, where: "your Crush settings: adds 2 hooks and a guide (backup: crush.json.bak-harness-offload)" };
+    case "pi":
+      return { host, what: "runs pi install harness-offload", where: "Pi keeps it in its package list" };
+    case "opencode": {
+      const dir = (await opencodeMajor()) >= 2 ? "plugins" : "plugin";
+      return { host, what: `+ ${tilde(join(home(), ".config", "opencode", dir, "harness-offload.js"))}`, where: "new file: one line that loads the plugin" };
+    }
+    case "kilo":
+      return { host, what: `+ ${tilde(join(home(), ".config", "kilo", "plugin", "harness-offload.js"))}`, where: "new file: one line that loads the plugin" };
+    case "devin":
+      return { host, what: "runs devin plugins install harness-offload", where: "Devin keeps it with its plugins" };
+    default:
+      return { host, what: `offload install ${host}`, where: "see docs/hosts.md" };
   }
 }

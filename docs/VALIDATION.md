@@ -3,6 +3,19 @@
 Mock-based suites run in CI on every push (conformance ×2 engines, routing table ×2, TS unit/adapter/MCP/installer tests).
 Real-model runs are recorded here.
 
+## 2026-11-02 — the installer that asks
+
+- In a real terminal (pty, `test/pty-run.py`, in CI): agents → where → plan → "Install?" → receipt; unticking
+  Claude Code skips the "which projects" question; "This project only" runs `--scope project`; Ctrl-C at the
+  confirmation changes nothing; uninstall asks and keeps settings by default.
+- Real Claude Code 2.1.316 (isolated HOME): `install --yes --agents claude --scope project` wrote only the
+  project's `.claude/settings.json` ("Scope: project"), home untouched; `uninstall --yes` run from another folder
+  emptied it again; user scope installed and `uninstall --yes --all` removed it and the state.
+- The real npm tarball (`scripts/pack-smoke.mjs`, installed like npx does): help leads with the install command;
+  with no terminal `install` changes nothing and prints the command; `--dry-run` writes nothing; `--yes`
+  installs Claude Code from GitHub (`levgiorg/harness-offload`) and Gemini pointing at
+  `~/.local/share/harness-offload`, never the cache; `uninstall --yes --all` removes everything. 11/11.
+
 ## 2026-11-02 — installing
 
 - `claude plugin install harness-offload --marketplace <checkout>` in Claude Code 2.1.316 (isolated HOME): added
