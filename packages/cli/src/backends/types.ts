@@ -31,6 +31,7 @@ export interface WorkerRequest {
   maxSteps?: number;
   /** Secret globs the explorer must never read. */
   secretGlobs?: string[];
+  allowGlobs?: string[];
 }
 
 export interface WorkerResult {

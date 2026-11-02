@@ -64,12 +64,21 @@ export function logExcerpt(text: string): string {
 }
 
 /** Digest of a log file; same layout as the bash engine. */
-export async function digest(log: string, label: string, code: string, focus: string, source: string, modelOverride?: string): Promise<string> {
+export interface DigestOptions {
+  /** Deterministic digest only (no worker model). */
+  noModel?: boolean;
+  /** Smaller sections (the host already showed a preview). */
+  compact?: boolean;
+  /** Total seconds the model summary may take (fallbacks included). */
+  budgetSec?: number;
+}
+
+export async function digest(log: string, label: string, code: string, focus: string, source: string, modelOverride?: string, opts: DigestOptions = {}): Promise<string> {
   const text = readFileSync(log, "utf8");
   const lines = countLines(text);
   const bytes = Buffer.byteLength(text);
   const kb = Math.ceil(bytes / 1024);
-  const compact = process.env.OFFLOAD_DIGEST_COMPACT === "1";
+  const compact = opts.compact ?? process.env.OFFLOAD_DIGEST_COMPACT === "1";
   let keyMax = cfgInt("digest.key_lines", 30);
   let tailN = cfgInt("digest.tail_lines", 15);
   let sumMax = 40;
@@ -88,7 +97,7 @@ export async function digest(log: string, label: string, code: string, focus: st
   let model = "";
   let tin = 0;
   let tout = 0;
-  if (cfgBool("digest.use_model", true) && process.env.OFFLOAD_NO_MODEL !== "1") {
+  if (cfgBool("digest.use_model", true) && !opts.noModel && process.env.OFFLOAD_NO_MODEL !== "1") {
     const prompt = [
       `<command>${label}</command>`,
       code ? `<exit_code>${code}</exit_code>` : "",
@@ -100,7 +109,7 @@ export async function digest(log: string, label: string, code: string, focus: st
       .filter((s) => s !== "")
       .join("\n");
     try {
-      const r = await invoke("summarize", prompt + "\n", workDir(), modelOverride);
+      const r = await invoke("summarize", prompt + "\n", workDir(), modelOverride, { budgetSec: opts.budgetSec });
       summary = splitLines(r.text).slice(0, sumMax).map((l) => truncate(l, width)).join("\n");
       note = model = r.model;
       tin = r.tokensIn;

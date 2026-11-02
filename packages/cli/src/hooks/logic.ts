@@ -6,7 +6,7 @@ import { cfgBool, cfgInt, cfgList, cfgStr, loadConfig } from "../config.ts";
 import { digest } from "../digest.ts";
 import { parseRef, backendFor } from "../backends/registry.ts";
 import { modelChain } from "../engine.ts";
-import { isSecretPath, matchesAny } from "../secrets.ts";
+import { isSecretTarget, matchesAny } from "../secrets.ts";
 import { appendStats, cooling, newLogPath } from "../state.ts";
 import { outline } from "../outline.ts";
 import { estTokens, fileBytes, fileLines, fmtInt, isText, shquote } from "../text.ts";
@@ -36,9 +36,15 @@ export function enabled(): boolean {
 export async function available(): Promise<boolean> {
   if (!enabled()) return false;
   for (const task of ["read", "summarize"] as const) {
-    for (const ref of modelChain(task)) {
-      if (cooling(ref)) continue;
-      const b = backendFor(parseRef(ref).backend);
+    for (const raw of modelChain(task)) {
+      let parsed;
+      try {
+        parsed = parseRef(raw); // @host outside a known harness throws: skip it
+      } catch {
+        continue;
+      }
+      if (cooling(parsed.ref)) continue;
+      const b = backendFor(parsed.backend);
       if (b && (await b.available()).ok) return true;
     }
   }
@@ -52,7 +58,7 @@ function ignored(p: string): boolean {
 
 const BINARY = /\.(png|jpe?g|gif|webp|bmp|ico|svgz|pdf|ipynb|zip|gz|tgz|tar|jar|wasm|so|dylib|dll|exe|bin|pyc|class|o|a|mp3|mp4|mov|woff2?|ttf|otf)$/i;
 function notForOffload(p: string): boolean {
-  return BINARY.test(p) || !isText(p) || isSecretPath(p);
+  return BINARY.test(p) || !isText(p) || isSecretTarget(p);
 }
 
 function guard(message: string): Verdict | undefined {
@@ -193,12 +199,11 @@ export async function postBash(opts: { command?: string; output: string; persist
   }
   const lines = text.split("\n").length - (text.endsWith("\n") ? 1 : 0);
   if (lines <= cfgInt("hooks.bash_output_threshold_lines", 250) && Buffer.byteLength(text) <= cfgInt("hooks.bash_output_threshold_bytes", 20000)) return undefined;
-  if (!(await available())) process.env.OFFLOAD_NO_MODEL = "1";
-  process.env.OFFLOAD_TIMEOUT = process.env.OFFLOAD_TIMEOUT || String(cfgInt("hooks.digest_timeout_seconds", 90));
-  if (compact) process.env.OFFLOAD_DIGEST_COMPACT = "1";
+  // options, not process.env: in-process hosts (OpenCode, Pi) live on
+  const noModel = !(await available());
   const log = newLogPath(cmd);
   writeFileSync(log, text);
-  return digest(log, cmd, "0", opts.description ?? "", "hook");
+  return digest(log, cmd, "0", opts.description ?? "", "hook", undefined, { noModel, compact, budgetSec: cfgInt("hooks.digest_timeout_seconds", 90) });
 }
 
 /** Usage guidance injected at session start. */

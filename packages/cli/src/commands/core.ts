@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { closeSync, existsSync, mkdirSync, openSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { closeSync, existsSync, lstatSync, mkdirSync, openSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join, relative, resolve, sep } from "node:path";
 import { execFileSync } from "node:child_process";
 import { list, parseFlags, str, UsageError } from "../args.ts";
@@ -8,7 +8,7 @@ import { digest, isSmall } from "../digest.ts";
 import { invoke, InvokeResult } from "../engine.ts";
 import { E, WorkerError } from "../backends/types.ts";
 import { outline } from "../outline.ts";
-import { isSecretPath, redact } from "../secrets.ts";
+import { isSecretPath, isSecretTarget, redact } from "../secrets.ts";
 import { appendStats, newLogPath, workDir } from "../state.ts";
 import { estTokens, fileLines, fmtInt, isText, numberLines, shquote, stripWrappingFence } from "../text.ts";
 import { verifyCitations } from "../verify.ts";
@@ -61,7 +61,7 @@ function listDirFiles(d: string): string[] {
       for (const e of readdirSync(p)) {
         if (skip.has(e)) continue;
         const q = join(p, e);
-        const st = statSync(q);
+        const st = lstatSync(q);
         if (st.isDirectory()) walk(q);
         else if (st.isFile()) files.push(q);
       }
@@ -112,6 +112,11 @@ export async function cmdRead(argv: string[]): Promise<void> {
     if (existsSync(path) && statSync(path).isDirectory()) {
       for (const f of listDirFiles(path)) {
         if (!existsSync(f) || !statSync(f).isFile()) continue;
+        // links inside a directory are not followed (they may point outside it)
+        if (lstatSync(f).isSymbolicLink()) {
+          skipped.push(`${f}(symlink)`);
+          continue;
+        }
         if (isSecretPath(f) && !allow) {
           skipped.push(`${f}(secret)`);
           continue;
@@ -129,7 +134,7 @@ export async function cmdRead(argv: string[]): Promise<void> {
       continue;
     }
     if (!existsSync(path) || !statSync(path).isFile()) die(`read: file not found or unreadable: ${item}`);
-    if (isSecretPath(path) && !allow) die(`read: refusing to send ${path} to a third-party model (matches privacy.secret_globs). Use --allow-secrets if you are sure.`, E.REFUSED);
+    if (isSecretTarget(path) && !allow) die(`read: refusing to send ${path} to a third-party model (matches privacy.secret_globs). Use --allow-secrets if you are sure.`, E.REFUSED);
     if (!isText(path)) die(`read: ${path} looks binary; offload only handles text`, E.REFUSED);
     const total = fileLines(path);
     if (!from) from = 1;
@@ -233,8 +238,7 @@ export async function cmdRun(argv: string[]): Promise<number> {
     rmSync(log, { force: true });
     return code;
   }
-  if (opts["no-model"]) process.env.OFFLOAD_NO_MODEL = "1";
-  process.stdout.write(await digest(log, label, String(code), str(opts.focus), "run", str(opts.model) || undefined));
+  process.stdout.write(await digest(log, label, String(code), str(opts.focus), "run", str(opts.model) || undefined, { noModel: Boolean(opts["no-model"]) }));
   return code;
 }
 
@@ -245,7 +249,7 @@ export async function cmdSummarize(argv: string[]): Promise<void> {
   const log = newLogPath(label);
   if (file && file !== "-") {
     if (!existsSync(file)) die(`summarize: no such file: ${file}`);
-    if (isSecretPath(file)) die(`summarize: refusing to send ${file} (matches privacy.secret_globs)`, E.REFUSED);
+    if (isSecretTarget(file)) die(`summarize: refusing to send ${file} (matches privacy.secret_globs)`, E.REFUSED);
     writeFileSync(log, readFileSync(file));
   } else {
     if (process.stdin.isTTY) die("summarize: pipe text in or give a FILE");
@@ -259,8 +263,7 @@ export async function cmdSummarize(argv: string[]): Promise<void> {
     rmSync(log, { force: true });
     return;
   }
-  if (opts["no-model"]) process.env.OFFLOAD_NO_MODEL = "1";
-  process.stdout.write(await digest(log, label, "", str(opts.focus), "summarize", str(opts.model) || undefined));
+  process.stdout.write(await digest(log, label, "", str(opts.focus), "summarize", str(opts.model) || undefined, { noModel: Boolean(opts["no-model"]) }));
 }
 
 // ----------------------------------------------------------------- write
@@ -286,7 +289,7 @@ export async function cmdWrite(argv: string[]): Promise<number> {
   if (out && existsSync(out) && !opts.force) die(`write: ${out} already exists — pick a new --out, or add --force to overwrite it`);
   for (const f of [...refs, ...ctxs]) {
     if (!existsSync(f)) die(`write: file not found: ${f}`);
-    if (isSecretPath(f) && !opts["allow-secrets"]) die(`write: refusing to send ${f} (matches privacy.secret_globs)`, E.REFUSED);
+    if (isSecretTarget(f) && !opts["allow-secrets"]) die(`write: refusing to send ${f} (matches privacy.secret_globs)`, E.REFUSED);
   }
   let prompt = "";
   for (const f of refs) prompt += `<reference path="${f}">\n${redact(readFileSync(f, "utf8"))}</reference>\n\n`;
@@ -342,7 +345,7 @@ export async function cmdAsk(argv: string[]): Promise<void> {
   const file = str(opts.file);
   if (file) {
     if (!existsSync(file)) die(`ask: no such file: ${file}`);
-    if (isSecretPath(file)) die(`ask: refusing to send ${file} (matches privacy.secret_globs)`, E.REFUSED);
+    if (isSecretTarget(file)) die(`ask: refusing to send ${file} (matches privacy.secret_globs)`, E.REFUSED);
     prompt += `<input path="${file}">\n${redact(readFileSync(file, "utf8"))}</input>\n\n`;
   }
   prompt += `${question}\n`;

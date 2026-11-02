@@ -160,7 +160,7 @@ export class HttpBackend implements Backend {
         } catch {
           /* empty */
         }
-        messages.push({ role: "tool", tool_call_id: c.id, content: runTool(c.function?.name, args, { root: req.cwd, secretGlobs: req.secretGlobs ?? [] }) });
+        messages.push({ role: "tool", tool_call_id: c.id, content: await runTool(c.function?.name, args, { root: req.cwd, secretGlobs: req.secretGlobs ?? [], allowGlobs: req.allowGlobs ?? [] }) });
       }
       if (step === steps - 2) messages.push({ role: "user", content: "Step budget almost used: answer now with what you found." });
     }
@@ -194,7 +194,7 @@ export class HttpBackend implements Backend {
       messages.push({ role: "assistant", content });
       messages.push({
         role: "user",
-        content: uses.map((u) => ({ type: "tool_result", tool_use_id: u.id, content: runTool(u.name, u.input ?? {}, { root: req.cwd, secretGlobs: req.secretGlobs ?? [] }) })),
+        content: await Promise.all(uses.map(async (u) => ({ type: "tool_result", tool_use_id: u.id, content: await runTool(u.name, u.input ?? {}, { root: req.cwd, secretGlobs: req.secretGlobs ?? [], allowGlobs: req.allowGlobs ?? [] }) }))),
       });
     }
     throw new WorkerError(E.WORKER, `explore used all ${steps} steps without answering`);

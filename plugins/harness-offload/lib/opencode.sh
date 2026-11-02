@@ -74,6 +74,19 @@ co_model_chain() {
   } | awk 'NF && !seen[$0]++'
 }
 
+# Per-attempt timeout: opencode.timeout_seconds, capped by what is left of a
+# total budget (CO_OC_DEADLINE, epoch seconds) — hooks run under host timeouts.
+co_attempt_timeout() {
+  local t left
+  t=$(co_cfg_int '.opencode.timeout_seconds' 180)
+  if [ -n "${CO_OC_DEADLINE:-}" ]; then
+    left=$(( CO_OC_DEADLINE - $(co_now) ))
+    [ "$left" -lt "$t" ] && t=$left
+    [ "$t" -lt 1 ] && t=1
+  fi
+  printf '%s' "$t"
+}
+
 co_cooldown_file() {
   printf '%s/cooldowns/%s' "$(co_state_dir)" "$(printf '%s' "$1" | LC_ALL=C tr -c 'A-Za-z0-9._-' '_')"
 }
@@ -286,7 +299,7 @@ co_ts_attempt() {
   co_tmp errf
   start=$(co_now)
   co_ts_run worker --task "${agent#offload-}" --cwd "$workdir" --model "$model" ${variant:+--variant "$variant"} \
-    --timeout "$(co_cfg_int '.opencode.timeout_seconds' 180)" < "$prompt_file" > "$answer_file" 2> "$errf"
+    --timeout "$(co_attempt_timeout)" < "$prompt_file" > "$answer_file" 2> "$errf"
   rc=$?
   CO_OC_SECONDS=$(co_elapsed "$start")
   if [ "$rc" = 0 ]; then
@@ -335,7 +348,7 @@ co_opencode_attempt() {
   local bin major timeout max_err out errf pid start rc n sid msg text cfg
   bin=$(co_opencode_bin)
   major=$(co_oc_major)
-  timeout=$(co_cfg_int '.opencode.timeout_seconds' 180)
+  timeout=$(co_attempt_timeout)
   max_err=$(co_cfg_int '.opencode.max_stream_errors' 2)
   co_tmp out; co_tmp errf
   CO_OC_TOKENS_IN=0 CO_OC_TOKENS_OUT=0 CO_OC_CTX_IN=0 CO_OC_COST=0 CO_OC_ERROR=""
@@ -462,6 +475,12 @@ co_oc_invoke() {
 "
       continue
     fi
+    if [ -n "${CO_OC_DEADLINE:-}" ] && [ $(( CO_OC_DEADLINE - $(co_now) )) -lt 3 ]; then
+      errors="${errors}  - $model: skipped, time budget used up
+"
+      rc=$CO_E_TIMEOUT
+      break
+    fi
     tried="$tried $model"
     co_oc_attempt "$agent" "$model" "$prompt_file" "$workdir" "$variant" "$answer_file"
     rc=$?
@@ -481,7 +500,7 @@ co_oc_invoke() {
 $(co_model_chain "$task" "$override")
 EOF
 
-  if [ -z "$tried" ] && [ "$rc" = "$CO_E_USAGE" ]; then
+  if [ -z "$tried" ] && { [ "$rc" = "$CO_E_USAGE" ] || [ "$rc" = "$CO_E_TIMEOUT" ]; }; then
     CO_OC_ERROR="no usable model:
 $errors"
     return "$rc"

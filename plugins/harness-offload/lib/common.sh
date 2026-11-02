@@ -237,21 +237,43 @@ co_prune_logs() {
 # privacy.secret_globs, with privacy.secret_allow_globs as exceptions.
 co_is_secret_path() {
   local base pat
-  base=$(basename "$1")
+  # case-insensitive (macOS/Windows file systems), trailing dots/spaces ignored
+  base=$(basename "$1" | LC_ALL=C tr '[:upper:]' '[:lower:]' | LC_ALL=C sed 's/[. ]*$//')
+  [ -z "$base" ] && base=$(basename "$1")
   while IFS= read -r pat; do
     [ -z "$pat" ] && continue
     # shellcheck disable=SC2254
     case "$base" in $pat) return 1 ;; esac
   done <<EOF
-$(co_cfg_list '.privacy.secret_allow_globs')
+$(co_cfg_list '.privacy.secret_allow_globs' | LC_ALL=C tr '[:upper:]' '[:lower:]')
 EOF
   while IFS= read -r pat; do
     [ -z "$pat" ] && continue
     # shellcheck disable=SC2254
     case "$base" in $pat) return 0 ;; esac
   done <<EOF
-$(co_cfg_list '.privacy.secret_globs')
+$(co_cfg_list '.privacy.secret_globs' | LC_ALL=C tr '[:upper:]' '[:lower:]')
 EOF
+  return 1
+}
+
+# Final target of a path after following symlinks (portable: no readlink -f).
+co_real_path() {
+  local p="$1" d n=0
+  while [ -h "$p" ] && [ $n -lt 40 ]; do
+    d=$(cd -P "$(dirname "$p")" 2>/dev/null && pwd) || break
+    p=$(readlink "$p")
+    case "$p" in /*) ;; *) p="$d/$p" ;; esac
+    n=$((n + 1))
+  done
+  d=$(cd -P "$(dirname "$p")" 2>/dev/null && pwd) || { printf '%s' "$p"; return; }
+  printf '%s/%s' "$d" "$(basename "$p")"
+}
+
+# A secret by its own name or by what it points to (notes.md -> .env).
+co_is_secret_target() {
+  co_is_secret_path "$1" && return 0
+  [ -h "$1" ] && co_is_secret_path "$(co_real_path "$1")" && return 0
   return 1
 }
 

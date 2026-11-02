@@ -53,8 +53,7 @@ export async function cmdDemo(): Promise<number> {
 
   const logTokens = estTokens(fileBytes(log));
   out += `\n  ${color.bold("2. Your agent runs the test suite")}  ${color.dim(`(${fmtInt(fileLines(log))} lines of output, ~${fmtInt(logTokens)} tokens)`)}\n`;
-  process.env.OFFLOAD_NO_MODEL = "1";
-  const d = await digest(log, "npm test", "1", "", "demo");
+  const d = await digest(log, "npm test", "1", "", "demo", undefined, { noModel: true });
   out += `  ${sym.arrow} it gets a digest (verbatim failures + tail + full-log path; a cheap model adds a summary when configured):\n\n`;
   out += box("what the agent sees", d.split("\n").slice(0, 9).join("\n") + `\n${color.dim("…")}`);
   out += `  ${sym.ok} ~${fmtInt(estTokens(Buffer.byteLength(d)))} tokens instead of ~${fmtInt(logTokens)}\n`;

@@ -96,7 +96,7 @@ hk_not_for_offload() {
     png|jpg|jpeg|gif|webp|bmp|ico|svgz|pdf|ipynb|zip|gz|tgz|tar|jar|wasm|so|dylib|dll|exe|bin|pyc|class|o|a|mp3|mp4|mov|woff|woff2|ttf|otf) return 0 ;;
   esac
   co_is_text "$1" || return 0
-  co_is_secret_path "$1"
+  co_is_secret_target "$1"
 }
 
 # The standard "too big for your context" message with options and outline.

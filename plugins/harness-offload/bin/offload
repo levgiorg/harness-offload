@@ -128,6 +128,8 @@ cmd_read() {
       while IFS= read -r f; do
         [ -z "$f" ] && continue
         [ -f "$f" ] || continue
+        # links inside a directory are not followed (they may point outside it)
+        if [ -h "$f" ]; then skipped="$skipped $f(symlink)"; continue; fi
         if co_is_secret_path "$f" && ! $allow_secrets; then skipped="$skipped $f(secret)"; continue; fi
         co_is_text "$f" || continue
         [ "$nfiles" -ge "$max_files" ] && { skipped="$skipped (+more: max_files=$max_files)"; break; }
@@ -140,7 +142,7 @@ EOF
       continue
     fi
     [ -f "$path" ] && [ -r "$path" ] || die "read: file not found or unreadable: $item"
-    if co_is_secret_path "$path" && ! $allow_secrets; then
+    if co_is_secret_target "$path" && ! $allow_secrets; then
       die "read: refusing to send $path to a third-party model (matches privacy.secret_globs). Use --allow-secrets if you are sure." "$CO_E_REFUSED"
     fi
     co_is_text "$path" || die "read: $path looks binary; offload only handles text" "$CO_E_REFUSED"
@@ -302,7 +304,7 @@ cmd_summarize() {
   log=$(co_new_log "${label:-${file:-stdin}}")
   if [ -n "$file" ] && [ "$file" != "-" ]; then
     [ -f "$file" ] || die "summarize: no such file: $file"
-    if co_is_secret_path "$file"; then die "summarize: refusing to send $file (matches privacy.secret_globs)" "$CO_E_REFUSED"; fi
+    if co_is_secret_target "$file"; then die "summarize: refusing to send $file (matches privacy.secret_globs)" "$CO_E_REFUSED"; fi
     cp "$file" "$log"
   else
     if [ -t 0 ]; then die "summarize: pipe text in or give a FILE"; fi
@@ -356,7 +358,7 @@ cmd_write() {
   co_tmp prompt; co_tmp answer
   for f in "${refs[@]}" ${ctxs[@]+"${ctxs[@]}"}; do
     [ -f "$f" ] || die "write: file not found: $f"
-    if co_is_secret_path "$f" && ! $allow_secrets; then die "write: refusing to send $f (matches privacy.secret_globs)" "$CO_E_REFUSED"; fi
+    if co_is_secret_target "$f" && ! $allow_secrets; then die "write: refusing to send $f (matches privacy.secret_globs)" "$CO_E_REFUSED"; fi
   done
   {
     for f in "${refs[@]}"; do printf '<reference path="%s">\n' "$f"; co_redact < "$f"; printf '</reference>\n\n'; done
@@ -425,7 +427,7 @@ cmd_ask() {
     if $use_stdin; then printf '<input>\n'; co_redact; printf '</input>\n\n'; fi
     if [ -n "$file" ]; then
       [ -f "$file" ] || die "ask: no such file: $file"
-      co_is_secret_path "$file" && die "ask: refusing to send $file (matches privacy.secret_globs)" "$CO_E_REFUSED"
+      co_is_secret_target "$file" && die "ask: refusing to send $file (matches privacy.secret_globs)" "$CO_E_REFUSED"
       printf '<input path="%s">\n' "$file"; co_redact < "$file"; printf '</input>\n\n'
     fi
     printf '%s\n' "$question"

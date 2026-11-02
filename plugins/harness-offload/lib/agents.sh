@@ -169,7 +169,7 @@ co_agent_attempt() {
     return $CO_E_NOOC
   fi
   sys=$(cat "$CO_ROOT/prompts/$task.md")
-  timeout=$(co_cfg_int '.opencode.timeout_seconds' 180)
+  timeout=$(co_attempt_timeout)
   co_tmp out; co_tmp err; co_tmp merged
   { printf '<instructions>\n%s\n</instructions>\n\n' "$sys"; cat "$prompt_file"; } > "$merged"
   local -a a pre
@@ -263,7 +263,7 @@ co_http_attempt() {
   key=$(co_endpoint_key "$name" "$ep")
   case "$base" in *127.0.0.1*|*localhost*) ;; *) [ -z "$key" ] && { CO_OC_ERROR="no API key for $name (set $(printf '%s' "$ep" | jq -r '.api_key_env // "it"') or run offload setup)"; return $CO_E_AUTH; } ;; esac
   [ -z "$model" ] && { CO_OC_ERROR="endpoint $name needs a model id ($name:MODEL)"; return $CO_E_MODEL; }
-  timeout=$(co_cfg_int '.opencode.timeout_seconds' 180)
+  timeout=$(co_attempt_timeout)
   variant=$(co_cfg ".variants.$task")
   co_tmp body; co_tmp out; co_tmp hdr
   # headers go through a file so the key never shows up in `ps`

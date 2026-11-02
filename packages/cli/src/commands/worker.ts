@@ -35,6 +35,7 @@ export async function cmdWorker(argv: string[]): Promise<number> {
       timeoutSec: Number(str(opts.timeout)) || cfgInt("opencode.timeout_seconds", 180),
       maxSteps: cfgInt("explore.max_steps", 40),
       secretGlobs: cfgList("privacy.secret_globs"),
+      allowGlobs: cfgList("privacy.secret_allow_globs"),
     });
     process.stdout.write(r.text.replace(/\n?$/, "\n"));
     process.stderr.write(`OFFLOAD_WORKER ${JSON.stringify({ model: ref, tokens_in: r.tokensIn, tokens_out: r.tokensOut, ctx_in: r.ctxIn, cost: r.cost })}\n`);

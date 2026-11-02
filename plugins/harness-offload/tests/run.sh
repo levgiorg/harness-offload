@@ -235,6 +235,14 @@ section "commands"
 out=$(STUB_PROMPT="$T/prompt" STUB_ANSWER='fn3 adds 3 — big.ts:L3 `export function fn3(a: number)`' "$OFFLOAD" read -q "what does fn3 do?" big.ts 2>&1)
 expect_has "read: answer + verified citation footer" "$out" "citations: 1 verified, 0 unverified"
 expect_has "read: line-numbered file in prompt" "$(cat "$T/prompt")" "     3	export function fn3"
+ln -sf .env notes-link.md
+"$OFFLOAD" read -q "what?" notes-link.md >/dev/null 2>&1; expect_eq "read: a link to a secret is refused (exit 16)" "$?" 16
+mkdir -p linkdir; printf 'hello\n' > linkdir/ok.txt; ln -sf ../.env linkdir/env-link.txt
+out=$(STUB_PROMPT="$T/prompt-links" "$OFFLOAD" read -q "what?" linkdir 2>&1)
+expect_not "read DIR: links inside are not followed" "$(cat "$T/prompt-links")" "SECRET=abc"
+expect_has "read DIR: regular files still sent" "$(cat "$T/prompt-links")" "hello"
+cp .env .ENV 2>/dev/null; "$OFFLOAD" read -q "what?" .ENV >/dev/null 2>&1; expect_eq "read: secret names match case-insensitively" "$?" 16
+rm -rf notes-link.md linkdir .ENV
 expect_has "read: question last" "$(tail -n 1 "$T/prompt")" "<question>what does fn3 do?</question>"
 out=$(STUB_PROMPT="$T/prompt" "$OFFLOAD" read -q "q" big.ts:10-12 2>&1)
 expect_has "read: file:START-END range" "$(cat "$T/prompt")" 'lines="10-12" total_lines="1200"'

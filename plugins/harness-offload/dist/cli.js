@@ -417,8 +417,9 @@ var init_config = __esm(() => {
 });
 
 // src/secrets.ts
+import { lstatSync, realpathSync } from "node:fs";
 import { basename } from "node:path";
-function globToRegExp(glob) {
+function globToRegExp(glob, flags = "") {
   let re = "";
   for (let i = 0;i < glob.length; i++) {
     const c = glob[i];
@@ -436,16 +437,35 @@ function globToRegExp(glob) {
     } else
       re += c.replace(/[.+^${}()|\\]/g, "\\$&");
   }
-  return new RegExp("^" + re + "$");
+  try {
+    return new RegExp("^" + re + "$", flags);
+  } catch {
+    return /$^/;
+  }
 }
-function matchesAny(name, globs) {
-  return globs.some((g) => g && globToRegExp(g).test(name));
+function matchesAny(name, globs, caseInsensitive = false) {
+  return globs.some((g) => g && globToRegExp(g, caseInsensitive ? "i" : "").test(name));
+}
+function canonicalName(name) {
+  return name.replace(/::\$DATA$/i, "").replace(/[ .]+$/, "") || name;
+}
+function isSecretName(name, secret, allow) {
+  const n = canonicalName(name);
+  if (matchesAny(n, allow, true))
+    return false;
+  return matchesAny(n, secret, true);
 }
 function isSecretPath(path) {
-  const base = basename(path);
-  if (matchesAny(base, cfgList("privacy.secret_allow_globs")))
+  return isSecretName(basename(path), cfgList("privacy.secret_globs"), cfgList("privacy.secret_allow_globs"));
+}
+function isSecretTarget(path) {
+  if (isSecretPath(path))
+    return true;
+  try {
+    return lstatSync(path).isSymbolicLink() && isSecretPath(realpathSync(path));
+  } catch {
     return false;
-  return matchesAny(base, cfgList("privacy.secret_globs"));
+  }
 }
 function redact(text) {
   if (!cfgBool("privacy.redact", true))
@@ -546,19 +566,48 @@ var estTokens = (bytes) => Math.floor((bytes + 3) / 4);
 var init_text = () => {};
 
 // src/backends/tools.ts
-import { readdirSync, readFileSync as readFileSync3, statSync as statSync3 } from "node:fs";
-import { isAbsolute, join as join2, normalize, relative, resolve, sep } from "node:path";
+import { closeSync as closeSync2, lstatSync as lstatSync2, openSync as openSync2, readdirSync, readSync as readSync2, realpathSync as realpathSync2, statSync as statSync3 } from "node:fs";
+import { isAbsolute, join as join2, relative, resolve, sep } from "node:path";
+import { Worker } from "node:worker_threads";
+function realRoot(root) {
+  let r = realRoots.get(root);
+  if (!r) {
+    r = realpathSync2(root);
+    realRoots.set(root, r);
+  }
+  return r;
+}
+function refusedPart(ctx, rel) {
+  for (const part of rel.split(/[\\/]+/).filter(Boolean)) {
+    if (part.toLowerCase() === ".git")
+      return ".git";
+    if (isSecretName(part, ctx.secretGlobs, ctx.allowGlobs ?? []))
+      return part;
+  }
+  return;
+}
 function inside(ctx, p) {
   const abs = resolve(ctx.root, p || ".");
-  const rel = relative(ctx.root, abs);
-  if (rel.startsWith("..") || isAbsolute(rel))
+  if (!within(ctx.root, abs))
     throw new Error(`path outside the project: ${p}`);
-  const parts = normalize(rel).split(sep);
-  if (parts.some((x) => matchesAny(x, ctx.secretGlobs)))
-    throw new Error(`refused: ${p} matches the secret-file rules`);
-  return abs;
+  let bad = refusedPart(ctx, relative(ctx.root, abs));
+  if (bad)
+    throw new Error(`refused: ${p} matches the secret-file rules (${bad})`);
+  let real;
+  try {
+    real = realpathSync2(abs);
+  } catch {
+    throw new Error(`no such file or directory: ${p}`);
+  }
+  const root = realRoot(ctx.root);
+  if (!within(root, real))
+    throw new Error(`path outside the project: ${p} (symlink)`);
+  bad = refusedPart(ctx, relative(root, real));
+  if (bad)
+    throw new Error(`refused: ${p} matches the secret-file rules (${bad})`);
+  return real;
 }
-function* walk(dir, ctx) {
+function* walk(dir, ctx, budget = { left: MAX_WALK }) {
   let entries = [];
   try {
     entries = readdirSync(dir);
@@ -566,17 +615,19 @@ function* walk(dir, ctx) {
     return;
   }
   for (const e of entries.sort()) {
-    if (SKIP.has(e) || matchesAny(e, ctx.secretGlobs))
+    if (--budget.left < 0)
+      return;
+    if (SKIP.has(e) || isSecretName(e, ctx.secretGlobs, ctx.allowGlobs ?? []))
       continue;
     const p = join2(dir, e);
     let st;
     try {
-      st = statSync3(p);
+      st = lstatSync2(p);
     } catch {
       continue;
     }
     if (st.isDirectory())
-      yield* walk(p, ctx);
+      yield* walk(p, ctx, budget);
     else if (st.isFile())
       yield p;
   }
@@ -592,77 +643,146 @@ function pathGlob(pattern) {
   });
   return new RegExp("^" + re + "$");
 }
-function runTool(name, args, ctx) {
+function readCapped(p) {
+  const st = statSync3(p);
+  if (st.size > MAX_FILE_BYTES)
+    throw new Error(`file is ${Math.round(st.size / 1e6)} MB — too large to read here; grep it instead`);
+  const fd = openSync2(p, "r");
   try {
-    switch (name) {
-      case "read_file": {
-        const p = inside(ctx, String(args.path ?? ""));
-        if (!isText(p))
-          return `error: ${args.path} is not a text file`;
-        const text = readFileSync3(p, "utf8");
-        const total = text.split(`
-`).length - (text.endsWith(`
-`) ? 1 : 0);
-        const from = Math.max(1, Number(args.offset) || 1);
-        const lim = Math.min(MAX_SLICE, Math.max(1, Number(args.limit) || MAX_SLICE));
-        const to = Math.min(total, from + lim - 1);
-        const body = numberLines(text, from, to);
-        return `${args.path} (lines ${from}-${to} of ${total})
+    const buf = Buffer.alloc(st.size);
+    let n = 0;
+    while (n < st.size) {
+      const r = readSync2(fd, buf, n, st.size - n, n);
+      if (r <= 0)
+        break;
+      n += r;
+    }
+    return buf.subarray(0, n).toString("utf8");
+  } finally {
+    closeSync2(fd);
+  }
+}
+function grepInWorker(files, pattern, flags) {
+  return new Promise((resolveP, reject) => {
+    const w = new Worker(GREP_WORKER, { eval: true, workerData: { files, pattern, flags, maxLine: MAX_LINE } });
+    const t = setTimeout(() => {
+      w.terminate();
+      reject(new Error(`grep stopped after ${GREP_TIMEOUT_MS / 1000}s (pattern too slow? use a simpler regex)`));
+    }, GREP_TIMEOUT_MS);
+    w.once("message", (m) => {
+      clearTimeout(t);
+      w.terminate();
+      resolveP(m);
+    });
+    w.once("error", (e) => {
+      clearTimeout(t);
+      reject(e);
+    });
+  });
+}
+async function run(name, args, ctx) {
+  switch (name) {
+    case "read_file": {
+      const p = inside(ctx, String(args.path ?? ""));
+      if (!statSync3(p).isFile())
+        return `error: ${args.path} is not a regular file`;
+      if (!isText(p))
+        return `error: ${args.path} is not a text file`;
+      const text = readCapped(p);
+      const lines = text.split(`
+`);
+      if (text.endsWith(`
+`))
+        lines.pop();
+      const total = lines.length;
+      const from = Math.max(1, Number(args.offset) || 1);
+      const lim = Math.min(MAX_SLICE, Math.max(1, Number(args.limit) || MAX_SLICE));
+      const to = Math.min(total, from + lim - 1);
+      const w = String(to).length;
+      let body = "";
+      for (let i = from;i <= to; i++)
+        body += `${String(i).padStart(Math.max(6, w))}	${cut(lines[i - 1])}
+`;
+      return `${args.path} (lines ${from}-${to} of ${total})
 ${body}${to < total ? `… ${total - to} more lines (use offset=${to + 1})
 ` : ""}`;
-      }
-      case "grep": {
-        const base = inside(ctx, String(args.path ?? "."));
-        const re = new RegExp(String(args.pattern), args.ignore_case ? "i" : "");
-        const inc = args.include ? globToRegExp(String(args.include)) : undefined;
-        const files = statSync3(base).isFile() ? [base] : [...walk(base, ctx)];
-        const out = [];
-        for (const f of files) {
-          if (inc && !inc.test(f.split(sep).pop()))
-            continue;
-          if (!isText(f))
-            continue;
-          const lines = readFileSync3(f, "utf8").split(`
-`);
-          for (let i = 0;i < lines.length && out.length < 200; i++) {
-            if (re.test(lines[i]))
-              out.push(`${relative(ctx.root, f).split(sep).join("/")}:${i + 1}: ${lines[i].slice(0, 240)}`);
-          }
-          if (out.length >= 200)
-            break;
-        }
-        return out.length ? out.join(`
-`) : "no matches";
-      }
-      case "glob": {
-        const re = pathGlob(String(args.pattern ?? "**/*"));
-        const out = [];
-        for (const f of walk(ctx.root, ctx)) {
-          const rel = relative(ctx.root, f).split(sep).join("/");
-          if (re.test(rel))
-            out.push(rel);
-          if (out.length >= 300)
-            break;
-        }
-        return out.length ? out.join(`
-`) : "no files";
-      }
-      case "list_dir": {
-        const p = inside(ctx, String(args.path ?? "."));
-        return readdirSync(p).filter((e) => !SKIP.has(e) && !matchesAny(e, ctx.secretGlobs)).sort().map((e) => statSync3(join2(p, e)).isDirectory() ? e + "/" : e).join(`
-`);
-      }
     }
-    return `error: unknown tool ${name}`;
+    case "grep": {
+      const base = inside(ctx, String(args.path ?? "."));
+      const flags = args.ignore_case ? "i" : "";
+      new RegExp(String(args.pattern), flags);
+      const inc = args.include ? globToRegExp(String(args.include)) : undefined;
+      const st = statSync3(base);
+      const files = (st.isFile() ? [base] : [...walk(base, ctx)]).filter((f) => (!inc || inc.test(f.split(sep).pop())) && isText(f) && statSync3(f).size <= MAX_FILE_BYTES).map((f) => [f, rel(ctx, f)]);
+      const out = await grepInWorker(files, String(args.pattern), flags);
+      return out.length ? out.join(`
+`) : "no matches";
+    }
+    case "glob": {
+      const re = pathGlob(String(args.pattern ?? "**/*"));
+      const out = [];
+      for (const f of walk(realRoot(ctx.root), ctx)) {
+        const r = rel(ctx, f);
+        if (re.test(r))
+          out.push(r);
+        if (out.length >= 300)
+          break;
+      }
+      return out.length ? out.join(`
+`) : "no files";
+    }
+    case "list_dir": {
+      const p = inside(ctx, String(args.path ?? "."));
+      const names = readdirSync(p).filter((e) => !SKIP.has(e) && !isSecretName(e, ctx.secretGlobs, ctx.allowGlobs ?? [])).sort();
+      const shown = names.slice(0, MAX_DIR_ENTRIES).map((e) => {
+        try {
+          const st = lstatSync2(join2(p, e));
+          return st.isSymbolicLink() ? e + "@" : st.isDirectory() ? e + "/" : e;
+        } catch {
+          return e;
+        }
+      });
+      if (names.length > MAX_DIR_ENTRIES)
+        shown.push(`… ${names.length - MAX_DIR_ENTRIES} more entries`);
+      return shown.join(`
+`);
+    }
+  }
+  return `error: unknown tool ${name}`;
+}
+async function runTool(name, args, ctx) {
+  try {
+    return cap(redact(await run(name, args, ctx)));
   } catch (e) {
     return `error: ${e.message}`;
   }
 }
-var SKIP, MAX_SLICE = 600, TOOL_SPECS;
+var SKIP, MAX_SLICE = 600, MAX_LINE = 2000, MAX_RESULT = 60000, MAX_FILE_BYTES, MAX_WALK = 50000, MAX_DIR_ENTRIES = 500, GREP_TIMEOUT_MS = 1e4, TOOL_SPECS, realRoots, within = (root, p) => {
+  const rel = relative(root, p);
+  return rel === "" || !rel.startsWith("..") && !isAbsolute(rel);
+}, cut = (s) => s.length > MAX_LINE ? s.slice(0, MAX_LINE) + ` … [${s.length - MAX_LINE} more characters]` : s, cap = (s) => s.length > MAX_RESULT ? s.slice(0, MAX_RESULT) + `
+… [output truncated]` : s, rel = (ctx, f) => relative(realRoot(ctx.root), f).split(sep).join("/"), GREP_WORKER = `
+const { parentPort, workerData } = require("node:worker_threads");
+const { readFileSync } = require("node:fs");
+const { files, pattern, flags, maxLine } = workerData;
+const re = new RegExp(pattern, flags);
+const out = [];
+for (const [f, name] of files) {
+  let lines;
+  try { lines = readFileSync(f, "utf8").split("\\n"); } catch { continue; }
+  for (let i = 0; i < lines.length && out.length < 200; i++) {
+    const l = lines[i].length > maxLine ? lines[i].slice(0, maxLine) : lines[i];
+    if (re.test(l)) out.push(name + ":" + (i + 1) + ": " + l.slice(0, 240));
+  }
+  if (out.length >= 200) break;
+}
+parentPort.postMessage(out);
+`;
 var init_tools = __esm(() => {
   init_secrets();
   init_text();
   SKIP = new Set([".git", "node_modules", "dist", "build", ".venv", "venv", "target", "vendor", ".next", "__pycache__", ".cache"]);
+  MAX_FILE_BYTES = 8 * 1024 * 1024;
   TOOL_SPECS = [
     {
       name: "read_file",
@@ -702,6 +822,7 @@ var init_tools = __esm(() => {
       parameters: { type: "object", properties: { path: { type: "string" } } }
     }
   ];
+  realRoots = new Map;
 });
 
 // src/backends/types.ts
@@ -739,7 +860,7 @@ var init_types = __esm(() => {
 });
 
 // src/backends/http.ts
-import { existsSync as existsSync3, readFileSync as readFileSync4 } from "node:fs";
+import { existsSync as existsSync3, readFileSync as readFileSync3 } from "node:fs";
 import { join as join3 } from "node:path";
 function credentialsPath() {
   return process.env.OFFLOAD_CREDENTIALS || join3(configHome(), "harness-offload", "credentials.json");
@@ -749,7 +870,7 @@ function storedKey(name) {
     const p = credentialsPath();
     if (!existsSync3(p))
       return;
-    const v = JSON.parse(readFileSync4(p, "utf8"));
+    const v = JSON.parse(readFileSync3(p, "utf8"));
     return typeof v?.[name] === "string" ? v[name] : undefined;
   } catch {
     return;
@@ -882,7 +1003,7 @@ class HttpBackend {
         try {
           args = JSON.parse(c.function?.arguments || "{}");
         } catch {}
-        messages.push({ role: "tool", tool_call_id: c.id, content: runTool(c.function?.name, args, { root: req.cwd, secretGlobs: req.secretGlobs ?? [] }) });
+        messages.push({ role: "tool", tool_call_id: c.id, content: await runTool(c.function?.name, args, { root: req.cwd, secretGlobs: req.secretGlobs ?? [], allowGlobs: req.allowGlobs ?? [] }) });
       }
       if (step === steps - 2)
         messages.push({ role: "user", content: "Step budget almost used: answer now with what you found." });
@@ -919,7 +1040,7 @@ class HttpBackend {
       messages.push({ role: "assistant", content });
       messages.push({
         role: "user",
-        content: uses.map((u) => ({ type: "tool_result", tool_use_id: u.id, content: runTool(u.name, u.input ?? {}, { root: req.cwd, secretGlobs: req.secretGlobs ?? [] }) }))
+        content: await Promise.all(uses.map(async (u) => ({ type: "tool_result", tool_use_id: u.id, content: await runTool(u.name, u.input ?? {}, { root: req.cwd, secretGlobs: req.secretGlobs ?? [], allowGlobs: req.allowGlobs ?? [] }) })))
       });
     }
     throw new WorkerError(E.WORKER, `explore used all ${steps} steps without answering`);
@@ -1037,7 +1158,7 @@ __export(exports_state, {
   stateDir: () => stateDir,
   workDir: () => workDir
 });
-import { appendFileSync, existsSync as existsSync4, mkdirSync as mkdirSync2, readFileSync as readFileSync5, readdirSync as readdirSync2, rmSync, statSync as statSync4, writeFileSync as writeFileSync2 } from "node:fs";
+import { appendFileSync, existsSync as existsSync4, mkdirSync as mkdirSync2, readFileSync as readFileSync4, readdirSync as readdirSync2, rmSync, statSync as statSync4, writeFileSync as writeFileSync2 } from "node:fs";
 import { join as join4 } from "node:path";
 function stateDir() {
   const d = cfgStr("state_dir") || join4(stateHome(), "harness-offload");
@@ -1055,7 +1176,7 @@ function readStats() {
   const f = join4(stateDir(), "stats.jsonl");
   if (!existsSync4(f))
     return [];
-  return readFileSync5(f, "utf8").split(`
+  return readFileSync4(f, "utf8").split(`
 `).filter(Boolean).flatMap((l) => {
     try {
       return [JSON.parse(l)];
@@ -1089,7 +1210,7 @@ function cooling(model) {
   const f = cooldownFile(model);
   if (!existsSync4(f))
     return;
-  const [until, ...reason] = readFileSync5(f, "utf8").trim().split(" ");
+  const [until, ...reason] = readFileSync4(f, "utf8").trim().split(" ");
   const u = Number(until);
   const now = Math.floor(Date.now() / 1000);
   if (!Number.isFinite(u) || u <= now) {
@@ -1117,7 +1238,7 @@ var init_state = __esm(() => {
 
 // src/backends/opencode.ts
 import { spawn as spawn2 } from "node:child_process";
-import { existsSync as existsSync5, readFileSync as readFileSync6, statSync as statSync5, writeFileSync as writeFileSync3 } from "node:fs";
+import { existsSync as existsSync5, readFileSync as readFileSync5, statSync as statSync5, writeFileSync as writeFileSync3 } from "node:fs";
 import { join as join5 } from "node:path";
 async function opencodeMajor() {
   if (majorCache)
@@ -1126,7 +1247,7 @@ async function opencodeMajor() {
   const cache = join5(stateDir(), "opencode-version");
   try {
     if (existsSync5(cache) && Date.now() - statSync5(cache).mtimeMs < 3600000) {
-      const [maj, cbin] = readFileSync6(cache, "utf8").trim().split(" ");
+      const [maj, cbin] = readFileSync5(cache, "utf8").trim().split(" ");
       if (cbin === b && /^\d+$/.test(maj))
         return majorCache = Number(maj);
     }
@@ -1681,9 +1802,10 @@ function modelChain(task, override) {
   const first = modelFor(task) || "@default";
   return [...new Set([first, ...cfgList("models.fallback")].filter(Boolean))];
 }
-async function invoke(task, prompt, cwd, override) {
+async function invoke(task, prompt, cwd, override, opts = {}) {
   const variant = cfgStr(`variants.${task}`);
-  const timeoutSec = cfgInt("opencode.timeout_seconds", 180);
+  const perModel = cfgInt("opencode.timeout_seconds", 180);
+  const deadline = opts.budgetSec ? Date.now() + opts.budgetSec * 1000 : Infinity;
   const errors = [];
   let tried = 0;
   let lastCode = E.WORKER;
@@ -1713,6 +1835,13 @@ async function invoke(task, prompt, cwd, override) {
       lastCode = E.USAGE;
       continue;
     }
+    const left = Math.floor((deadline - Date.now()) / 1000);
+    if (left < 3) {
+      errors.push(`  - ${ref}: skipped, time budget used up`);
+      lastCode = E.TIMEOUT;
+      break;
+    }
+    const timeoutSec = Math.min(perModel, left);
     tried++;
     const t0 = Date.now();
     try {
@@ -1725,7 +1854,8 @@ async function invoke(task, prompt, cwd, override) {
         cwd,
         timeoutSec,
         maxSteps: cfgInt("explore.max_steps", 40),
-        secretGlobs: cfgList("privacy.secret_globs")
+        secretGlobs: cfgList("privacy.secret_globs"),
+        allowGlobs: cfgList("privacy.secret_allow_globs")
       });
       return { ...r, model: ref === "@default" ? `${backend}-default-model` : ref, seconds: Math.round((Date.now() - t0) / 1000) };
     } catch (e) {
@@ -1742,7 +1872,7 @@ async function invoke(task, prompt, cwd, override) {
         throw err;
     }
   }
-  if (tried === 0 && lastCode !== E.USAGE) {
+  if (tried === 0 && lastCode !== E.USAGE && lastCode !== E.TIMEOUT) {
     throw new WorkerError(E.QUOTA, `every configured model is cooling down after errors:
 ${errors.join(`
 `)}
@@ -1761,7 +1891,7 @@ var init_engine = __esm(() => {
 });
 
 // src/digest.ts
-import { readFileSync as readFileSync7, writeFileSync as writeFileSync5 } from "node:fs";
+import { readFileSync as readFileSync6, writeFileSync as writeFileSync5 } from "node:fs";
 function keyLines(text, max) {
   const seen = new Map;
   const order = [];
@@ -1822,12 +1952,12 @@ function logExcerpt(text) {
 `) + `
 `;
 }
-async function digest(log, label, code, focus, source, modelOverride) {
-  const text = readFileSync7(log, "utf8");
+async function digest(log, label, code, focus, source, modelOverride, opts = {}) {
+  const text = readFileSync6(log, "utf8");
   const lines = countLines(text);
   const bytes = Buffer.byteLength(text);
   const kb = Math.ceil(bytes / 1024);
-  const compact = process.env.OFFLOAD_DIGEST_COMPACT === "1";
+  const compact = opts.compact ?? process.env.OFFLOAD_DIGEST_COMPACT === "1";
   let keyMax = cfgInt("digest.key_lines", 30);
   let tailN = cfgInt("digest.tail_lines", 15);
   let sumMax = 40;
@@ -1846,7 +1976,7 @@ async function digest(log, label, code, focus, source, modelOverride) {
   let model = "";
   let tin = 0;
   let tout = 0;
-  if (cfgBool("digest.use_model", true) && process.env.OFFLOAD_NO_MODEL !== "1") {
+  if (cfgBool("digest.use_model", true) && !opts.noModel && process.env.OFFLOAD_NO_MODEL !== "1") {
     const prompt = [
       `<command>${label}</command>`,
       code ? `<exit_code>${code}</exit_code>` : "",
@@ -1858,7 +1988,7 @@ async function digest(log, label, code, focus, source, modelOverride) {
 `);
     try {
       const r = await invoke("summarize", prompt + `
-`, workDir(), modelOverride);
+`, workDir(), modelOverride, { budgetSec: opts.budgetSec });
       summary = splitLines(r.text).slice(0, sumMax).map((l) => truncate(l, width)).join(`
 `);
       note = model = r.model;
@@ -1924,7 +2054,7 @@ var init_digest = __esm(() => {
 });
 
 // src/outline.ts
-import { readFileSync as readFileSync8 } from "node:fs";
+import { readFileSync as readFileSync7 } from "node:fs";
 import { basename as basename2 } from "node:path";
 function posixToJs(ere) {
   let out = "";
@@ -1990,7 +2120,7 @@ function outlineRegex(path, firstLine = "") {
 function outline(path, max = 50) {
   let text;
   try {
-    text = readFileSync8(path, "utf8");
+    text = readFileSync7(path, "utf8");
   } catch {
     return "";
   }
@@ -2183,7 +2313,7 @@ var init_ui = __esm(() => {
 });
 
 // src/hooks/logic.ts
-import { existsSync as existsSync8, readFileSync as readFileSync11, statSync as statSync7 } from "node:fs";
+import { existsSync as existsSync8, readFileSync as readFileSync10, statSync as statSync7 } from "node:fs";
 import { basename as basename3, isAbsolute as isAbsolute3, resolve as resolve3 } from "node:path";
 import { writeFileSync as writeFileSync7 } from "node:fs";
 function callStyle(host) {
@@ -2201,10 +2331,16 @@ async function available() {
   if (!enabled2())
     return false;
   for (const task of ["read", "summarize"]) {
-    for (const ref of modelChain(task)) {
-      if (cooling(ref))
+    for (const raw of modelChain(task)) {
+      let parsed;
+      try {
+        parsed = parseRef(raw);
+      } catch {
         continue;
-      const b = backendFor(parseRef(ref).backend);
+      }
+      if (cooling(parsed.ref))
+        continue;
+      const b = backendFor(parsed.backend);
       if (b && (await b.available()).ok)
         return true;
     }
@@ -2216,7 +2352,7 @@ function ignored(p) {
   return matchesAny(p, globs) || matchesAny(basename3(p), globs);
 }
 function notForOffload(p) {
-  return BINARY.test(p) || !isText(p) || isSecretPath(p);
+  return BINARY.test(p) || !isText(p) || isSecretTarget(p);
 }
 function guard(message) {
   switch (cfgStr("hooks.read_guard", "block")) {
@@ -2372,7 +2508,7 @@ async function postBash(opts) {
   let text = opts.output;
   let compact = false;
   if (opts.persistedPath && existsSync8(opts.persistedPath)) {
-    text = readFileSync11(opts.persistedPath, "utf8");
+    text = readFileSync10(opts.persistedPath, "utf8");
     compact = true;
   }
   const lines = text.split(`
@@ -2380,14 +2516,10 @@ async function postBash(opts) {
 `) ? 1 : 0);
   if (lines <= cfgInt("hooks.bash_output_threshold_lines", 250) && Buffer.byteLength(text) <= cfgInt("hooks.bash_output_threshold_bytes", 20000))
     return;
-  if (!await available())
-    process.env.OFFLOAD_NO_MODEL = "1";
-  process.env.OFFLOAD_TIMEOUT = process.env.OFFLOAD_TIMEOUT || String(cfgInt("hooks.digest_timeout_seconds", 90));
-  if (compact)
-    process.env.OFFLOAD_DIGEST_COMPACT = "1";
+  const noModel = !await available();
   const log = newLogPath(cmd);
   writeFileSync7(log, text);
-  return digest(log, cmd, "0", opts.description ?? "", "hook");
+  return digest(log, cmd, "0", opts.description ?? "", "hook", undefined, { noModel, compact, budgetSec: cfgInt("hooks.digest_timeout_seconds", 90) });
 }
 function sessionGuide(host, cliPath = "offload") {
   const lines = cfgStr("hooks.read_threshold_lines", "600");
@@ -2478,8 +2610,7 @@ async function cmdDemo() {
   out += `
   ${color.bold("2. Your agent runs the test suite")}  ${color.dim(`(${fmtInt(fileLines(log))} lines of output, ~${fmtInt(logTokens)} tokens)`)}
 `;
-  process.env.OFFLOAD_NO_MODEL = "1";
-  const d = await digest(log, "npm test", "1", "", "demo");
+  const d = await digest(log, "npm test", "1", "", "demo", undefined, { noModel: true });
   out += `  ${sym.arrow} it gets a digest (verbatim failures + tail + full-log path; a cheap model adds a summary when configured):
 
 `;
@@ -4098,7 +4229,7 @@ var here = () => dirname3(fileURLToPath(import.meta.url)), pluginDir = () => joi
 var init_assets3 = () => {};
 
 // src/hosts/install.ts
-import { cpSync, existsSync as existsSync10, mkdirSync as mkdirSync4, readFileSync as readFileSync12, rmSync as rmSync3, writeFileSync as writeFileSync9 } from "node:fs";
+import { cpSync, existsSync as existsSync10, mkdirSync as mkdirSync4, readFileSync as readFileSync11, rmSync as rmSync3, writeFileSync as writeFileSync9 } from "node:fs";
 import { homedir as homedir2 } from "node:os";
 import { join as join11 } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -4123,11 +4254,11 @@ async function exec2(cmd, args) {
 function geminiExtension(dir, launcher) {
   const src = join11(pluginDir(), "hosts", "gemini");
   mkdirSync4(join11(dir, "hooks"), { recursive: true });
-  const ext = JSON.parse(readFileSync12(join11(src, "gemini-extension.json"), "utf8"));
+  const ext = JSON.parse(readFileSync11(join11(src, "gemini-extension.json"), "utf8"));
   ext.mcpServers.offload.command = launcher;
   writeFileSync9(join11(dir, "gemini-extension.json"), JSON.stringify(ext, null, 2) + `
 `);
-  const hooks = JSON.parse(readFileSync12(join11(src, "hooks", "hooks.json"), "utf8"));
+  const hooks = JSON.parse(readFileSync11(join11(src, "hooks", "hooks.json"), "utf8"));
   for (const groups of Object.values(hooks.hooks)) {
     for (const g of groups)
       for (const h of g.hooks)
@@ -4282,7 +4413,7 @@ async function uninstall(host) {
 }
 function installedHosts() {
   try {
-    const all = JSON.parse(readFileSync12(join11(stateDir(), "installs.json"), "utf8"));
+    const all = JSON.parse(readFileSync11(join11(stateDir(), "installs.json"), "utf8"));
     return Object.keys(all).filter((h) => HOSTS.includes(h));
   } catch {
     return [];
@@ -4292,7 +4423,7 @@ var HOSTS, HOST_LABELS, HOST_BIN, home = () => process.env.OFFLOAD_HOME || homed
   const f = join11(stateDir(), "installs.json");
   let all = {};
   try {
-    all = JSON.parse(readFileSync12(f, "utf8"));
+    all = JSON.parse(readFileSync11(f, "utf8"));
   } catch {}
   if (data === undefined)
     delete all[host];
@@ -4327,7 +4458,7 @@ var exports_setup = {};
 __export(exports_setup, {
   cmdSetup: () => cmdSetup
 });
-import { chmodSync as chmodSync2, mkdirSync as mkdirSync5, readFileSync as readFileSync13, writeFileSync as writeFileSync10 } from "node:fs";
+import { chmodSync as chmodSync2, mkdirSync as mkdirSync5, readFileSync as readFileSync12, writeFileSync as writeFileSync10 } from "node:fs";
 import { dirname as dirname4 } from "node:path";
 async function detectBackends() {
   const out = [];
@@ -4365,7 +4496,7 @@ function storeKey(name, key) {
   const f = credentialsPath();
   let all = {};
   try {
-    all = JSON.parse(readFileSync13(f, "utf8"));
+    all = JSON.parse(readFileSync12(f, "utf8"));
   } catch {}
   all[name] = key;
   mkdirSync5(dirname4(f), { recursive: true });
@@ -26856,7 +26987,8 @@ async function cmdWorker(argv) {
       cwd: str(opts.cwd) || workDir(),
       timeoutSec: Number(str(opts.timeout)) || cfgInt("opencode.timeout_seconds", 180),
       maxSteps: cfgInt("explore.max_steps", 40),
-      secretGlobs: cfgList("privacy.secret_globs")
+      secretGlobs: cfgList("privacy.secret_globs"),
+      allowGlobs: cfgList("privacy.secret_allow_globs")
     });
     process.stdout.write(r.text.replace(/\n?$/, `
 `));
@@ -26894,12 +27026,12 @@ init_secrets();
 init_state();
 init_text();
 import { spawn as spawn3 } from "node:child_process";
-import { closeSync as closeSync2, existsSync as existsSync6, mkdirSync as mkdirSync3, openSync as openSync2, readFileSync as readFileSync10, readdirSync as readdirSync3, rmSync as rmSync2, statSync as statSync6, writeFileSync as writeFileSync6 } from "node:fs";
+import { closeSync as closeSync3, existsSync as existsSync6, lstatSync as lstatSync3, mkdirSync as mkdirSync3, openSync as openSync3, readFileSync as readFileSync9, readdirSync as readdirSync3, rmSync as rmSync2, statSync as statSync6, writeFileSync as writeFileSync6 } from "node:fs";
 import { dirname as dirname2, join as join8, relative as relative2, resolve as resolve2, sep as sep2 } from "node:path";
 import { execFileSync as execFileSync2 } from "node:child_process";
 
 // src/verify.ts
-import { readFileSync as readFileSync9 } from "node:fs";
+import { readFileSync as readFileSync8 } from "node:fs";
 import { isAbsolute as isAbsolute2, join as join7 } from "node:path";
 var norm = (s) => s.replace(/[ \t\r]+/g, " ").trim();
 function lastSpan(s) {
@@ -26927,7 +27059,7 @@ function verifyCitations(answer, root, slack = 3) {
       return cache.get(p);
     let lines = null;
     try {
-      const t = readFileSync9(isAbsolute2(p) ? p : join7(root, p.replace(/^\.\//, "")), "utf8");
+      const t = readFileSync8(isAbsolute2(p) ? p : join7(root, p.replace(/^\.\//, "")), "utf8");
       lines = t.split(`
 `);
       if (t.endsWith(`
@@ -27035,7 +27167,7 @@ function reportFailure(what, e) {
     err(hints[w.code]);
   throw new ExitError(w.code);
 }
-async function run(task, prompt, cwd, model, what) {
+async function run2(task, prompt, cwd, model, what) {
   try {
     return await invoke(task, prompt, cwd, model || undefined);
   } catch (e) {
@@ -27055,7 +27187,7 @@ function listDirFiles(d) {
         if (skip.has(e))
           continue;
         const q = join8(p, e);
-        const st = statSync6(q);
+        const st = lstatSync3(q);
         if (st.isDirectory())
           walk(q);
         else if (st.isFile())
@@ -27068,7 +27200,7 @@ function listDirFiles(d) {
   return files.map(rel).filter((f) => !/(^|\/)(package-lock\.json|yarn\.lock|pnpm-lock\.yaml|Cargo\.lock|poetry\.lock|go\.sum|.*\.min\.(js|css)|.*\.map)$/.test(f)).sort();
 }
 function fileBlock(path, from, to, total) {
-  const body = numberLines(readFileSync10(path, "utf8"), from, to);
+  const body = numberLines(readFileSync9(path, "utf8"), from, to);
   return `<file path="${path}" lines="${from}-${to}" total_lines="${total}">
 ${redact(body)}</file>
 
@@ -27109,6 +27241,10 @@ async function cmdRead(argv) {
       for (const f of listDirFiles(path)) {
         if (!existsSync6(f) || !statSync6(f).isFile())
           continue;
+        if (lstatSync3(f).isSymbolicLink()) {
+          skipped.push(`${f}(symlink)`);
+          continue;
+        }
         if (isSecretPath(f) && !allow) {
           skipped.push(`${f}(secret)`);
           continue;
@@ -27128,7 +27264,7 @@ async function cmdRead(argv) {
     }
     if (!existsSync6(path) || !statSync6(path).isFile())
       die(`read: file not found or unreadable: ${item}`);
-    if (isSecretPath(path) && !allow)
+    if (isSecretTarget(path) && !allow)
       die(`read: refusing to send ${path} to a third-party model (matches privacy.secret_globs). Use --allow-secrets if you are sure.`, E.REFUSED);
     if (!isText(path))
       die(`read: ${path} looks binary; offload only handles text`, E.REFUSED);
@@ -27149,7 +27285,7 @@ async function cmdRead(argv) {
   prompt += `<question>${question}</question>
 `;
   const t0 = Date.now();
-  const r = await run("read", prompt, workDir(), str(opts.model), "read");
+  const r = await run2("read", prompt, workDir(), str(opts.model), "read");
   let answer = r.text.replace(/\n?$/, `
 `);
   let cite = "";
@@ -27191,7 +27327,7 @@ async function cmdExplore(argv) {
 <question>${question}</question>
 `;
   const t0 = Date.now();
-  const r = await run("explore", prompt, dir, str(opts.model), "explore");
+  const r = await run2("explore", prompt, dir, str(opts.model), "explore");
   let answer = r.text.replace(/\n?$/, `
 `);
   let cite = "";
@@ -27214,7 +27350,7 @@ async function cmdExplore(argv) {
 }
 function execToFile(cmd, log) {
   return new Promise((res) => {
-    const fd = openSync2(log, "w");
+    const fd = openSync3(log, "w");
     const child = typeof cmd === "string" ? spawn3(process.platform === "win32" ? cmd : "bash", process.platform === "win32" ? [] : ["-c", cmd], { stdio: ["inherit", fd, fd], shell: process.platform === "win32" }) : spawn3(cmd[0], cmd.slice(1), { stdio: ["inherit", fd, fd] });
     child.on("error", (e) => {
       try {
@@ -27223,7 +27359,7 @@ function execToFile(cmd, log) {
       } catch {}
     });
     child.on("close", (code, signal) => {
-      closeSync2(fd);
+      closeSync3(fd);
       res(code ?? (signal ? 128 + 15 : 1));
     });
   });
@@ -27236,15 +27372,13 @@ async function cmdRun(argv) {
   const label = sh || rest.map(shquote).join(" ");
   const log = newLogPath(label);
   const code = await execToFile(sh || rest, log);
-  const text = readFileSync10(log, "utf8");
+  const text = readFileSync9(log, "utf8");
   if (isSmall(text)) {
     process.stdout.write(text);
     rmSync2(log, { force: true });
     return code;
   }
-  if (opts["no-model"])
-    process.env.OFFLOAD_NO_MODEL = "1";
-  process.stdout.write(await digest(log, label, String(code), str(opts.focus), "run", str(opts.model) || undefined));
+  process.stdout.write(await digest(log, label, String(code), str(opts.focus), "run", str(opts.model) || undefined, { noModel: Boolean(opts["no-model"]) }));
   return code;
 }
 async function cmdSummarize(argv) {
@@ -27255,9 +27389,9 @@ async function cmdSummarize(argv) {
   if (file && file !== "-") {
     if (!existsSync6(file))
       die(`summarize: no such file: ${file}`);
-    if (isSecretPath(file))
+    if (isSecretTarget(file))
       die(`summarize: refusing to send ${file} (matches privacy.secret_globs)`, E.REFUSED);
-    writeFileSync6(log, readFileSync10(file));
+    writeFileSync6(log, readFileSync9(file));
   } else {
     if (process.stdin.isTTY)
       die("summarize: pipe text in or give a FILE");
@@ -27266,15 +27400,13 @@ async function cmdSummarize(argv) {
       chunks.push(c);
     writeFileSync6(log, Buffer.concat(chunks));
   }
-  const text = readFileSync10(log, "utf8");
+  const text = readFileSync9(log, "utf8");
   if (isSmall(text)) {
     process.stdout.write(text);
     rmSync2(log, { force: true });
     return;
   }
-  if (opts["no-model"])
-    process.env.OFFLOAD_NO_MODEL = "1";
-  process.stdout.write(await digest(log, label, "", str(opts.focus), "summarize", str(opts.model) || undefined));
+  process.stdout.write(await digest(log, label, "", str(opts.focus), "summarize", str(opts.model) || undefined, { noModel: Boolean(opts["no-model"]) }));
 }
 async function cmdWrite(argv) {
   const { opts, rest } = parseFlags(argv, {
@@ -27302,18 +27434,18 @@ async function cmdWrite(argv) {
   for (const f of [...refs, ...ctxs]) {
     if (!existsSync6(f))
       die(`write: file not found: ${f}`);
-    if (isSecretPath(f) && !opts["allow-secrets"])
+    if (isSecretTarget(f) && !opts["allow-secrets"])
       die(`write: refusing to send ${f} (matches privacy.secret_globs)`, E.REFUSED);
   }
   let prompt = "";
   for (const f of refs)
     prompt += `<reference path="${f}">
-${redact(readFileSync10(f, "utf8"))}</reference>
+${redact(readFileSync9(f, "utf8"))}</reference>
 
 `;
   for (const f of ctxs)
     prompt += `<context path="${f}">
-${redact(readFileSync10(f, "utf8"))}</context>
+${redact(readFileSync9(f, "utf8"))}</context>
 
 `;
   if (out)
@@ -27322,7 +27454,7 @@ ${redact(readFileSync10(f, "utf8"))}</context>
   prompt += `<spec>${spec}</spec>
 `;
   const t0 = Date.now();
-  const r = await run("write", prompt, workDir(), str(opts.model), "write");
+  const r = await run2("write", prompt, workDir(), str(opts.model), "write");
   const code = stripWrappingFence(r.text);
   const n = code.split(`
 `).length - 1;
@@ -27349,7 +27481,7 @@ ${redact(readFileSync10(f, "utf8"))}</context>
       process.stdout.write(crc === 0 ? `  check passed: ${check}
 ` : `  check FAILED (exit ${crc}): ${check}
 `);
-      const text = readFileSync10(log, "utf8");
+      const text = readFileSync9(log, "utf8");
       if (isSmall(text)) {
         process.stdout.write(text.split(`
 `).filter((l, i, a) => i < a.length - 1 || l).map((l) => `    ${l}
@@ -27384,17 +27516,17 @@ ${redact(Buffer.concat(chunks).toString("utf8"))}</input>
   if (file) {
     if (!existsSync6(file))
       die(`ask: no such file: ${file}`);
-    if (isSecretPath(file))
+    if (isSecretTarget(file))
       die(`ask: refusing to send ${file} (matches privacy.secret_globs)`, E.REFUSED);
     prompt += `<input path="${file}">
-${redact(readFileSync10(file, "utf8"))}</input>
+${redact(readFileSync9(file, "utf8"))}</input>
 
 `;
   }
   prompt += `${question}
 `;
   const t0 = Date.now();
-  const r = await run("ask", prompt, workDir(), str(opts.model), "ask");
+  const r = await run2("ask", prompt, workDir(), str(opts.model), "ask");
   process.stdout.write(r.text.replace(/\n?$/, `
 `) + footer(`ask · ${r.model} · ${secs(t0)}s`));
   appendStats({ kind: "ask", model: r.model, seconds: secs(t0), saved_tokens: 0, worker_tokens_in: r.tokensIn, worker_tokens_out: r.tokensOut });

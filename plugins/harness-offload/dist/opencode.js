@@ -74,7 +74,7 @@ var init_assets2 = __esm(() => {
 });
 
 // src/outline.ts
-import { readFileSync as readFileSync8 } from "node:fs";
+import { readFileSync as readFileSync7 } from "node:fs";
 import { basename as basename2 } from "node:path";
 function posixToJs(ere) {
   let out = "";
@@ -140,7 +140,7 @@ function outlineRegex(path, firstLine = "") {
 function outline(path, max = 50) {
   let text;
   try {
-    text = readFileSync8(path, "utf8");
+    text = readFileSync7(path, "utf8");
   } catch {
     return "";
   }
@@ -222,7 +222,7 @@ var init_outline = __esm(() => {
 });
 
 // src/hooks/logic.ts
-import { existsSync as existsSync6, readFileSync as readFileSync9, statSync as statSync6 } from "node:fs";
+import { existsSync as existsSync6, readFileSync as readFileSync8, statSync as statSync6 } from "node:fs";
 import { basename as basename3, isAbsolute as isAbsolute2, resolve as resolve2 } from "node:path";
 
 // src/config.ts
@@ -406,7 +406,7 @@ function cfgList(path) {
 }
 
 // src/digest.ts
-import { readFileSync as readFileSync7, writeFileSync as writeFileSync5 } from "node:fs";
+import { readFileSync as readFileSync6, writeFileSync as writeFileSync5 } from "node:fs";
 
 // src/engine.ts
 init_assets2();
@@ -416,16 +416,18 @@ init_assets2();
 
 // src/backends/http.ts
 init_assets2();
-import { existsSync as existsSync3, readFileSync as readFileSync4 } from "node:fs";
+import { existsSync as existsSync3, readFileSync as readFileSync3 } from "node:fs";
 import { join as join3 } from "node:path";
 
 // src/backends/tools.ts
-import { readdirSync, readFileSync as readFileSync3, statSync as statSync3 } from "node:fs";
-import { isAbsolute, join as join2, normalize, relative, resolve, sep } from "node:path";
+import { closeSync as closeSync2, lstatSync as lstatSync2, openSync as openSync2, readdirSync, readSync as readSync2, realpathSync as realpathSync2, statSync as statSync3 } from "node:fs";
+import { isAbsolute, join as join2, relative, resolve, sep } from "node:path";
+import { Worker } from "node:worker_threads";
 
 // src/secrets.ts
+import { lstatSync, realpathSync } from "node:fs";
 import { basename } from "node:path";
-function globToRegExp(glob) {
+function globToRegExp(glob, flags = "") {
   let re = "";
   for (let i = 0;i < glob.length; i++) {
     const c = glob[i];
@@ -443,16 +445,35 @@ function globToRegExp(glob) {
     } else
       re += c.replace(/[.+^${}()|\\]/g, "\\$&");
   }
-  return new RegExp("^" + re + "$");
+  try {
+    return new RegExp("^" + re + "$", flags);
+  } catch {
+    return /$^/;
+  }
 }
-function matchesAny(name, globs) {
-  return globs.some((g) => g && globToRegExp(g).test(name));
+function matchesAny(name, globs, caseInsensitive = false) {
+  return globs.some((g) => g && globToRegExp(g, caseInsensitive ? "i" : "").test(name));
+}
+function canonicalName(name) {
+  return name.replace(/::\$DATA$/i, "").replace(/[ .]+$/, "") || name;
+}
+function isSecretName(name, secret, allow) {
+  const n = canonicalName(name);
+  if (matchesAny(n, allow, true))
+    return false;
+  return matchesAny(n, secret, true);
 }
 function isSecretPath(path) {
-  const base = basename(path);
-  if (matchesAny(base, cfgList("privacy.secret_allow_globs")))
+  return isSecretName(basename(path), cfgList("privacy.secret_globs"), cfgList("privacy.secret_allow_globs"));
+}
+function isSecretTarget(path) {
+  if (isSecretPath(path))
+    return true;
+  try {
+    return lstatSync(path).isSymbolicLink() && isSecretPath(realpathSync(path));
+  } catch {
     return false;
-  return matchesAny(base, cfgList("privacy.secret_globs"));
+  }
 }
 var KEY_NAME = /((?:password|passwd|secret|api_?key|access_?token)[A-Za-z0-9_]*["']?\s*[:=]\s*["']?)[^"'\s,;]{8,}/gi;
 function redact(text) {
@@ -510,19 +531,6 @@ function shquote(s) {
     return s;
   return `'${s.replace(/'/g, `'\\''`)}'`;
 }
-function numberLines(text, from, to) {
-  const lines = text.split(`
-`);
-  if (text.endsWith(`
-`))
-    lines.pop();
-  const out = [];
-  for (let i = from;i <= Math.min(to, lines.length); i++)
-    out.push(`${String(i).padStart(6)}	${lines[i - 1]}`);
-  return out.join(`
-`) + (out.length ? `
-` : "");
-}
 function stripAnsi(s) {
   return s.replace(/\x1b\[[0-9;]*[A-Za-z]/g, "");
 }
@@ -533,6 +541,12 @@ function truncate(s, width) {
 // src/backends/tools.ts
 var SKIP = new Set([".git", "node_modules", "dist", "build", ".venv", "venv", "target", "vendor", ".next", "__pycache__", ".cache"]);
 var MAX_SLICE = 600;
+var MAX_LINE = 2000;
+var MAX_RESULT = 60000;
+var MAX_FILE_BYTES = 8 * 1024 * 1024;
+var MAX_WALK = 50000;
+var MAX_DIR_ENTRIES = 500;
+var GREP_TIMEOUT_MS = 1e4;
 var TOOL_SPECS = [
   {
     name: "read_file",
@@ -572,17 +586,50 @@ var TOOL_SPECS = [
     parameters: { type: "object", properties: { path: { type: "string" } } }
   }
 ];
+var realRoots = new Map;
+function realRoot(root) {
+  let r = realRoots.get(root);
+  if (!r) {
+    r = realpathSync2(root);
+    realRoots.set(root, r);
+  }
+  return r;
+}
+var within = (root, p) => {
+  const rel = relative(root, p);
+  return rel === "" || !rel.startsWith("..") && !isAbsolute(rel);
+};
+function refusedPart(ctx, rel) {
+  for (const part of rel.split(/[\\/]+/).filter(Boolean)) {
+    if (part.toLowerCase() === ".git")
+      return ".git";
+    if (isSecretName(part, ctx.secretGlobs, ctx.allowGlobs ?? []))
+      return part;
+  }
+  return;
+}
 function inside(ctx, p) {
   const abs = resolve(ctx.root, p || ".");
-  const rel = relative(ctx.root, abs);
-  if (rel.startsWith("..") || isAbsolute(rel))
+  if (!within(ctx.root, abs))
     throw new Error(`path outside the project: ${p}`);
-  const parts = normalize(rel).split(sep);
-  if (parts.some((x) => matchesAny(x, ctx.secretGlobs)))
-    throw new Error(`refused: ${p} matches the secret-file rules`);
-  return abs;
+  let bad = refusedPart(ctx, relative(ctx.root, abs));
+  if (bad)
+    throw new Error(`refused: ${p} matches the secret-file rules (${bad})`);
+  let real;
+  try {
+    real = realpathSync2(abs);
+  } catch {
+    throw new Error(`no such file or directory: ${p}`);
+  }
+  const root = realRoot(ctx.root);
+  if (!within(root, real))
+    throw new Error(`path outside the project: ${p} (symlink)`);
+  bad = refusedPart(ctx, relative(root, real));
+  if (bad)
+    throw new Error(`refused: ${p} matches the secret-file rules (${bad})`);
+  return real;
 }
-function* walk(dir, ctx) {
+function* walk(dir, ctx, budget = { left: MAX_WALK }) {
   let entries = [];
   try {
     entries = readdirSync(dir);
@@ -590,17 +637,19 @@ function* walk(dir, ctx) {
     return;
   }
   for (const e of entries.sort()) {
-    if (SKIP.has(e) || matchesAny(e, ctx.secretGlobs))
+    if (--budget.left < 0)
+      return;
+    if (SKIP.has(e) || isSecretName(e, ctx.secretGlobs, ctx.allowGlobs ?? []))
       continue;
     const p = join2(dir, e);
     let st;
     try {
-      st = statSync3(p);
+      st = lstatSync2(p);
     } catch {
       continue;
     }
     if (st.isDirectory())
-      yield* walk(p, ctx);
+      yield* walk(p, ctx, budget);
     else if (st.isFile())
       yield p;
   }
@@ -616,68 +665,137 @@ function pathGlob(pattern) {
   });
   return new RegExp("^" + re + "$");
 }
-function runTool(name, args, ctx) {
+function readCapped(p) {
+  const st = statSync3(p);
+  if (st.size > MAX_FILE_BYTES)
+    throw new Error(`file is ${Math.round(st.size / 1e6)} MB — too large to read here; grep it instead`);
+  const fd = openSync2(p, "r");
   try {
-    switch (name) {
-      case "read_file": {
-        const p = inside(ctx, String(args.path ?? ""));
-        if (!isText(p))
-          return `error: ${args.path} is not a text file`;
-        const text = readFileSync3(p, "utf8");
-        const total = text.split(`
-`).length - (text.endsWith(`
-`) ? 1 : 0);
-        const from = Math.max(1, Number(args.offset) || 1);
-        const lim = Math.min(MAX_SLICE, Math.max(1, Number(args.limit) || MAX_SLICE));
-        const to = Math.min(total, from + lim - 1);
-        const body = numberLines(text, from, to);
-        return `${args.path} (lines ${from}-${to} of ${total})
+    const buf = Buffer.alloc(st.size);
+    let n = 0;
+    while (n < st.size) {
+      const r = readSync2(fd, buf, n, st.size - n, n);
+      if (r <= 0)
+        break;
+      n += r;
+    }
+    return buf.subarray(0, n).toString("utf8");
+  } finally {
+    closeSync2(fd);
+  }
+}
+var cut = (s) => s.length > MAX_LINE ? s.slice(0, MAX_LINE) + ` … [${s.length - MAX_LINE} more characters]` : s;
+var cap = (s) => s.length > MAX_RESULT ? s.slice(0, MAX_RESULT) + `
+… [output truncated]` : s;
+var rel = (ctx, f) => relative(realRoot(ctx.root), f).split(sep).join("/");
+var GREP_WORKER = `
+const { parentPort, workerData } = require("node:worker_threads");
+const { readFileSync } = require("node:fs");
+const { files, pattern, flags, maxLine } = workerData;
+const re = new RegExp(pattern, flags);
+const out = [];
+for (const [f, name] of files) {
+  let lines;
+  try { lines = readFileSync(f, "utf8").split("\\n"); } catch { continue; }
+  for (let i = 0; i < lines.length && out.length < 200; i++) {
+    const l = lines[i].length > maxLine ? lines[i].slice(0, maxLine) : lines[i];
+    if (re.test(l)) out.push(name + ":" + (i + 1) + ": " + l.slice(0, 240));
+  }
+  if (out.length >= 200) break;
+}
+parentPort.postMessage(out);
+`;
+function grepInWorker(files, pattern, flags) {
+  return new Promise((resolveP, reject) => {
+    const w = new Worker(GREP_WORKER, { eval: true, workerData: { files, pattern, flags, maxLine: MAX_LINE } });
+    const t = setTimeout(() => {
+      w.terminate();
+      reject(new Error(`grep stopped after ${GREP_TIMEOUT_MS / 1000}s (pattern too slow? use a simpler regex)`));
+    }, GREP_TIMEOUT_MS);
+    w.once("message", (m) => {
+      clearTimeout(t);
+      w.terminate();
+      resolveP(m);
+    });
+    w.once("error", (e) => {
+      clearTimeout(t);
+      reject(e);
+    });
+  });
+}
+async function run(name, args, ctx) {
+  switch (name) {
+    case "read_file": {
+      const p = inside(ctx, String(args.path ?? ""));
+      if (!statSync3(p).isFile())
+        return `error: ${args.path} is not a regular file`;
+      if (!isText(p))
+        return `error: ${args.path} is not a text file`;
+      const text = readCapped(p);
+      const lines = text.split(`
+`);
+      if (text.endsWith(`
+`))
+        lines.pop();
+      const total = lines.length;
+      const from = Math.max(1, Number(args.offset) || 1);
+      const lim = Math.min(MAX_SLICE, Math.max(1, Number(args.limit) || MAX_SLICE));
+      const to = Math.min(total, from + lim - 1);
+      const w = String(to).length;
+      let body = "";
+      for (let i = from;i <= to; i++)
+        body += `${String(i).padStart(Math.max(6, w))}	${cut(lines[i - 1])}
+`;
+      return `${args.path} (lines ${from}-${to} of ${total})
 ${body}${to < total ? `… ${total - to} more lines (use offset=${to + 1})
 ` : ""}`;
-      }
-      case "grep": {
-        const base = inside(ctx, String(args.path ?? "."));
-        const re = new RegExp(String(args.pattern), args.ignore_case ? "i" : "");
-        const inc = args.include ? globToRegExp(String(args.include)) : undefined;
-        const files = statSync3(base).isFile() ? [base] : [...walk(base, ctx)];
-        const out = [];
-        for (const f of files) {
-          if (inc && !inc.test(f.split(sep).pop()))
-            continue;
-          if (!isText(f))
-            continue;
-          const lines = readFileSync3(f, "utf8").split(`
-`);
-          for (let i = 0;i < lines.length && out.length < 200; i++) {
-            if (re.test(lines[i]))
-              out.push(`${relative(ctx.root, f).split(sep).join("/")}:${i + 1}: ${lines[i].slice(0, 240)}`);
-          }
-          if (out.length >= 200)
-            break;
-        }
-        return out.length ? out.join(`
-`) : "no matches";
-      }
-      case "glob": {
-        const re = pathGlob(String(args.pattern ?? "**/*"));
-        const out = [];
-        for (const f of walk(ctx.root, ctx)) {
-          const rel = relative(ctx.root, f).split(sep).join("/");
-          if (re.test(rel))
-            out.push(rel);
-          if (out.length >= 300)
-            break;
-        }
-        return out.length ? out.join(`
-`) : "no files";
-      }
-      case "list_dir": {
-        const p = inside(ctx, String(args.path ?? "."));
-        return readdirSync(p).filter((e) => !SKIP.has(e) && !matchesAny(e, ctx.secretGlobs)).sort().map((e) => statSync3(join2(p, e)).isDirectory() ? e + "/" : e).join(`
-`);
-      }
     }
-    return `error: unknown tool ${name}`;
+    case "grep": {
+      const base = inside(ctx, String(args.path ?? "."));
+      const flags = args.ignore_case ? "i" : "";
+      new RegExp(String(args.pattern), flags);
+      const inc = args.include ? globToRegExp(String(args.include)) : undefined;
+      const st = statSync3(base);
+      const files = (st.isFile() ? [base] : [...walk(base, ctx)]).filter((f) => (!inc || inc.test(f.split(sep).pop())) && isText(f) && statSync3(f).size <= MAX_FILE_BYTES).map((f) => [f, rel(ctx, f)]);
+      const out = await grepInWorker(files, String(args.pattern), flags);
+      return out.length ? out.join(`
+`) : "no matches";
+    }
+    case "glob": {
+      const re = pathGlob(String(args.pattern ?? "**/*"));
+      const out = [];
+      for (const f of walk(realRoot(ctx.root), ctx)) {
+        const r = rel(ctx, f);
+        if (re.test(r))
+          out.push(r);
+        if (out.length >= 300)
+          break;
+      }
+      return out.length ? out.join(`
+`) : "no files";
+    }
+    case "list_dir": {
+      const p = inside(ctx, String(args.path ?? "."));
+      const names = readdirSync(p).filter((e) => !SKIP.has(e) && !isSecretName(e, ctx.secretGlobs, ctx.allowGlobs ?? [])).sort();
+      const shown = names.slice(0, MAX_DIR_ENTRIES).map((e) => {
+        try {
+          const st = lstatSync2(join2(p, e));
+          return st.isSymbolicLink() ? e + "@" : st.isDirectory() ? e + "/" : e;
+        } catch {
+          return e;
+        }
+      });
+      if (names.length > MAX_DIR_ENTRIES)
+        shown.push(`… ${names.length - MAX_DIR_ENTRIES} more entries`);
+      return shown.join(`
+`);
+    }
+  }
+  return `error: unknown tool ${name}`;
+}
+async function runTool(name, args, ctx) {
+  try {
+    return cap(redact(await run(name, args, ctx)));
   } catch (e) {
     return `error: ${e.message}`;
   }
@@ -725,7 +843,7 @@ function storedKey(name) {
     const p = credentialsPath();
     if (!existsSync3(p))
       return;
-    const v = JSON.parse(readFileSync4(p, "utf8"));
+    const v = JSON.parse(readFileSync3(p, "utf8"));
     return typeof v?.[name] === "string" ? v[name] : undefined;
   } catch {
     return;
@@ -858,7 +976,7 @@ class HttpBackend {
         try {
           args = JSON.parse(c.function?.arguments || "{}");
         } catch {}
-        messages.push({ role: "tool", tool_call_id: c.id, content: runTool(c.function?.name, args, { root: req.cwd, secretGlobs: req.secretGlobs ?? [] }) });
+        messages.push({ role: "tool", tool_call_id: c.id, content: await runTool(c.function?.name, args, { root: req.cwd, secretGlobs: req.secretGlobs ?? [], allowGlobs: req.allowGlobs ?? [] }) });
       }
       if (step === steps - 2)
         messages.push({ role: "user", content: "Step budget almost used: answer now with what you found." });
@@ -895,7 +1013,7 @@ class HttpBackend {
       messages.push({ role: "assistant", content });
       messages.push({
         role: "user",
-        content: uses.map((u) => ({ type: "tool_result", tool_use_id: u.id, content: runTool(u.name, u.input ?? {}, { root: req.cwd, secretGlobs: req.secretGlobs ?? [] }) }))
+        content: await Promise.all(uses.map(async (u) => ({ type: "tool_result", tool_use_id: u.id, content: await runTool(u.name, u.input ?? {}, { root: req.cwd, secretGlobs: req.secretGlobs ?? [], allowGlobs: req.allowGlobs ?? [] }) })))
       });
     }
     throw new WorkerError(E.WORKER, `explore used all ${steps} steps without answering`);
@@ -905,7 +1023,7 @@ class HttpBackend {
 // src/backends/opencode.ts
 init_assets2();
 import { spawn as spawn2 } from "node:child_process";
-import { existsSync as existsSync5, readFileSync as readFileSync6, statSync as statSync5, writeFileSync as writeFileSync3 } from "node:fs";
+import { existsSync as existsSync5, readFileSync as readFileSync5, statSync as statSync5, writeFileSync as writeFileSync3 } from "node:fs";
 import { join as join5 } from "node:path";
 
 // src/proc.ts
@@ -997,7 +1115,7 @@ async function which(cmd) {
 }
 
 // src/state.ts
-import { appendFileSync, existsSync as existsSync4, mkdirSync as mkdirSync2, readFileSync as readFileSync5, readdirSync as readdirSync2, rmSync, statSync as statSync4, writeFileSync as writeFileSync2 } from "node:fs";
+import { appendFileSync, existsSync as existsSync4, mkdirSync as mkdirSync2, readFileSync as readFileSync4, readdirSync as readdirSync2, rmSync, statSync as statSync4, writeFileSync as writeFileSync2 } from "node:fs";
 import { join as join4 } from "node:path";
 function stateDir() {
   const d = cfgStr("state_dir") || join4(stateHome(), "harness-offload");
@@ -1038,7 +1156,7 @@ function cooling(model) {
   const f = cooldownFile(model);
   if (!existsSync4(f))
     return;
-  const [until, ...reason] = readFileSync5(f, "utf8").trim().split(" ");
+  const [until, ...reason] = readFileSync4(f, "utf8").trim().split(" ");
   const u = Number(until);
   const now = Math.floor(Date.now() / 1000);
   if (!Number.isFinite(u) || u <= now) {
@@ -1064,7 +1182,7 @@ async function opencodeMajor() {
   const cache = join5(stateDir(), "opencode-version");
   try {
     if (existsSync5(cache) && Date.now() - statSync5(cache).mtimeMs < 3600000) {
-      const [maj, cbin] = readFileSync6(cache, "utf8").trim().split(" ");
+      const [maj, cbin] = readFileSync5(cache, "utf8").trim().split(" ");
       if (cbin === b && /^\d+$/.test(maj))
         return majorCache = Number(maj);
     }
@@ -1597,9 +1715,10 @@ function modelChain(task, override) {
   const first = modelFor(task) || "@default";
   return [...new Set([first, ...cfgList("models.fallback")].filter(Boolean))];
 }
-async function invoke(task, prompt, cwd, override) {
+async function invoke(task, prompt, cwd, override, opts = {}) {
   const variant = cfgStr(`variants.${task}`);
-  const timeoutSec = cfgInt("opencode.timeout_seconds", 180);
+  const perModel = cfgInt("opencode.timeout_seconds", 180);
+  const deadline = opts.budgetSec ? Date.now() + opts.budgetSec * 1000 : Infinity;
   const errors = [];
   let tried = 0;
   let lastCode = E.WORKER;
@@ -1629,6 +1748,13 @@ async function invoke(task, prompt, cwd, override) {
       lastCode = E.USAGE;
       continue;
     }
+    const left = Math.floor((deadline - Date.now()) / 1000);
+    if (left < 3) {
+      errors.push(`  - ${ref}: skipped, time budget used up`);
+      lastCode = E.TIMEOUT;
+      break;
+    }
+    const timeoutSec = Math.min(perModel, left);
     tried++;
     const t0 = Date.now();
     try {
@@ -1641,7 +1767,8 @@ async function invoke(task, prompt, cwd, override) {
         cwd,
         timeoutSec,
         maxSteps: cfgInt("explore.max_steps", 40),
-        secretGlobs: cfgList("privacy.secret_globs")
+        secretGlobs: cfgList("privacy.secret_globs"),
+        allowGlobs: cfgList("privacy.secret_allow_globs")
       });
       return { ...r, model: ref === "@default" ? `${backend}-default-model` : ref, seconds: Math.round((Date.now() - t0) / 1000) };
     } catch (e) {
@@ -1658,7 +1785,7 @@ async function invoke(task, prompt, cwd, override) {
         throw err;
     }
   }
-  if (tried === 0 && lastCode !== E.USAGE) {
+  if (tried === 0 && lastCode !== E.USAGE && lastCode !== E.TIMEOUT) {
     throw new WorkerError(E.QUOTA, `every configured model is cooling down after errors:
 ${errors.join(`
 `)}
@@ -1740,12 +1867,12 @@ function logExcerpt(text) {
 `) + `
 `;
 }
-async function digest(log, label, code, focus, source, modelOverride) {
-  const text = readFileSync7(log, "utf8");
+async function digest(log, label, code, focus, source, modelOverride, opts = {}) {
+  const text = readFileSync6(log, "utf8");
   const lines = countLines(text);
   const bytes = Buffer.byteLength(text);
   const kb = Math.ceil(bytes / 1024);
-  const compact = process.env.OFFLOAD_DIGEST_COMPACT === "1";
+  const compact = opts.compact ?? process.env.OFFLOAD_DIGEST_COMPACT === "1";
   let keyMax = cfgInt("digest.key_lines", 30);
   let tailN = cfgInt("digest.tail_lines", 15);
   let sumMax = 40;
@@ -1764,7 +1891,7 @@ async function digest(log, label, code, focus, source, modelOverride) {
   let model = "";
   let tin = 0;
   let tout = 0;
-  if (cfgBool("digest.use_model", true) && process.env.OFFLOAD_NO_MODEL !== "1") {
+  if (cfgBool("digest.use_model", true) && !opts.noModel && process.env.OFFLOAD_NO_MODEL !== "1") {
     const prompt = [
       `<command>${label}</command>`,
       code ? `<exit_code>${code}</exit_code>` : "",
@@ -1776,7 +1903,7 @@ async function digest(log, label, code, focus, source, modelOverride) {
 `);
     try {
       const r = await invoke("summarize", prompt + `
-`, workDir(), modelOverride);
+`, workDir(), modelOverride, { budgetSec: opts.budgetSec });
       summary = splitLines(r.text).slice(0, sumMax).map((l) => truncate(l, width)).join(`
 `);
       note = model = r.model;
@@ -1839,10 +1966,16 @@ async function available() {
   if (!enabled())
     return false;
   for (const task of ["read", "summarize"]) {
-    for (const ref of modelChain(task)) {
-      if (cooling(ref))
+    for (const raw of modelChain(task)) {
+      let parsed;
+      try {
+        parsed = parseRef(raw);
+      } catch {
         continue;
-      const b = backendFor(parseRef(ref).backend);
+      }
+      if (cooling(parsed.ref))
+        continue;
+      const b = backendFor(parsed.backend);
       if (b && (await b.available()).ok)
         return true;
     }
@@ -1855,7 +1988,7 @@ function ignored(p) {
 }
 var BINARY = /\.(png|jpe?g|gif|webp|bmp|ico|svgz|pdf|ipynb|zip|gz|tgz|tar|jar|wasm|so|dylib|dll|exe|bin|pyc|class|o|a|mp3|mp4|mov|woff2?|ttf|otf)$/i;
 function notForOffload(p) {
-  return BINARY.test(p) || !isText(p) || isSecretPath(p);
+  return BINARY.test(p) || !isText(p) || isSecretTarget(p);
 }
 function guard(message) {
   switch (cfgStr("hooks.read_guard", "block")) {
@@ -2011,7 +2144,7 @@ async function postBash(opts) {
   let text = opts.output;
   let compact = false;
   if (opts.persistedPath && existsSync6(opts.persistedPath)) {
-    text = readFileSync9(opts.persistedPath, "utf8");
+    text = readFileSync8(opts.persistedPath, "utf8");
     compact = true;
   }
   const lines = text.split(`
@@ -2019,14 +2152,10 @@ async function postBash(opts) {
 `) ? 1 : 0);
   if (lines <= cfgInt("hooks.bash_output_threshold_lines", 250) && Buffer.byteLength(text) <= cfgInt("hooks.bash_output_threshold_bytes", 20000))
     return;
-  if (!await available())
-    process.env.OFFLOAD_NO_MODEL = "1";
-  process.env.OFFLOAD_TIMEOUT = process.env.OFFLOAD_TIMEOUT || String(cfgInt("hooks.digest_timeout_seconds", 90));
-  if (compact)
-    process.env.OFFLOAD_DIGEST_COMPACT = "1";
+  const noModel = !await available();
   const log = newLogPath(cmd);
   writeFileSync6(log, text);
-  return digest(log, cmd, "0", opts.description ?? "", "hook");
+  return digest(log, cmd, "0", opts.description ?? "", "hook", undefined, { noModel, compact, budgetSec: cfgInt("hooks.digest_timeout_seconds", 90) });
 }
 function sessionGuide(host, cliPath = "offload") {
   const lines = cfgStr("hooks.read_threshold_lines", "600");
@@ -2048,65 +2177,79 @@ Keep for yourself: debugging reasoning, design decisions, edits (read slices for
 
 // src/integrations/opencode.ts
 process.env.OFFLOAD_HOST ||= "opencode";
+
+class Blocked extends Error {
+}
+async function failOpen(fn) {
+  try {
+    await fn();
+  } catch (e) {
+    if (e instanceof Blocked)
+      throw e;
+    if (process.env.OFFLOAD_DEBUG)
+      process.stderr.write(`offload: ignored internal error: ${e?.message ?? e}
+`);
+  }
+}
 var textOf = (v) => typeof v === "string" ? v : Array.isArray(v) ? v.map((p) => typeof p === "string" ? p : p?.text ?? "").join("") : v == null ? "" : JSON.stringify(v);
 async function guardRead(cwd, file, offset, limit) {
   if (!await available())
     return;
   const v = readGuard("opencode", cwd, file, offset, limit);
   if (v && v.action !== "note")
-    throw new Error(v.message);
+    throw new Blocked(v.message);
 }
 async function guardShell(cwd, command) {
   if (!await available())
     return;
   const v = bashGuard("opencode", cwd, command);
   if (v && v.action !== "note")
-    throw new Error(v.message);
+    throw new Blocked(v.message);
 }
 var plugin = {
   id: "harness-offload",
   async setup(ctx) {
     const cwd = () => ctx?.directory ?? ctx?.project?.directory ?? process.cwd();
-    await ctx.tool.hook("execute.before", async (e) => {
+    await ctx.tool.hook("execute.before", (e) => failOpen(async () => {
       const i = e.input ?? {};
       if (e.tool === "read")
         await guardRead(cwd(), i.path ?? i.filePath, i.offset, i.limit);
       else if (e.tool === "shell" || e.tool === "bash")
         await guardShell(i.workdir ?? cwd(), i.command);
-    });
-    await ctx.tool.hook("execute.after", async (e) => {
+    }));
+    await ctx.tool.hook("execute.after", (e) => failOpen(async () => {
       if (e.status !== "completed" || e.tool !== "shell" && e.tool !== "bash")
         return;
       const out = textOf(e.result?.content ?? e.result?.output);
       const d = await postBash({ command: e.input?.command, output: out });
       if (d)
         e.result = { ...e.result, content: d, output: d };
-    });
-    await ctx.session.hook("context", (e) => {
+    }));
+    await ctx.session.hook("context", (e) => failOpen(async () => {
       e.system.push({ type: "text", text: sessionGuide("opencode") });
-    });
+    }));
     return () => {};
   },
   async server(input) {
     const cwd = input?.directory ?? process.cwd();
     return {
-      "tool.execute.before": async (i, output) => {
+      "tool.execute.before": (i, output) => failOpen(async () => {
         const a = output?.args ?? {};
         if (i.tool === "read")
           await guardRead(cwd, a.filePath ?? a.path, a.offset, a.limit);
         else if (i.tool === "bash")
           await guardShell(a.workdir ?? cwd, a.command);
-      },
-      "tool.execute.after": async (i, output) => {
+      }),
+      "tool.execute.after": (i, output) => failOpen(async () => {
         if (i.tool !== "bash")
           return;
         const d = await postBash({ command: i.args?.command, output: textOf(output?.output) });
         if (d)
           output.output = d;
-      },
-      "experimental.chat.system.transform": async (_, out) => {
+      }),
+      "experimental.chat.system.transform": (_, out) => failOpen(async () => {
         out.system.push(sessionGuide("opencode"));
-      }
+      })
     };
   }
 };

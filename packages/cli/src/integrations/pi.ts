@@ -18,30 +18,46 @@ function schema(spec: Record<string, string>) {
   return Type.Object(props);
 }
 
+/** Internal failures must never block the user's tools: log (debug) and pass. */
+async function failOpen<T>(fn: () => T | Promise<T>): Promise<T | undefined> {
+  try {
+    return await fn();
+  } catch (e) {
+    if (process.env.OFFLOAD_DEBUG) process.stderr.write(`offload: ignored internal error: ${(e as Error)?.message ?? e}\n`);
+    return undefined;
+  }
+}
+
 export default function harnessOffload(pi: any): void {
-  pi.on("before_agent_start", (event: any) => {
-    const opts = event?.systemPromptOptions;
-    if (!opts) return;
-    opts.appendSystemPrompt = `${opts.appendSystemPrompt ?? ""}\n\n${sessionGuide("pi")}`.trim();
-  });
+  pi.on("before_agent_start", (event: any) =>
+    failOpen(() => {
+      const opts = event?.systemPromptOptions;
+      if (!opts) return;
+      opts.appendSystemPrompt = `${opts.appendSystemPrompt ?? ""}\n\n${sessionGuide("pi")}`.trim();
+    }),
+  );
 
-  pi.on("tool_call", async (event: any, ctx: any) => {
-    const cwd = ctx?.cwd ?? process.cwd();
-    const input = event?.input ?? {};
-    if (!(await available())) return undefined;
-    const v = event.toolName === "read" ? readGuard("pi", cwd, input.path, input.offset, input.limit) : event.toolName === "bash" ? bashGuard("pi", cwd, input.command) : undefined;
-    if (!v || v.action === "note") return undefined;
-    return { block: true, reason: v.message };
-  });
+  pi.on("tool_call", (event: any, ctx: any) =>
+    failOpen(async () => {
+      const cwd = ctx?.cwd ?? process.cwd();
+      const input = event?.input ?? {};
+      if (!(await available())) return undefined;
+      const v = event.toolName === "read" ? readGuard("pi", cwd, input.path, input.offset, input.limit) : event.toolName === "bash" ? bashGuard("pi", cwd, input.command) : undefined;
+      if (!v || v.action === "note") return undefined;
+      return { block: true, reason: v.message };
+    }),
+  );
 
-  pi.on("tool_result", async (event: any) => {
-    if (event?.toolName !== "bash" || event.isError) return undefined;
-    const sc = event.structuredContent ?? {};
-    const output = typeof sc.output === "string" ? sc.output : textOf(event.content);
-    const d = await postBash({ command: event.input?.command, output, persistedPath: sc.full_output_path });
-    if (!d) return undefined;
-    return { content: [{ type: "text", text: d }], structuredContent: { ...sc, output: d, truncated: false } };
-  });
+  pi.on("tool_result", (event: any) =>
+    failOpen(async () => {
+      if (event?.toolName !== "bash" || event.isError) return undefined;
+      const sc = event.structuredContent ?? {};
+      const output = typeof sc.output === "string" ? sc.output : textOf(event.content);
+      const d = await postBash({ command: event.input?.command, output, persistedPath: sc.full_output_path });
+      if (!d) return undefined;
+      return { content: [{ type: "text", text: d }], structuredContent: { ...sc, output: d, truncated: false } };
+    }),
+  );
 
   for (const [name, t] of Object.entries(TOOLS)) {
     pi.registerTool({

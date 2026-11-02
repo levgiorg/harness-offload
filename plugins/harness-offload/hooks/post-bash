@@ -48,8 +48,8 @@ lines=$(co_file_lines "$outf"); bytes=$(co_file_bytes "$outf")
 # The model is optional here: without opencode (or within cooldown) the
 # digest is purely deterministic, which still beats a 30K-char dump.
 co_available || export OFFLOAD_NO_MODEL=1
-export OFFLOAD_TIMEOUT="${OFFLOAD_TIMEOUT:-$(co_cfg_int '.hooks.digest_timeout_seconds' 90)}"
-CO_CONFIG=""; co_config_load   # reload so the timeout override applies
+# total budget for the model summary, fallbacks included (host hook timeouts)
+CO_OC_DEADLINE=$(( $(co_now) + $(co_cfg_int '.hooks.digest_timeout_seconds' 90) ))
 
 log=$(co_new_log "$cmd")
 cp "$outf" "$log" 2>/dev/null || exit 0

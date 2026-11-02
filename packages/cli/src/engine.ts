@@ -24,9 +24,15 @@ export function modelChain(task: Task, override?: string): string[] {
  * Runs a task on the first model of the chain that works, cooling down models
  * that hit quota (5 min), auth (30 min) or unknown-model (1 h) errors.
  */
-export async function invoke(task: Task, prompt: string, cwd: string, override?: string): Promise<InvokeResult> {
+export interface InvokeOptions {
+  /** Total time budget across the whole fallback chain (hooks have host timeouts). */
+  budgetSec?: number;
+}
+
+export async function invoke(task: Task, prompt: string, cwd: string, override?: string, opts: InvokeOptions = {}): Promise<InvokeResult> {
   const variant = cfgStr(`variants.${task}`);
-  const timeoutSec = cfgInt("opencode.timeout_seconds", 180);
+  const perModel = cfgInt("opencode.timeout_seconds", 180);
+  const deadline = opts.budgetSec ? Date.now() + opts.budgetSec * 1000 : Infinity;
   const errors: string[] = [];
   let tried = 0;
   let lastCode: number = E.WORKER;
@@ -55,6 +61,13 @@ export async function invoke(task: Task, prompt: string, cwd: string, override?:
       lastCode = E.USAGE;
       continue;
     }
+    const left = Math.floor((deadline - Date.now()) / 1000);
+    if (left < 3) {
+      errors.push(`  - ${ref}: skipped, time budget used up`);
+      lastCode = E.TIMEOUT;
+      break;
+    }
+    const timeoutSec = Math.min(perModel, left);
     tried++;
     const t0 = Date.now();
     try {
@@ -68,6 +81,7 @@ export async function invoke(task: Task, prompt: string, cwd: string, override?:
         timeoutSec,
         maxSteps: cfgInt("explore.max_steps", 40),
         secretGlobs: cfgList("privacy.secret_globs"),
+      allowGlobs: cfgList("privacy.secret_allow_globs"),
       });
       return { ...r, model: ref === "@default" ? `${backend}-default-model` : ref, seconds: Math.round((Date.now() - t0) / 1000) };
     } catch (e) {
@@ -80,7 +94,7 @@ export async function invoke(task: Task, prompt: string, cwd: string, override?:
       else if (err.code === E.MISSING && modelChain(task, override).length === 1) throw err;
     }
   }
-  if (tried === 0 && lastCode !== E.USAGE) {
+  if (tried === 0 && lastCode !== E.USAGE && lastCode !== E.TIMEOUT) {
     throw new WorkerError(E.QUOTA, `every configured model is cooling down after errors:\n${errors.join("\n")}\n(\`offload doctor --reset\` clears cooldowns)`);
   }
   throw new WorkerError(lastCode, `no model succeeded:\n${errors.join("\n")}`);
