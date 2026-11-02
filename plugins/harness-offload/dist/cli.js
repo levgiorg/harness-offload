@@ -122,6 +122,185 @@ var init_assets2 = __esm(() => {
   VERSION = PLUGIN_VERSION;
 });
 
+// src/proc.ts
+import { spawn, spawnSync } from "node:child_process";
+import { existsSync, readFileSync } from "node:fs";
+import { delimiter, dirname, extname, isAbsolute, join, resolve as resolvePath } from "node:path";
+function killTree(child, sig = "SIGTERM") {
+  if (!child.pid)
+    return;
+  if (isWin && child.exitCode !== null)
+    return;
+  try {
+    if (isWin)
+      spawnSync("taskkill", ["/T", "/F", "/PID", String(child.pid)], { stdio: "ignore", windowsHide: true });
+    else
+      process.kill(-child.pid, sig);
+  } catch {
+    if (child.exitCode !== null || child.signalCode !== null)
+      return;
+    try {
+      child.kill(sig);
+    } catch {}
+  }
+}
+function track(child) {
+  live.add(child);
+  child.once("exit", () => live.delete(child));
+  if (exitHooked)
+    return;
+  exitHooked = true;
+  process.once("exit", () => {
+    for (const c of live)
+      killTree(c, "SIGKILL");
+  });
+}
+function killChildrenOnSignals() {
+  for (const sig of ["SIGINT", "SIGTERM", "SIGHUP"]) {
+    process.once(sig, () => {
+      for (const c of live)
+        killTree(c, "SIGTERM");
+      process.exit(sig === "SIGINT" ? 130 : sig === "SIGTERM" ? 143 : 129);
+    });
+  }
+}
+function cmdQuote(arg) {
+  let a = arg.replace(/(\\*)"/g, "$1$1\\\"").replace(/(\\*)$/, "$1$1");
+  a = `"${a}"`;
+  a = a.replace(/\r?\n/g, " ");
+  return a.replace(/[()[\]%!^"`<>&|;, *?]/g, "^$&");
+}
+function shimTarget(cmdFile) {
+  try {
+    const text = readFileSync(cmdFile, "utf8");
+    const m = text.match(/"%(?:~?dp0|dp0)%\\?([^"%]+\.(?:c|m)?js)"/i);
+    if (!m)
+      return;
+    const js = resolvePath(dirname(cmdFile), m[1].replace(/\\/g, "/"));
+    return existsSync(js) ? js : undefined;
+  } catch {
+    return;
+  }
+}
+function plan(cmd, args) {
+  if (!isWin)
+    return { file: cmd, args, opts: {} };
+  const found = whichSync(cmd) ?? cmd;
+  const ext = extname(found).toLowerCase();
+  if (ext === ".exe" || ext === ".com" || ext === "")
+    return { file: found, args, opts: { windowsHide: true } };
+  if (ext === ".js" || ext === ".mjs" || ext === ".cjs")
+    return { file: process.execPath, args: [found, ...args], opts: { windowsHide: true } };
+  if (ext === ".cmd" || ext === ".bat") {
+    const js = shimTarget(found);
+    if (js)
+      return { file: process.execPath, args: [js, ...args], opts: { windowsHide: true } };
+    const line = [cmdQuote(found), ...args.map(cmdQuote)].join(" ");
+    return { file: process.env.ComSpec || "cmd.exe", args: ["/d", "/s", "/c", `"${line}"`], opts: { windowsVerbatimArguments: true, windowsHide: true } };
+  }
+  return { file: found, args, opts: { windowsHide: true } };
+}
+function spawnSafe(cmd, args, opts) {
+  const p = plan(cmd, args);
+  return spawn(p.file, p.args, { ...opts, ...p.opts, shell: false });
+}
+function runProcess(cmd, args, opts) {
+  return new Promise((resolve) => {
+    let stdout = "";
+    let stderr = "";
+    let timedOut = false;
+    let killedBy;
+    let child;
+    try {
+      child = spawnSafe(cmd, args, { cwd: opts.cwd, env: opts.env, stdio: ["pipe", "pipe", "pipe"], detached: !isWin });
+    } catch (e) {
+      resolve({ code: 127, stdout: "", stderr: String(e), timedOut: false });
+      return;
+    }
+    track(child);
+    let done = false;
+    const finish = (code) => {
+      if (done)
+        return;
+      done = true;
+      clearTimeout(timer);
+      if (poll)
+        clearInterval(poll);
+      killTree(child, "SIGKILL");
+      child.stdout?.destroy();
+      child.stderr?.destroy();
+      resolve({ code, stdout, stderr, timedOut, killedBy });
+    };
+    const kill = () => {
+      killTree(child, "SIGTERM");
+      setTimeout(() => killTree(child, "SIGKILL"), 1000).unref();
+      setTimeout(() => finish(null), 2500).unref();
+    };
+    const timer = setTimeout(() => {
+      timedOut = true;
+      kill();
+    }, opts.timeoutMs);
+    if (opts.signal) {
+      if (opts.signal.aborted)
+        kill();
+      else
+        opts.signal.addEventListener("abort", () => {
+          killedBy = "cancelled";
+          kill();
+        }, { once: true });
+    }
+    const poll = opts.watchdog ? setInterval(() => {
+      const why = opts.watchdog(stdout, stderr);
+      if (why) {
+        killedBy = why;
+        kill();
+      }
+    }, 300) : undefined;
+    child.stdout.setEncoding("utf8");
+    child.stderr.setEncoding("utf8");
+    child.stdout.on("data", (d) => stdout += d);
+    child.stderr.on("data", (d) => stderr += d);
+    child.on("error", (e) => {
+      stderr += String(e);
+      finish(127);
+    });
+    child.on("close", (code) => finish(code));
+    child.on("exit", (code) => setTimeout(() => finish(code), 500).unref());
+    child.stdin.on("error", () => {});
+    child.stdin.end(opts.input ?? "");
+  });
+}
+function spawnDetached(cmd, args, cwd) {
+  try {
+    const child = spawnSafe(cmd, args, { cwd, detached: true, stdio: "ignore" });
+    child.on("error", () => {});
+    child.unref();
+  } catch {}
+}
+function whichSync(cmd) {
+  if (isAbsolute(cmd) || cmd.includes("/") || cmd.includes("\\"))
+    return existsSync(cmd) ? cmd : undefined;
+  const exts = isWin ? (process.env.PATHEXT || ".COM;.EXE;.BAT;.CMD").split(";").filter(Boolean) : [""];
+  for (const dir of (process.env.PATH || process.env.Path || "").split(delimiter)) {
+    if (!dir)
+      continue;
+    for (const ext of exts) {
+      for (const p of [join(dir, cmd + ext.toLowerCase()), join(dir, cmd + ext)])
+        if (existsSync(p))
+          return p;
+    }
+  }
+  return;
+}
+async function which(cmd) {
+  return whichSync(cmd);
+}
+var isWin, live, exitHooked = false;
+var init_proc = __esm(() => {
+  isWin = process.platform === "win32";
+  live = new Set;
+});
+
 // src/args.ts
 function parseFlags(argv, spec, stopAtPositional = false) {
   const byAlias = new Map;
@@ -177,31 +356,31 @@ var init_args = __esm(() => {
 
 // src/paths.ts
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { join as join2 } from "node:path";
 import { execFileSync } from "node:child_process";
-import { existsSync, statSync } from "node:fs";
+import { existsSync as existsSync2, statSync } from "node:fs";
 function configHome() {
   if (process.env.XDG_CONFIG_HOME)
     return process.env.XDG_CONFIG_HOME;
-  if (isWin && process.env.APPDATA)
+  if (isWin2 && process.env.APPDATA)
     return process.env.APPDATA;
-  return join(homedir(), ".config");
+  return join2(homedir(), ".config");
 }
 function stateHome() {
   if (process.env.XDG_STATE_HOME)
     return process.env.XDG_STATE_HOME;
-  if (isWin && process.env.LOCALAPPDATA)
+  if (isWin2 && process.env.LOCALAPPDATA)
     return process.env.LOCALAPPDATA;
-  return join(homedir(), ".local", "state");
+  return join2(homedir(), ".local", "state");
 }
 function userConfigPath() {
-  return process.env.OFFLOAD_CONFIG || join(configHome(), "harness-offload", "config.json");
+  return process.env.OFFLOAD_CONFIG || join2(configHome(), "harness-offload", "config.json");
 }
 function projectDir() {
   if (projectDirCache)
     return projectDirCache;
   const fromEnv = process.env.OFFLOAD_PROJECT_DIR || process.env.CLAUDE_PROJECT_DIR;
-  if (fromEnv && existsSync(fromEnv) && statSync(fromEnv).isDirectory())
+  if (fromEnv && existsSync2(fromEnv) && statSync(fromEnv).isDirectory())
     return projectDirCache = fromEnv;
   try {
     const top = execFileSync("git", ["rev-parse", "--show-toplevel"], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim();
@@ -214,16 +393,16 @@ function setProjectDir(dir) {
   projectDirCache = dir;
 }
 function projectConfigPath() {
-  return join(projectDir(), ".harness-offload.json");
+  return join2(projectDir(), ".harness-offload.json");
 }
-var isWin, projectDirCache;
+var isWin2, projectDirCache;
 var init_paths = __esm(() => {
-  isWin = process.platform === "win32";
+  isWin2 = process.platform === "win32";
 });
 
 // src/config.ts
-import { chmodSync, existsSync as existsSync2, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { dirname } from "node:path";
+import { chmodSync, existsSync as existsSync3, mkdirSync, readFileSync as readFileSync2, writeFileSync } from "node:fs";
+import { dirname as dirname2 } from "node:path";
 function deepMerge(a, b) {
   if (!isObj(a) || !isObj(b))
     return b;
@@ -233,10 +412,10 @@ function deepMerge(a, b) {
   return out;
 }
 function readJsonFile(path) {
-  if (!existsSync2(path))
+  if (!existsSync3(path))
     return;
   try {
-    const v = JSON.parse(readFileSync(path, "utf8"));
+    const v = JSON.parse(readFileSync2(path, "utf8"));
     if (isObj(v))
       return v;
   } catch {}
@@ -376,7 +555,7 @@ function cfgList(path) {
 function setConfigValue(key, raw, project = false) {
   const file = project ? projectConfigPath() : userConfigPath();
   let current = {};
-  if (existsSync2(file)) {
+  if (existsSync3(file)) {
     const parsed = readJsonFile(file);
     if (!parsed)
       throw new Error(`${file} is not valid JSON; fix it first`);
@@ -389,14 +568,14 @@ function setConfigValue(key, raw, project = false) {
     value = raw;
   }
   setPath(current, key, value);
-  mkdirSync(dirname(file), { recursive: true });
+  mkdirSync(dirname2(file), { recursive: true });
   writeFileSync(file, JSON.stringify(current, null, 2) + `
 `);
   resetConfig();
   return file;
 }
 function writeConfigFile(file, value, mode = 384) {
-  mkdirSync(dirname(file), { recursive: true });
+  mkdirSync(dirname2(file), { recursive: true });
   writeFileSync(file, JSON.stringify(value, null, 2) + `
 `, { mode });
   try {
@@ -482,7 +661,7 @@ var init_secrets = __esm(() => {
 });
 
 // src/text.ts
-import { openSync, readSync, closeSync, readFileSync as readFileSync2, statSync as statSync2 } from "node:fs";
+import { openSync, readSync, closeSync, readFileSync as readFileSync3, statSync as statSync2 } from "node:fs";
 function fileBytes(path) {
   try {
     return statSync2(path).size;
@@ -502,7 +681,7 @@ function countLines(text) {
 }
 function fileLines(path) {
   try {
-    return countLines(readFileSync2(path, "latin1"));
+    return countLines(readFileSync3(path, "latin1"));
   } catch {
     return 0;
   }
@@ -567,7 +746,7 @@ var init_text = () => {};
 
 // src/backends/tools.ts
 import { closeSync as closeSync2, lstatSync as lstatSync2, openSync as openSync2, readdirSync, readSync as readSync2, realpathSync as realpathSync2, statSync as statSync3 } from "node:fs";
-import { isAbsolute, join as join2, relative, resolve, sep } from "node:path";
+import { isAbsolute as isAbsolute2, join as join3, relative, resolve, sep } from "node:path";
 import { Worker } from "node:worker_threads";
 function realRoot(root) {
   let r = realRoots.get(root);
@@ -619,7 +798,7 @@ function* walk(dir, ctx, budget = { left: MAX_WALK }) {
       return;
     if (SKIP.has(e) || isSecretName(e, ctx.secretGlobs, ctx.allowGlobs ?? []))
       continue;
-    const p = join2(dir, e);
+    const p = join3(dir, e);
     let st;
     try {
       st = lstatSync2(p);
@@ -736,7 +915,7 @@ ${body}${to < total ? `… ${total - to} more lines (use offset=${to + 1})
       const names = readdirSync(p).filter((e) => !SKIP.has(e) && !isSecretName(e, ctx.secretGlobs, ctx.allowGlobs ?? [])).sort();
       const shown = names.slice(0, MAX_DIR_ENTRIES).map((e) => {
         try {
-          const st = lstatSync2(join2(p, e));
+          const st = lstatSync2(join3(p, e));
           return st.isSymbolicLink() ? e + "@" : st.isDirectory() ? e + "/" : e;
         } catch {
           return e;
@@ -759,7 +938,7 @@ async function runTool(name, args, ctx) {
 }
 var SKIP, MAX_SLICE = 600, MAX_LINE = 2000, MAX_RESULT = 60000, MAX_FILE_BYTES, MAX_WALK = 50000, MAX_DIR_ENTRIES = 500, GREP_TIMEOUT_MS = 1e4, TOOL_SPECS, realRoots, within = (root, p) => {
   const rel = relative(root, p);
-  return rel === "" || !rel.startsWith("..") && !isAbsolute(rel);
+  return rel === "" || !rel.startsWith("..") && !isAbsolute2(rel);
 }, cut = (s) => s.length > MAX_LINE ? s.slice(0, MAX_LINE) + ` … [${s.length - MAX_LINE} more characters]` : s, cap = (s) => s.length > MAX_RESULT ? s.slice(0, MAX_RESULT) + `
 … [output truncated]` : s, rel = (ctx, f) => relative(realRoot(ctx.root), f).split(sep).join("/"), GREP_WORKER = `
 const { parentPort, workerData } = require("node:worker_threads");
@@ -860,17 +1039,17 @@ var init_types = __esm(() => {
 });
 
 // src/backends/http.ts
-import { existsSync as existsSync3, readFileSync as readFileSync3 } from "node:fs";
-import { join as join3 } from "node:path";
+import { existsSync as existsSync4, readFileSync as readFileSync4 } from "node:fs";
+import { join as join4 } from "node:path";
 function credentialsPath() {
-  return process.env.OFFLOAD_CREDENTIALS || join3(configHome(), "harness-offload", "credentials.json");
+  return process.env.OFFLOAD_CREDENTIALS || join4(configHome(), "harness-offload", "credentials.json");
 }
 function storedKey(name) {
   try {
     const p = credentialsPath();
-    if (!existsSync3(p))
+    if (!existsSync4(p))
       return;
-    const v = JSON.parse(readFileSync3(p, "utf8"));
+    const v = JSON.parse(readFileSync4(p, "utf8"));
     return typeof v?.[name] === "string" ? v[name] : undefined;
   } catch {
     return;
@@ -1056,95 +1235,6 @@ var init_http = __esm(() => {
   PRESETS = CONNECTORS.endpoints;
 });
 
-// src/proc.ts
-import { spawn } from "node:child_process";
-function runProcess(cmd, args, opts) {
-  return new Promise((resolve) => {
-    let stdout = "";
-    let stderr = "";
-    let timedOut = false;
-    let killedBy;
-    let child;
-    try {
-      child = spawn(cmd, args, {
-        cwd: opts.cwd,
-        env: opts.env,
-        stdio: ["pipe", "pipe", "pipe"],
-        detached: process.platform !== "win32",
-        shell: process.platform === "win32" && !cmd.includes("/") && !cmd.includes("\\")
-      });
-    } catch (e) {
-      resolve({ code: 127, stdout: "", stderr: String(e), timedOut: false });
-      return;
-    }
-    let done = false;
-    const signal = (sig) => {
-      try {
-        if (process.platform !== "win32" && child.pid)
-          process.kill(-child.pid, sig);
-        else
-          child.kill(sig);
-      } catch {
-        try {
-          child.kill(sig);
-        } catch {}
-      }
-    };
-    const finish = (code) => {
-      if (done)
-        return;
-      done = true;
-      clearTimeout(timer);
-      if (poll)
-        clearInterval(poll);
-      resolve({ code, stdout, stderr, timedOut, killedBy });
-    };
-    const kill = () => {
-      signal("SIGTERM");
-      setTimeout(() => signal("SIGKILL"), 1000).unref();
-      setTimeout(() => finish(null), 2500).unref();
-    };
-    const timer = setTimeout(() => {
-      timedOut = true;
-      kill();
-    }, opts.timeoutMs);
-    const poll = opts.watchdog ? setInterval(() => {
-      const why = opts.watchdog(stdout, stderr);
-      if (why) {
-        killedBy = why;
-        kill();
-      }
-    }, 300) : undefined;
-    child.stdout.on("data", (d) => stdout += d.toString());
-    child.stderr.on("data", (d) => stderr += d.toString());
-    child.on("error", (e) => {
-      stderr += String(e);
-    });
-    child.on("close", (code) => finish(code));
-    child.stdin.on("error", () => {});
-    child.stdin.end(opts.input ?? "");
-  });
-}
-async function which(cmd) {
-  const { existsSync } = await import("node:fs");
-  const { delimiter, join } = await import("node:path");
-  if (cmd.includes("/") || cmd.includes("\\"))
-    return existsSync(cmd) ? cmd : undefined;
-  const exts = process.platform === "win32" ? (process.env.PATHEXT || ".EXE;.CMD;.BAT").split(";") : [""];
-  for (const dir of (process.env.PATH || "").split(delimiter)) {
-    for (const ext of exts) {
-      const p = join(dir, cmd + ext.toLowerCase());
-      if (existsSync(p))
-        return p;
-      const p2 = join(dir, cmd + ext);
-      if (existsSync(p2))
-        return p2;
-    }
-  }
-  return;
-}
-var init_proc = () => {};
-
 // src/state.ts
 var exports_state = {};
 __export(exports_state, {
@@ -1158,25 +1248,25 @@ __export(exports_state, {
   stateDir: () => stateDir,
   workDir: () => workDir
 });
-import { appendFileSync, existsSync as existsSync4, mkdirSync as mkdirSync2, readFileSync as readFileSync4, readdirSync as readdirSync2, rmSync, statSync as statSync4, writeFileSync as writeFileSync2 } from "node:fs";
-import { join as join4 } from "node:path";
+import { appendFileSync, existsSync as existsSync5, mkdirSync as mkdirSync2, readFileSync as readFileSync5, readdirSync as readdirSync2, rmSync, statSync as statSync4, writeFileSync as writeFileSync2 } from "node:fs";
+import { join as join5 } from "node:path";
 function stateDir() {
-  const d = cfgStr("state_dir") || join4(stateHome(), "harness-offload");
+  const d = cfgStr("state_dir") || join5(stateHome(), "harness-offload");
   for (const sub of ["logs", "cooldowns", "work"])
-    mkdirSync2(join4(d, sub), { recursive: true });
+    mkdirSync2(join5(d, sub), { recursive: true });
   return d;
 }
 function appendStats(row) {
   try {
-    appendFileSync(join4(stateDir(), "stats.jsonl"), JSON.stringify({ ts: Math.floor(Date.now() / 1000), ...row }) + `
+    appendFileSync(join5(stateDir(), "stats.jsonl"), JSON.stringify({ ts: Math.floor(Date.now() / 1000), ...row }) + `
 `);
   } catch {}
 }
 function readStats() {
-  const f = join4(stateDir(), "stats.jsonl");
-  if (!existsSync4(f))
+  const f = join5(stateDir(), "stats.jsonl");
+  if (!existsSync5(f))
     return [];
-  return readFileSync4(f, "utf8").split(`
+  return readFileSync5(f, "utf8").split(`
 `).filter(Boolean).flatMap((l) => {
     try {
       return [JSON.parse(l)];
@@ -1192,15 +1282,15 @@ function newLogPath(label) {
   const d = new Date;
   const p = (n) => String(n).padStart(2, "0");
   const ts = `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}`;
-  return join4(stateDir(), "logs", `${ts}-${slug(label)}.log`);
+  return join5(stateDir(), "logs", `${ts}-${slug(label)}.log`);
 }
 function pruneLogs() {
   const days = cfgInt("log_retention_days", 7);
-  const dir = join4(stateDir(), "logs");
+  const dir = join5(stateDir(), "logs");
   const cutoff = Date.now() - days * 86400000;
   try {
     for (const f of readdirSync2(dir)) {
-      const p = join4(dir, f);
+      const p = join5(dir, f);
       if (f.endsWith(".log") && statSync4(p).mtimeMs < cutoff)
         rmSync(p, { force: true });
     }
@@ -1208,9 +1298,9 @@ function pruneLogs() {
 }
 function cooling(model) {
   const f = cooldownFile(model);
-  if (!existsSync4(f))
+  if (!existsSync5(f))
     return;
-  const [until, ...reason] = readFileSync4(f, "utf8").trim().split(" ");
+  const [until, ...reason] = readFileSync5(f, "utf8").trim().split(" ");
   const u = Number(until);
   const now = Math.floor(Date.now() / 1000);
   if (!Number.isFinite(u) || u <= now) {
@@ -1226,28 +1316,27 @@ function coolDown(model, seconds, reason) {
   } catch {}
 }
 function clearCooldowns() {
-  const dir = join4(stateDir(), "cooldowns");
+  const dir = join5(stateDir(), "cooldowns");
   for (const f of readdirSync2(dir))
-    rmSync(join4(dir, f), { force: true });
+    rmSync(join5(dir, f), { force: true });
 }
-var workDir = () => join4(stateDir(), "work"), cooldownFile = (model) => join4(stateDir(), "cooldowns", model.replace(/[^A-Za-z0-9._-]/g, "_"));
+var workDir = () => join5(stateDir(), "work"), cooldownFile = (model) => join5(stateDir(), "cooldowns", model.replace(/[^A-Za-z0-9._-]/g, "_"));
 var init_state = __esm(() => {
   init_config();
   init_paths();
 });
 
 // src/backends/opencode.ts
-import { spawn as spawn2 } from "node:child_process";
-import { existsSync as existsSync5, readFileSync as readFileSync5, statSync as statSync5, writeFileSync as writeFileSync3 } from "node:fs";
-import { join as join5 } from "node:path";
+import { existsSync as existsSync6, readFileSync as readFileSync6, statSync as statSync5, writeFileSync as writeFileSync3 } from "node:fs";
+import { join as join6 } from "node:path";
 async function opencodeMajor() {
   if (majorCache)
     return majorCache;
   const b = bin();
-  const cache = join5(stateDir(), "opencode-version");
+  const cache = join6(stateDir(), "opencode-version");
   try {
-    if (existsSync5(cache) && Date.now() - statSync5(cache).mtimeMs < 3600000) {
-      const [maj, cbin] = readFileSync5(cache, "utf8").trim().split(" ");
+    if (existsSync6(cache) && Date.now() - statSync5(cache).mtimeMs < 3600000) {
+      const [maj, cbin] = readFileSync6(cache, "utf8").trim().split(" ");
       if (cbin === b && /^\d+$/.test(maj))
         return majorCache = Number(maj);
     }
@@ -1366,11 +1455,8 @@ function retries(stdout, stderr) {
 function forgetSession(sid, major) {
   if (!sid || cfgBool("opencode.keep_sessions", false))
     return;
-  try {
-    const args = major >= 2 ? ["session", "delete", "--standalone", sid] : ["session", "delete", sid];
-    const child = spawn2(bin(), args, { cwd: stateDir(), detached: true, stdio: "ignore" });
-    child.unref();
-  } catch {}
+  const args = major >= 2 ? ["session", "delete", "--standalone", sid] : ["session", "delete", sid];
+  spawnDetached(bin(), args, stateDir());
 }
 
 class OpencodeBackend {
@@ -1441,7 +1527,7 @@ class OpencodeBackend {
       if (/nknown argument|nknown option|nknown flag|nrecognized/.test(msg)) {
         resetOpencodeMajor();
         try {
-          writeFileSync3(join5(stateDir(), "opencode-version"), "");
+          writeFileSync3(join6(stateDir(), "opencode-version"), "");
         } catch {}
         msg += " (opencode version changed? cleared the cache — run again)";
       }
@@ -1476,7 +1562,7 @@ var init_opencode = __esm(() => {
 
 // src/backends/agents.ts
 import { writeFileSync as writeFileSync4 } from "node:fs";
-import { join as join6 } from "node:path";
+import { join as join7 } from "node:path";
 function cliAgentBackend(name) {
   const spec = CLI_AGENTS[name];
   const bin = () => cfgStr(`agents.${name}.bin`, spec.bin);
@@ -1622,7 +1708,7 @@ var init_agents = __esm(() => {
         return { args: a, input: req.prompt };
       },
       env: (req, dir) => {
-        const file = join6(dir, `gemini-system-${req.task}.md`);
+        const file = join7(dir, `gemini-system-${req.task}.md`);
         writeFileSync4(file, req.system);
         return { GEMINI_SYSTEM_MD: file, GEMINI_CLI_TRUST_WORKSPACE: "true" };
       },
@@ -1891,7 +1977,7 @@ var init_engine = __esm(() => {
 });
 
 // src/digest.ts
-import { readFileSync as readFileSync6, writeFileSync as writeFileSync5 } from "node:fs";
+import { readFileSync as readFileSync7, writeFileSync as writeFileSync5 } from "node:fs";
 function keyLines(text, max) {
   const seen = new Map;
   const order = [];
@@ -1953,7 +2039,7 @@ function logExcerpt(text) {
 `;
 }
 async function digest(log, label, code, focus, source, modelOverride, opts = {}) {
-  const text = readFileSync6(log, "utf8");
+  const text = readFileSync7(log, "utf8");
   const lines = countLines(text);
   const bytes = Buffer.byteLength(text);
   const kb = Math.ceil(bytes / 1024);
@@ -2054,7 +2140,7 @@ var init_digest = __esm(() => {
 });
 
 // src/outline.ts
-import { readFileSync as readFileSync7 } from "node:fs";
+import { readFileSync as readFileSync8 } from "node:fs";
 import { basename as basename2 } from "node:path";
 function posixToJs(ere) {
   let out = "";
@@ -2120,7 +2206,7 @@ function outlineRegex(path, firstLine = "") {
 function outline(path, max = 50) {
   let text;
   try {
-    text = readFileSync7(path, "utf8");
+    text = readFileSync8(path, "utf8");
   } catch {
     return "";
   }
@@ -2313,8 +2399,8 @@ var init_ui = __esm(() => {
 });
 
 // src/hooks/logic.ts
-import { existsSync as existsSync8, readFileSync as readFileSync10, statSync as statSync7 } from "node:fs";
-import { basename as basename3, isAbsolute as isAbsolute3, resolve as resolve3 } from "node:path";
+import { existsSync as existsSync9, readFileSync as readFileSync11, statSync as statSync7 } from "node:fs";
+import { basename as basename3, isAbsolute as isAbsolute4, resolve as resolve3 } from "node:path";
 import { writeFileSync as writeFileSync7 } from "node:fs";
 function callStyle(host) {
   if (host === "pi")
@@ -2390,8 +2476,8 @@ ${out}`;
 function readGuard(host, cwd, file, offset, limit) {
   if (!enabled2() || cfgStr("hooks.read_guard", "block") === "off" || !file)
     return;
-  const p = isAbsolute3(file) ? file : resolve3(cwd, file);
-  if (!existsSync8(p) || !statSync7(p).isFile())
+  const p = isAbsolute4(file) ? file : resolve3(cwd, file);
+  if (!existsSync9(p) || !statSync7(p).isFile())
     return;
   if (ignored(file) || notForOffload(p))
     return;
@@ -2449,8 +2535,8 @@ function bashGuard(host, cwd, command) {
     if (a.startsWith("-"))
       continue;
     const clean = a.replace(/["']/g, "");
-    const abs = isAbsolute3(clean) ? clean : resolve3(cwd, clean);
-    if (prog === "sed" && !range && !existsSync8(abs))
+    const abs = isAbsolute4(clean) ? clean : resolve3(cwd, clean);
+    if (prog === "sed" && !range && !existsSync9(abs))
       range = clean;
     else
       files.push(clean);
@@ -2459,8 +2545,8 @@ function bashGuard(host, cwd, command) {
   const maxLines = cfgInt("hooks.read_threshold_lines", 600);
   const maxTokens = cfgInt("hooks.read_threshold_tokens", 6000);
   for (const f of files) {
-    const p = isAbsolute3(f) ? f : resolve3(cwd, f);
-    if (!existsSync8(p) || !statSync7(p).isFile() || ignored(f) || notForOffload(p))
+    const p = isAbsolute4(f) ? f : resolve3(cwd, f);
+    if (!existsSync9(p) || !statSync7(p).isFile() || ignored(f) || notForOffload(p))
       continue;
     const lines = fileLines(p);
     const tokens = estTokens(fileBytes(p));
@@ -2507,8 +2593,8 @@ async function postBash(opts) {
   }
   let text = opts.output;
   let compact = false;
-  if (opts.persistedPath && existsSync8(opts.persistedPath)) {
-    text = readFileSync10(opts.persistedPath, "utf8");
+  if (opts.persistedPath && existsSync9(opts.persistedPath)) {
+    text = readFileSync11(opts.persistedPath, "utf8");
     compact = true;
   }
   const lines = text.split(`
@@ -2558,7 +2644,7 @@ __export(exports_demo, {
 });
 import { mkdtempSync, writeFileSync as writeFileSync8 } from "node:fs";
 import { tmpdir } from "node:os";
-import { join as join9 } from "node:path";
+import { join as join10 } from "node:path";
 function ledger() {
   const acct = ["cash", "inventory", "receivables", "payables", "payroll", "tax", "shipping", "returns", "warranty", "discounts"];
   const out = ["// Ledger operations for the warehouse back office.", 'import { Money, add, mul } from "./money";', 'import { Account, Entry, Journal } from "./model";', "", "export const MAX_BATCH = 500;", "export const LATE_FEE_RATE = 0.025;", ""];
@@ -2584,9 +2670,9 @@ function ciLog() {
 `;
 }
 async function cmdDemo() {
-  const dir = mkdtempSync(join9(tmpdir(), "offload-demo-"));
-  const file = join9(dir, "ledger.ts");
-  const log = join9(dir, "ci.log");
+  const dir = mkdtempSync(join10(tmpdir(), "offload-demo-"));
+  const file = join10(dir, "ledger.ts");
+  const log = join10(dir, "ci.log");
   writeFileSync8(file, ledger());
   writeFileSync8(log, ciLog());
   process.chdir(dir);
@@ -4203,35 +4289,35 @@ var init_dist4 = __esm(() => {
 });
 
 // src/hosts/assets.ts
-import { existsSync as existsSync9 } from "node:fs";
-import { dirname as dirname3, join as join10, resolve as resolve4 } from "node:path";
+import { existsSync as existsSync10 } from "node:fs";
+import { dirname as dirname4, join as join11, resolve as resolve4 } from "node:path";
 import { fileURLToPath } from "node:url";
 function marketplaceRoot() {
   const candidates = [
     process.env.OFFLOAD_MARKETPLACE_DIR,
-    join10(here(), "..", "assets", "marketplace"),
-    join10(here(), "..", "..", "..", "assets", "marketplace"),
+    join11(here(), "..", "assets", "marketplace"),
+    join11(here(), "..", "..", "..", "assets", "marketplace"),
     resolve4(here(), "..", "..", ".."),
     resolve4(here(), "..", "..", "..", "..")
   ].filter(Boolean);
   for (const c of candidates)
-    if (existsSync9(join10(c, ".claude-plugin", "marketplace.json")) && existsSync9(join10(c, "plugins", "harness-offload")))
+    if (existsSync10(join11(c, ".claude-plugin", "marketplace.json")) && existsSync10(join11(c, "plugins", "harness-offload")))
       return c;
   throw new Error("cannot find the bundled plugin files (set OFFLOAD_MARKETPLACE_DIR)");
 }
 function packageRoot() {
-  for (const c of [join10(here(), ".."), join10(here(), "..", "..")])
-    if (existsSync9(join10(c, "package.json")) && existsSync9(join10(c, "dist")))
+  for (const c of [join11(here(), ".."), join11(here(), "..", "..")])
+    if (existsSync10(join11(c, "package.json")) && existsSync10(join11(c, "dist")))
       return resolve4(c);
   return resolve4(here(), "..");
 }
-var here = () => dirname3(fileURLToPath(import.meta.url)), pluginDir = () => join10(marketplaceRoot(), "plugins", "harness-offload"), distFile = (name) => join10(packageRoot(), "dist", name);
+var here = () => dirname4(fileURLToPath(import.meta.url)), pluginDir = () => join11(marketplaceRoot(), "plugins", "harness-offload"), distFile = (name) => join11(packageRoot(), "dist", name);
 var init_assets3 = () => {};
 
 // src/hosts/install.ts
-import { cpSync, existsSync as existsSync10, mkdirSync as mkdirSync4, readFileSync as readFileSync11, rmSync as rmSync3, writeFileSync as writeFileSync9 } from "node:fs";
+import { cpSync, existsSync as existsSync11, mkdirSync as mkdirSync4, readFileSync as readFileSync12, rmSync as rmSync3, writeFileSync as writeFileSync9 } from "node:fs";
 import { homedir as homedir2 } from "node:os";
-import { join as join11 } from "node:path";
+import { join as join12 } from "node:path";
 import { pathToFileURL } from "node:url";
 async function detectHosts() {
   const out = {};
@@ -4239,7 +4325,7 @@ async function detectHosts() {
     if (h === "mcp")
       out[h] = true;
     else if (h === "cursor")
-      out[h] = existsSync10(join11(home(), ".cursor")) || Boolean(await which("cursor-agent")) || Boolean(await which("cursor"));
+      out[h] = existsSync11(join12(home(), ".cursor")) || Boolean(await which("cursor-agent")) || Boolean(await which("cursor"));
     else
       out[h] = Boolean(await which(h === "opencode" ? cfgStr("opencode.bin", "opencode") : HOST_BIN[h]));
   }
@@ -4252,21 +4338,21 @@ async function exec2(cmd, args) {
   return { ok: r.code === 0, text: `${cmd} ${args.join(" ")}${r.code === 0 ? "" : `  → exit ${r.code}: ${tail}`}` };
 }
 function geminiExtension(dir, launcher) {
-  const src = join11(pluginDir(), "hosts", "gemini");
-  mkdirSync4(join11(dir, "hooks"), { recursive: true });
-  const ext = JSON.parse(readFileSync11(join11(src, "gemini-extension.json"), "utf8"));
+  const src = join12(pluginDir(), "hosts", "gemini");
+  mkdirSync4(join12(dir, "hooks"), { recursive: true });
+  const ext = JSON.parse(readFileSync12(join12(src, "gemini-extension.json"), "utf8"));
   ext.mcpServers.offload.command = launcher;
-  writeFileSync9(join11(dir, "gemini-extension.json"), JSON.stringify(ext, null, 2) + `
+  writeFileSync9(join12(dir, "gemini-extension.json"), JSON.stringify(ext, null, 2) + `
 `);
-  const hooks = JSON.parse(readFileSync11(join11(src, "hooks", "hooks.json"), "utf8"));
+  const hooks = JSON.parse(readFileSync12(join12(src, "hooks", "hooks.json"), "utf8"));
   for (const groups of Object.values(hooks.hooks)) {
     for (const g of groups)
       for (const h of g.hooks)
         h.command = String(h.command).replace('"${extensionPath}/../../bin/offload-ts"', JSON.stringify(launcher));
   }
-  writeFileSync9(join11(dir, "hooks", "hooks.json"), JSON.stringify(hooks, null, 2) + `
+  writeFileSync9(join12(dir, "hooks", "hooks.json"), JSON.stringify(hooks, null, 2) + `
 `);
-  cpSync(join11(src, "GEMINI.md"), join11(dir, "GEMINI.md"));
+  cpSync(join12(src, "GEMINI.md"), join12(dir, "GEMINI.md"));
 }
 async function install(host, opts = {}) {
   const steps = [];
@@ -4274,7 +4360,7 @@ async function install(host, opts = {}) {
   if (bin && !await which(bin) && !["cursor", "mcp"].includes(host)) {
     return [{ ok: false, text: `${HOST_LABELS[host]} not found on PATH (${bin}); install it first.` }];
   }
-  const launcher = join11(pluginDir(), "bin", "offload-ts");
+  const launcher = join12(pluginDir(), "bin", "offload-ts");
   switch (host) {
     case "claude": {
       const root = marketplaceRoot();
@@ -4297,11 +4383,11 @@ async function install(host, opts = {}) {
       break;
     }
     case "cursor": {
-      const dest = join11(home(), ".cursor", "plugins", "local", "harness-offload");
+      const dest = join12(home(), ".cursor", "plugins", "local", "harness-offload");
       if (opts.dryRun)
         return [{ ok: true, text: `copy ${pluginDir()} → ${dest}` }];
       rmSync3(dest, { recursive: true, force: true });
-      mkdirSync4(join11(dest, ".."), { recursive: true });
+      mkdirSync4(join12(dest, ".."), { recursive: true });
       cpSync(pluginDir(), dest, { recursive: true });
       steps.push({ ok: true, text: `installed local plugin → ${dest}` });
       steps.push({ ok: true, text: "in Cursor: Developer: Reload Window (CLI: cursor-agent picks it up on the next run)" });
@@ -4309,7 +4395,7 @@ async function install(host, opts = {}) {
       break;
     }
     case "gemini": {
-      const dest = join11(home(), ".gemini", "extensions", "harness-offload");
+      const dest = join12(home(), ".gemini", "extensions", "harness-offload");
       if (opts.dryRun)
         return [{ ok: true, text: `write Gemini extension → ${dest}` }];
       rmSync3(dest, { recursive: true, force: true });
@@ -4328,8 +4414,8 @@ async function install(host, opts = {}) {
     }
     case "opencode": {
       const major = await opencodeMajor();
-      const dir = join11(home(), ".config", "opencode", major >= 2 ? "plugins" : "plugin");
-      const file = join11(dir, "harness-offload.js");
+      const dir = join12(home(), ".config", "opencode", major >= 2 ? "plugins" : "plugin");
+      const file = join12(dir, "harness-offload.js");
       if (opts.dryRun)
         return [{ ok: true, text: `write ${file} (OpenCode v${major})` }];
       mkdirSync4(dir, { recursive: true });
@@ -4341,8 +4427,8 @@ export { default } from ${JSON.stringify(pathToFileURL(distFile("opencode.js")).
       break;
     }
     case "kilo": {
-      const dir = join11(home(), ".config", "kilo", "plugin");
-      const file = join11(dir, "harness-offload.js");
+      const dir = join12(home(), ".config", "kilo", "plugin");
+      const file = join12(dir, "harness-offload.js");
       if (opts.dryRun)
         return [{ ok: true, text: `write ${file}` }];
       mkdirSync4(dir, { recursive: true });
@@ -4379,7 +4465,7 @@ async function uninstall(host) {
       break;
     case "cursor":
     case "gemini": {
-      const dir = host === "cursor" ? join11(home(), ".cursor", "plugins", "local", "harness-offload") : join11(home(), ".gemini", "extensions", "harness-offload");
+      const dir = host === "cursor" ? join12(home(), ".cursor", "plugins", "local", "harness-offload") : join12(home(), ".gemini", "extensions", "harness-offload");
       rmSync3(dir, { recursive: true, force: true });
       steps.push({ ok: true, text: `removed ${dir}` });
       break;
@@ -4389,15 +4475,15 @@ async function uninstall(host) {
       break;
     case "opencode":
       for (const d of ["plugins", "plugin"]) {
-        const f = join11(home(), ".config", "opencode", d, "harness-offload.js");
-        if (existsSync10(f)) {
+        const f = join12(home(), ".config", "opencode", d, "harness-offload.js");
+        if (existsSync11(f)) {
           rmSync3(f, { force: true });
           steps.push({ ok: true, text: `removed ${f}` });
         }
       }
       break;
     case "kilo": {
-      const f = join11(home(), ".config", "kilo", "plugin", "harness-offload.js");
+      const f = join12(home(), ".config", "kilo", "plugin", "harness-offload.js");
       rmSync3(f, { force: true });
       steps.push({ ok: true, text: `removed ${f}` });
       break;
@@ -4413,17 +4499,17 @@ async function uninstall(host) {
 }
 function installedHosts() {
   try {
-    const all = JSON.parse(readFileSync11(join11(stateDir(), "installs.json"), "utf8"));
+    const all = JSON.parse(readFileSync12(join12(stateDir(), "installs.json"), "utf8"));
     return Object.keys(all).filter((h) => HOSTS.includes(h));
   } catch {
     return [];
   }
 }
 var HOSTS, HOST_LABELS, HOST_BIN, home = () => process.env.OFFLOAD_HOME || homedir2(), record = (host, data) => {
-  const f = join11(stateDir(), "installs.json");
+  const f = join12(stateDir(), "installs.json");
   let all = {};
   try {
-    all = JSON.parse(readFileSync11(f, "utf8"));
+    all = JSON.parse(readFileSync12(f, "utf8"));
   } catch {}
   if (data === undefined)
     delete all[host];
@@ -4458,8 +4544,8 @@ var exports_setup = {};
 __export(exports_setup, {
   cmdSetup: () => cmdSetup
 });
-import { chmodSync as chmodSync2, mkdirSync as mkdirSync5, readFileSync as readFileSync12, writeFileSync as writeFileSync10 } from "node:fs";
-import { dirname as dirname4 } from "node:path";
+import { chmodSync as chmodSync2, mkdirSync as mkdirSync5, readFileSync as readFileSync13, writeFileSync as writeFileSync10 } from "node:fs";
+import { dirname as dirname5 } from "node:path";
 async function detectBackends() {
   const out = [];
   const oc = backendFor("opencode");
@@ -4496,10 +4582,10 @@ function storeKey(name, key) {
   const f = credentialsPath();
   let all = {};
   try {
-    all = JSON.parse(readFileSync12(f, "utf8"));
+    all = JSON.parse(readFileSync13(f, "utf8"));
   } catch {}
   all[name] = key;
-  mkdirSync5(dirname4(f), { recursive: true });
+  mkdirSync5(dirname5(f), { recursive: true });
   writeFileSync10(f, JSON.stringify(all, null, 2) + `
 `, { mode: 384 });
   try {
@@ -26764,23 +26850,20 @@ var exports_mcp = {};
 __export(exports_mcp, {
   cmdMcp: () => cmdMcp
 });
-import { spawn as spawn4 } from "node:child_process";
 function self() {
   const a1 = process.argv[1] ?? "";
   return /\.(c|m)?js$/.test(a1) ? [process.execPath, a1] : [process.execPath];
 }
-function runSelf(args, cwd, input) {
+async function runSelf(args, cwd, input, signal, timeoutSec) {
   const [cmd, ...pre] = self();
-  return new Promise((resolve) => {
-    const child = spawn4(cmd, [...pre, ...args], { cwd: cwd || process.cwd(), env: { ...process.env, NO_COLOR: "1" }, stdio: ["pipe", "pipe", "pipe"] });
-    let out = "";
-    let err = "";
-    child.stdout.on("data", (d) => out += d);
-    child.stderr.on("data", (d) => err += d);
-    child.on("error", (e) => resolve({ code: 14, out, err: String(e) }));
-    child.on("close", (code) => resolve({ code: code ?? 14, out, err }));
-    child.stdin.end(input ?? "");
-  });
+  const limit = timeoutSec ?? cfgInt("opencode.timeout_seconds", 180) * 2 + 60;
+  const r = await runProcess(cmd, [...pre, ...args], { input: input ?? "", cwd: cwd || process.cwd(), env: { ...process.env, NO_COLOR: "1" }, timeoutMs: limit * 1000, signal });
+  if (r.killedBy === "cancelled")
+    return { code: 130, out: r.stdout, err: "cancelled by the client" };
+  if (r.timedOut)
+    return { code: 12, out: r.stdout, err: `${r.stderr}
+offload: stopped after ${limit}s` };
+  return { code: r.code ?? 14, out: r.stdout, err: r.stderr };
 }
 function result(r, okCodes = [0]) {
   const body = (r.out + (r.err.trim() ? `
@@ -26795,29 +26878,34 @@ async function cmdMcp(_argv) {
   const model = string2().optional().describe("One-off model override, BACKEND:MODEL");
   server.registerTool("offload_read", {
     title: "Ask a cheap model about large files",
+    annotations: { readOnlyHint: true, openWorldHint: false },
     description: "Answer a question about one or more files (or directories, or file:START-END ranges) without loading them into your context. The answer cites path:Lx-Ly with quotes that are verified against the files.",
     inputSchema: { question: string2().describe("A specific question"), paths: array(string2()).min(1).describe("Files, directories or file:START-END"), cwd, model }
-  }, async ({ question, paths, cwd: dir, model: m }) => result(await runSelf(["read", "-q", question, ...m ? ["-m", m] : [], "--", ...paths], dir)));
+  }, async ({ question, paths, cwd: dir, model: m }, extra) => result(await runSelf(["read", "-q", question, ...m ? ["-m", m] : [], "--", ...paths], dir, "", extra.signal)));
   server.registerTool("offload_explore", {
     title: "Explore the codebase with a read-only cheap agent",
+    annotations: { readOnlyHint: true, openWorldHint: false },
     description: "A read-only worker searches the repository itself (read/grep/glob) and answers with verified path:line citations. Use for 'where/how is X done?' across many files.",
     inputSchema: { question: string2(), cwd, model }
-  }, async ({ question, cwd: dir, model: m }) => result(await runSelf(["explore", ...m ? ["-m", m] : [], "--", question], dir)));
-  server.registerTool("offload_run", {
-    title: "Run a noisy command and get a digest",
-    description: "Runs a shell command (tests, builds, installs, linters). Short output is returned as is; long output becomes a digest: cheap-model summary + verbatim error lines + the tail + the path of the full log. The command's exit code is reported.",
-    inputSchema: { command: string2().describe("Shell command line"), focus: string2().optional().describe("What to look for in the output"), cwd, model }
-  }, async ({ command, focus, cwd: dir, model: m }) => {
-    const r = await runSelf(["run", ...focus ? ["-q", focus] : [], ...m ? ["-m", m] : [], "-c", command], dir);
-    return { content: [{ type: "text", text: `${r.out}${r.err ? `
+  }, async ({ question, cwd: dir, model: m }, extra) => result(await runSelf(["explore", ...m ? ["-m", m] : [], "--", question], dir, "", extra.signal)));
+  if (cfgBool("mcp.run_tool", true))
+    server.registerTool("offload_run", {
+      title: "Run a noisy command and get a digest",
+      annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: true },
+      description: "Runs a shell command (tests, builds, installs, linters). Short output is returned as is; long output becomes a digest: cheap-model summary + verbatim error lines + the tail + the path of the full log. The command's exit code is reported.",
+      inputSchema: { command: string2().describe("Shell command line"), focus: string2().optional().describe("What to look for in the output"), cwd, model }
+    }, async ({ command, focus, cwd: dir, model: m }, extra) => {
+      const r = await runSelf(["run", ...focus ? ["-q", focus] : [], ...m ? ["-m", m] : [], "-c", command], dir, "", extra.signal, cfgInt("mcp.run_timeout_seconds", 1800));
+      return { content: [{ type: "text", text: `${r.out}${r.err ? `
 ${r.err}` : ""}
 [exit code ${r.code}]`.trim() }], isError: false };
-  });
+    });
   server.registerTool("offload_summarize", {
     title: "Digest long text or a log file",
+    annotations: { readOnlyHint: true, openWorldHint: false },
     description: "Digest a long log/text (given inline or as a file path): summary + verbatim key lines + tail.",
     inputSchema: { path: string2().optional(), text: string2().optional(), focus: string2().optional(), cwd, model }
-  }, async ({ path, text, focus, cwd: dir, model: m }) => result(await runSelf(["summarize", ...focus ? ["-q", focus] : [], ...m ? ["-m", m] : [], ...path ? [path] : ["-"]], dir, text)));
+  }, async ({ path, text, focus, cwd: dir, model: m }, extra) => result(await runSelf(["summarize", ...focus ? ["-q", focus] : [], ...m ? ["-m", m] : [], "--", ...path ? [path] : ["-"]], dir, text, extra.signal)));
   server.registerTool("offload_write", {
     title: "Generate pattern-following code",
     description: "A cheap model writes a new file (tests, boilerplate, configs, stubs) following the conventions of reference files. Refuses to overwrite unless force is true. Review the result before relying on it.",
@@ -26831,9 +26919,9 @@ ${r.err}` : ""}
       cwd,
       model
     }
-  }, async ({ spec, reference, context, out, check, force, cwd: dir, model: m }) => result(await runSelf(["write", "--spec", spec, ...reference.flatMap((r) => ["--ref", r]), ...(context ?? []).flatMap((c) => ["--context", c]), ...out ? ["--out", out] : [], ...check ? ["--check", check] : [], ...force ? ["--force"] : [], ...m ? ["-m", m] : []], dir)));
-  server.registerTool("offload_ask", { title: "Ask the cheap model", description: "One-off question to the cheap worker model (optionally about a file).", inputSchema: { question: string2(), file: string2().optional(), cwd, model } }, async ({ question, file, cwd: dir, model: m }) => result(await runSelf(["ask", ...file ? ["-f", file] : [], ...m ? ["-m", m] : [], "--", question], dir)));
-  server.registerTool("offload_outline", { title: "Outline a file", description: "Symbol outline of a source file with line numbers (no model call) — find the slice to read.", inputSchema: { path: string2(), cwd } }, async ({ path, cwd: dir }) => result(await runSelf(["outline", path], dir)));
+  }, async ({ spec, reference, context, out, check, force, cwd: dir, model: m }, extra) => result(await runSelf(["write", "--spec", spec, ...reference.flatMap((r) => ["--ref", r]), ...(context ?? []).flatMap((c) => ["--context", c]), ...out ? ["--out", out] : [], ...check ? ["--check", check] : [], ...force ? ["--force"] : [], ...m ? ["-m", m] : []], dir, "", extra.signal)));
+  server.registerTool("offload_ask", { title: "Ask the cheap model", description: "One-off question to the cheap worker model (optionally about a file).", inputSchema: { question: string2(), file: string2().optional(), cwd, model } }, async ({ question, file, cwd: dir, model: m }, extra) => result(await runSelf(["ask", ...file ? ["-f", file] : [], ...m ? ["-m", m] : [], "--", question], dir, "", extra.signal)));
+  server.registerTool("offload_outline", { title: "Outline a file", description: "Symbol outline of a source file with line numbers (no model call) — find the slice to read.", inputSchema: { path: string2(), cwd } }, async ({ path, cwd: dir }, extra) => result(await runSelf(["outline", "--", path], dir, "", extra.signal, 60)));
   await server.connect(new StdioServerTransport);
   await new Promise((resolve) => process.stdin.on("close", () => resolve()));
   return 0;
@@ -26843,6 +26931,8 @@ var init_mcp2 = __esm(() => {
   init_stdio2();
   init_zod();
   init_assets2();
+  init_config();
+  init_proc();
 });
 
 // src/commands/hook.ts
@@ -27013,6 +27103,7 @@ var init_worker = __esm(() => {
 
 // src/cli.ts
 init_assets2();
+init_proc();
 init_args();
 
 // src/commands/core.ts
@@ -27025,14 +27116,14 @@ init_outline();
 init_secrets();
 init_state();
 init_text();
-import { spawn as spawn3 } from "node:child_process";
-import { closeSync as closeSync3, existsSync as existsSync6, lstatSync as lstatSync3, mkdirSync as mkdirSync3, openSync as openSync3, readFileSync as readFileSync9, readdirSync as readdirSync3, rmSync as rmSync2, statSync as statSync6, writeFileSync as writeFileSync6 } from "node:fs";
-import { dirname as dirname2, join as join8, relative as relative2, resolve as resolve2, sep as sep2 } from "node:path";
+import { spawn as spawn2 } from "node:child_process";
+import { closeSync as closeSync3, existsSync as existsSync7, lstatSync as lstatSync3, mkdirSync as mkdirSync3, openSync as openSync3, readFileSync as readFileSync10, readdirSync as readdirSync3, rmSync as rmSync2, statSync as statSync6, writeFileSync as writeFileSync6 } from "node:fs";
+import { dirname as dirname3, join as join9, relative as relative2, resolve as resolve2, sep as sep2 } from "node:path";
 import { execFileSync as execFileSync2 } from "node:child_process";
 
 // src/verify.ts
-import { readFileSync as readFileSync8 } from "node:fs";
-import { isAbsolute as isAbsolute2, join as join7 } from "node:path";
+import { readFileSync as readFileSync9 } from "node:fs";
+import { isAbsolute as isAbsolute3, join as join8 } from "node:path";
 var norm = (s) => s.replace(/[ \t\r]+/g, " ").trim();
 function lastSpan(s) {
   let open = false;
@@ -27059,7 +27150,7 @@ function verifyCitations(answer, root, slack = 3) {
       return cache.get(p);
     let lines = null;
     try {
-      const t = readFileSync8(isAbsolute2(p) ? p : join7(root, p.replace(/^\.\//, "")), "utf8");
+      const t = readFileSync9(isAbsolute3(p) ? p : join8(root, p.replace(/^\.\//, "")), "utf8");
       lines = t.split(`
 `);
       if (t.endsWith(`
@@ -27179,14 +27270,14 @@ function listDirFiles(d) {
   try {
     const out = execFileSync2("git", ["-C", d, "ls-files", "--cached", "--others", "--exclude-standard"], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] });
     files = out.split(`
-`).filter(Boolean).map((f) => join8(d, f));
+`).filter(Boolean).map((f) => join9(d, f));
   } catch {
     const skip = new Set([".git", "node_modules", "dist", "build", ".venv", "venv", "target", "vendor"]);
     const walk = (p) => {
       for (const e of readdirSync3(p)) {
         if (skip.has(e))
           continue;
-        const q = join8(p, e);
+        const q = join9(p, e);
         const st = lstatSync3(q);
         if (st.isDirectory())
           walk(q);
@@ -27200,7 +27291,7 @@ function listDirFiles(d) {
   return files.map(rel).filter((f) => !/(^|\/)(package-lock\.json|yarn\.lock|pnpm-lock\.yaml|Cargo\.lock|poetry\.lock|go\.sum|.*\.min\.(js|css)|.*\.map)$/.test(f)).sort();
 }
 function fileBlock(path, from, to, total) {
-  const body = numberLines(readFileSync9(path, "utf8"), from, to);
+  const body = numberLines(readFileSync10(path, "utf8"), from, to);
   return `<file path="${path}" lines="${from}-${to}" total_lines="${total}">
 ${redact(body)}</file>
 
@@ -27231,15 +27322,15 @@ async function cmdRead(argv) {
     let from = 0;
     let to = 0;
     const m = item.match(/^(.*):(\d+)-(\d+)$/);
-    if (!existsSync6(item) && m) {
+    if (!existsSync7(item) && m) {
       path = m[1];
       from = Number(m[2]);
       to = Number(m[3]);
     }
     path = path.replace(/^\.\//, "");
-    if (existsSync6(path) && statSync6(path).isDirectory()) {
+    if (existsSync7(path) && statSync6(path).isDirectory()) {
       for (const f of listDirFiles(path)) {
-        if (!existsSync6(f) || !statSync6(f).isFile())
+        if (!existsSync7(f) || !statSync6(f).isFile())
           continue;
         if (lstatSync3(f).isSymbolicLink()) {
           skipped.push(`${f}(symlink)`);
@@ -27262,7 +27353,7 @@ async function cmdRead(argv) {
       }
       continue;
     }
-    if (!existsSync6(path) || !statSync6(path).isFile())
+    if (!existsSync7(path) || !statSync6(path).isFile())
       die(`read: file not found or unreadable: ${item}`);
     if (isSecretTarget(path) && !allow)
       die(`read: refusing to send ${path} to a third-party model (matches privacy.secret_globs). Use --allow-secrets if you are sure.`, E.REFUSED);
@@ -27320,7 +27411,7 @@ async function cmdExplore(argv) {
   if (!question)
     die('explore: give a question, e.g. offload explore "where are JWTs validated?"');
   const dir = resolve2(str(opts.dir) || process.cwd());
-  if (!existsSync6(dir))
+  if (!existsSync7(dir))
     die(`explore: no such directory: ${dir}`);
   const prompt = `Investigate the codebase in the current working directory and answer the question.
 
@@ -27351,7 +27442,7 @@ async function cmdExplore(argv) {
 function execToFile(cmd, log) {
   return new Promise((res) => {
     const fd = openSync3(log, "w");
-    const child = typeof cmd === "string" ? spawn3(process.platform === "win32" ? cmd : "bash", process.platform === "win32" ? [] : ["-c", cmd], { stdio: ["inherit", fd, fd], shell: process.platform === "win32" }) : spawn3(cmd[0], cmd.slice(1), { stdio: ["inherit", fd, fd] });
+    const child = typeof cmd === "string" ? spawn2(process.platform === "win32" ? cmd : "bash", process.platform === "win32" ? [] : ["-c", cmd], { stdio: ["inherit", fd, fd], shell: process.platform === "win32" }) : spawn2(cmd[0], cmd.slice(1), { stdio: ["inherit", fd, fd] });
     child.on("error", (e) => {
       try {
         writeFileSync6(log, `offload: cannot run ${Array.isArray(cmd) ? cmd[0] : cmd}: ${e.message}
@@ -27372,7 +27463,7 @@ async function cmdRun(argv) {
   const label = sh || rest.map(shquote).join(" ");
   const log = newLogPath(label);
   const code = await execToFile(sh || rest, log);
-  const text = readFileSync9(log, "utf8");
+  const text = readFileSync10(log, "utf8");
   if (isSmall(text)) {
     process.stdout.write(text);
     rmSync2(log, { force: true });
@@ -27387,11 +27478,11 @@ async function cmdSummarize(argv) {
   const label = str(opts.label) || file || "stdin";
   const log = newLogPath(label);
   if (file && file !== "-") {
-    if (!existsSync6(file))
+    if (!existsSync7(file))
       die(`summarize: no such file: ${file}`);
     if (isSecretTarget(file))
       die(`summarize: refusing to send ${file} (matches privacy.secret_globs)`, E.REFUSED);
-    writeFileSync6(log, readFileSync9(file));
+    writeFileSync6(log, readFileSync10(file));
   } else {
     if (process.stdin.isTTY)
       die("summarize: pipe text in or give a FILE");
@@ -27400,7 +27491,7 @@ async function cmdSummarize(argv) {
       chunks.push(c);
     writeFileSync6(log, Buffer.concat(chunks));
   }
-  const text = readFileSync9(log, "utf8");
+  const text = readFileSync10(log, "utf8");
   if (isSmall(text)) {
     process.stdout.write(text);
     rmSync2(log, { force: true });
@@ -27429,10 +27520,10 @@ async function cmdWrite(argv) {
     die('write: --spec "WHAT TO GENERATE" is required');
   if (!refs.length)
     die("write: --ref FILE is required — an existing file whose patterns the output must follow. For a follow-up, reference the file the previous call generated.");
-  if (out && existsSync6(out) && !opts.force)
+  if (out && existsSync7(out) && !opts.force)
     die(`write: ${out} already exists — pick a new --out, or add --force to overwrite it`);
   for (const f of [...refs, ...ctxs]) {
-    if (!existsSync6(f))
+    if (!existsSync7(f))
       die(`write: file not found: ${f}`);
     if (isSecretTarget(f) && !opts["allow-secrets"])
       die(`write: refusing to send ${f} (matches privacy.secret_globs)`, E.REFUSED);
@@ -27440,12 +27531,12 @@ async function cmdWrite(argv) {
   let prompt = "";
   for (const f of refs)
     prompt += `<reference path="${f}">
-${redact(readFileSync9(f, "utf8"))}</reference>
+${redact(readFileSync10(f, "utf8"))}</reference>
 
 `;
   for (const f of ctxs)
     prompt += `<context path="${f}">
-${redact(readFileSync9(f, "utf8"))}</context>
+${redact(readFileSync10(f, "utf8"))}</context>
 
 `;
   if (out)
@@ -27463,7 +27554,7 @@ ${redact(readFileSync9(f, "utf8"))}</context>
   if (!out) {
     process.stdout.write(code + footer(`write · ${r.model} · ${n} lines · ${secs(t0)}s · review before use`));
   } else {
-    mkdirSync3(dirname2(out), { recursive: true });
+    mkdirSync3(dirname3(out), { recursive: true });
     writeFileSync6(out, code);
     let msg = `offload write: wrote ${n} lines to ${out} (${r.model}, ${secs(t0)}s).
 `;
@@ -27481,7 +27572,7 @@ ${redact(readFileSync9(f, "utf8"))}</context>
       process.stdout.write(crc === 0 ? `  check passed: ${check}
 ` : `  check FAILED (exit ${crc}): ${check}
 `);
-      const text = readFileSync9(log, "utf8");
+      const text = readFileSync10(log, "utf8");
       if (isSmall(text)) {
         process.stdout.write(text.split(`
 `).filter((l, i, a) => i < a.length - 1 || l).map((l) => `    ${l}
@@ -27514,12 +27605,12 @@ ${redact(Buffer.concat(chunks).toString("utf8"))}</input>
   }
   const file = str(opts.file);
   if (file) {
-    if (!existsSync6(file))
+    if (!existsSync7(file))
       die(`ask: no such file: ${file}`);
     if (isSecretTarget(file))
       die(`ask: refusing to send ${file} (matches privacy.secret_globs)`, E.REFUSED);
     prompt += `<input path="${file}">
-${redact(readFileSync9(file, "utf8"))}</input>
+${redact(readFileSync10(file, "utf8"))}</input>
 
 `;
   }
@@ -27532,8 +27623,10 @@ ${redact(readFileSync9(file, "utf8"))}</input>
   appendStats({ kind: "ask", model: r.model, seconds: secs(t0), saved_tokens: 0, worker_tokens_in: r.tokensIn, worker_tokens_out: r.tokensOut });
 }
 function cmdOutline(argv) {
+  if (argv[0] === "--")
+    argv = argv.slice(1);
   const file = argv[0];
-  if (!file || !existsSync6(file))
+  if (!file || !existsSync7(file))
     die("outline: give a file");
   process.stdout.write(outline(file, Number(argv[1]) || 80));
 }
@@ -27551,7 +27644,7 @@ init_state();
 init_text();
 init_ui();
 init_assets2();
-import { existsSync as existsSync7 } from "node:fs";
+import { existsSync as existsSync8 } from "node:fs";
 async function cmdDoctor(argv) {
   const { opts } = parseFlags(argv, { ping: {}, reset: {}, json: {} });
   const out = [];
@@ -27569,7 +27662,7 @@ async function cmdDoctor(argv) {
   for (const w of warnings)
     check(false, w);
   for (const f of [userConfigPath(), projectConfigPath()]) {
-    if (existsSync7(f))
+    if (existsSync8(f))
       check(true, "config", f);
     else
       check("warn", "config not present", f);
@@ -27736,8 +27829,8 @@ function cmdConfig(argv) {
   switch (sub) {
     case "show":
       process.stdout.write(`# defaults: built in
-# user:     ${userConfigPath()}${existsSync7(userConfigPath()) ? "" : " (absent)"}
-# project:  ${projectConfigPath()}${existsSync7(projectConfigPath()) ? "" : " (absent)"}
+# user:     ${userConfigPath()}${existsSync8(userConfigPath()) ? "" : " (absent)"}
+# project:  ${projectConfigPath()}${existsSync8(projectConfigPath()) ? "" : " (absent)"}
 `);
       {
         const ign = ignoredProjectKeys();
@@ -27768,7 +27861,7 @@ function cmdConfig(argv) {
 `);
       return;
     case "init":
-      if (existsSync7(target)) {
+      if (existsSync8(target)) {
         process.stderr.write(`offload: config init: ${target} already exists (edit it, or use: offload config set KEY VALUE)
 `);
         throw new ExitError(2);
@@ -27870,6 +27963,8 @@ var HELP = () => `${banner()}
               15 backend missing · 16 refused (secrets/size)
 `;
 async function main(argv) {
+  if (argv[0] !== "hook")
+    killChildrenOnSignals();
   const [cmd = "help", ...rest] = argv;
   switch (cmd) {
     case "help":

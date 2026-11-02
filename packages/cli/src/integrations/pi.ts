@@ -65,8 +65,8 @@ export default function harnessOffload(pi: any): void {
       label: name.replace("offload_", "Offload "),
       description: t.description,
       parameters: schema(t.schema as Record<string, string>),
-      async execute(_id: string, params: any, _signal: unknown, _onUpdate: unknown, ctx: any) {
-        const r = await runCli(t.args(params), ctx?.cwd ?? process.cwd());
+      async execute(_id: string, params: any, signal: AbortSignal | undefined, _onUpdate: unknown, ctx: any) {
+        const r = await runCli(t.args(params), ctx?.cwd ?? process.cwd(), "", signal);
         if (r.code !== 0 && name !== "offload_run") throw new Error(r.out.trim() || `offload exited ${r.code}`);
         return { content: [{ type: "text", text: r.out.trim() + (name === "offload_run" ? `\n[exit code ${r.code}]` : "") }], details: undefined };
       },

@@ -2,29 +2,26 @@
 // agent shell is sandboxed without network (Codex, Cursor) and for any other
 // MCP client (Windsurf/Devin, Zed, VS Code, Goose, Gemini CLI, Claude Desktop…).
 // Each call runs the offload CLI as a subprocess so state stays isolated.
-import { spawn } from "node:child_process";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
 import { VERSION } from "../assets.ts";
+import { cfgBool, cfgInt } from "../config.ts";
+import { runProcess } from "../proc.ts";
 
 function self(): string[] {
   const a1 = process.argv[1] ?? "";
   return /\.(c|m)?js$/.test(a1) ? [process.execPath, a1] : [process.execPath];
 }
 
-function runSelf(args: string[], cwd?: string, input?: string): Promise<{ code: number; out: string; err: string }> {
+/** Runs this CLI for one tool call: bounded in time, killed if the client cancels. */
+async function runSelf(args: string[], cwd?: string, input?: string, signal?: AbortSignal, timeoutSec?: number): Promise<{ code: number; out: string; err: string }> {
   const [cmd, ...pre] = self();
-  return new Promise((resolve) => {
-    const child = spawn(cmd, [...pre, ...args], { cwd: cwd || process.cwd(), env: { ...process.env, NO_COLOR: "1" }, stdio: ["pipe", "pipe", "pipe"] });
-    let out = "";
-    let err = "";
-    child.stdout.on("data", (d) => (out += d));
-    child.stderr.on("data", (d) => (err += d));
-    child.on("error", (e) => resolve({ code: 14, out, err: String(e) }));
-    child.on("close", (code) => resolve({ code: code ?? 14, out, err }));
-    child.stdin.end(input ?? "");
-  });
+  const limit = timeoutSec ?? cfgInt("opencode.timeout_seconds", 180) * 2 + 60;
+  const r = await runProcess(cmd, [...pre, ...args], { input: input ?? "", cwd: cwd || process.cwd(), env: { ...process.env, NO_COLOR: "1" }, timeoutMs: limit * 1000, signal });
+  if (r.killedBy === "cancelled") return { code: 130, out: r.stdout, err: "cancelled by the client" };
+  if (r.timedOut) return { code: 12, out: r.stdout, err: `${r.stderr}\noffload: stopped after ${limit}s` };
+  return { code: r.code ?? 14, out: r.stdout, err: r.stderr };
 }
 
 function result(r: { code: number; out: string; err: string }, okCodes: number[] = [0]) {
@@ -47,29 +44,35 @@ export async function cmdMcp(_argv: string[]): Promise<number> {
     "offload_read",
     {
       title: "Ask a cheap model about large files",
+      annotations: { readOnlyHint: true, openWorldHint: false },
       description: "Answer a question about one or more files (or directories, or file:START-END ranges) without loading them into your context. The answer cites path:Lx-Ly with quotes that are verified against the files.",
       inputSchema: { question: z.string().describe("A specific question"), paths: z.array(z.string()).min(1).describe("Files, directories or file:START-END"), cwd, model },
     },
-    async ({ question, paths, cwd: dir, model: m }) => result(await runSelf(["read", "-q", question, ...(m ? ["-m", m] : []), "--", ...paths], dir)),
+    async ({ question, paths, cwd: dir, model: m }, extra) => result(await runSelf(["read", "-q", question, ...(m ? ["-m", m] : []), "--", ...paths], dir, "", extra.signal)),
   );
   server.registerTool(
     "offload_explore",
     {
       title: "Explore the codebase with a read-only cheap agent",
+      annotations: { readOnlyHint: true, openWorldHint: false },
       description: "A read-only worker searches the repository itself (read/grep/glob) and answers with verified path:line citations. Use for 'where/how is X done?' across many files.",
       inputSchema: { question: z.string(), cwd, model },
     },
-    async ({ question, cwd: dir, model: m }) => result(await runSelf(["explore", ...(m ? ["-m", m] : []), "--", question], dir)),
+    async ({ question, cwd: dir, model: m }, extra) => result(await runSelf(["explore", ...(m ? ["-m", m] : []), "--", question], dir, "", extra.signal)),
   );
-  server.registerTool(
+  // offload_run executes shell commands outside the host's own sandbox, so it is
+  // annotated as open-world/destructive (hosts that honour annotations ask first)
+  // and can be switched off with mcp.run_tool=false.
+  if (cfgBool("mcp.run_tool", true)) server.registerTool(
     "offload_run",
     {
       title: "Run a noisy command and get a digest",
+      annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: true },
       description: "Runs a shell command (tests, builds, installs, linters). Short output is returned as is; long output becomes a digest: cheap-model summary + verbatim error lines + the tail + the path of the full log. The command's exit code is reported.",
       inputSchema: { command: z.string().describe("Shell command line"), focus: z.string().optional().describe("What to look for in the output"), cwd, model },
     },
-    async ({ command, focus, cwd: dir, model: m }) => {
-      const r = await runSelf(["run", ...(focus ? ["-q", focus] : []), ...(m ? ["-m", m] : []), "-c", command], dir);
+    async ({ command, focus, cwd: dir, model: m }, extra) => {
+      const r = await runSelf(["run", ...(focus ? ["-q", focus] : []), ...(m ? ["-m", m] : []), "-c", command], dir, "", extra.signal, cfgInt("mcp.run_timeout_seconds", 1800));
       return { content: [{ type: "text" as const, text: `${r.out}${r.err ? `\n${r.err}` : ""}\n[exit code ${r.code}]`.trim() }], isError: false };
     },
   );
@@ -77,11 +80,12 @@ export async function cmdMcp(_argv: string[]): Promise<number> {
     "offload_summarize",
     {
       title: "Digest long text or a log file",
+      annotations: { readOnlyHint: true, openWorldHint: false },
       description: "Digest a long log/text (given inline or as a file path): summary + verbatim key lines + tail.",
       inputSchema: { path: z.string().optional(), text: z.string().optional(), focus: z.string().optional(), cwd, model },
     },
-    async ({ path, text, focus, cwd: dir, model: m }) =>
-      result(await runSelf(["summarize", ...(focus ? ["-q", focus] : []), ...(m ? ["-m", m] : []), ...(path ? [path] : ["-"])], dir, text)),
+    async ({ path, text, focus, cwd: dir, model: m }, extra) =>
+      result(await runSelf(["summarize", ...(focus ? ["-q", focus] : []), ...(m ? ["-m", m] : []), "--", ...(path ? [path] : ["-"])], dir, text, extra.signal)),
   );
   server.registerTool(
     "offload_write",
@@ -99,23 +103,25 @@ export async function cmdMcp(_argv: string[]): Promise<number> {
         model,
       },
     },
-    async ({ spec, reference, context, out, check, force, cwd: dir, model: m }) =>
+    async ({ spec, reference, context, out, check, force, cwd: dir, model: m }, extra) =>
       result(
         await runSelf(
           ["write", "--spec", spec, ...reference.flatMap((r) => ["--ref", r]), ...(context ?? []).flatMap((c) => ["--context", c]), ...(out ? ["--out", out] : []), ...(check ? ["--check", check] : []), ...(force ? ["--force"] : []), ...(m ? ["-m", m] : [])],
           dir,
+          "",
+          extra.signal,
         ),
       ),
   );
   server.registerTool(
     "offload_ask",
     { title: "Ask the cheap model", description: "One-off question to the cheap worker model (optionally about a file).", inputSchema: { question: z.string(), file: z.string().optional(), cwd, model } },
-    async ({ question, file, cwd: dir, model: m }) => result(await runSelf(["ask", ...(file ? ["-f", file] : []), ...(m ? ["-m", m] : []), "--", question], dir)),
+    async ({ question, file, cwd: dir, model: m }, extra) => result(await runSelf(["ask", ...(file ? ["-f", file] : []), ...(m ? ["-m", m] : []), "--", question], dir, "", extra.signal)),
   );
   server.registerTool(
     "offload_outline",
     { title: "Outline a file", description: "Symbol outline of a source file with line numbers (no model call) — find the slice to read.", inputSchema: { path: z.string(), cwd } },
-    async ({ path, cwd: dir }) => result(await runSelf(["outline", path], dir)),
+    async ({ path, cwd: dir }, extra) => result(await runSelf(["outline", "--", path], dir, "", extra.signal, 60)),
   );
   await server.connect(new StdioServerTransport());
   await new Promise<void>((resolve) => process.stdin.on("close", () => resolve()));

@@ -1,9 +1,8 @@
-import { spawn } from "node:child_process";
 import { existsSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { PROMPTS } from "../assets.ts";
 import { cfgBool, cfgInt, cfgList, cfgStr } from "../config.ts";
-import { runProcess, which } from "../proc.ts";
+import { runProcess, spawnDetached, which } from "../proc.ts";
 import { stateDir } from "../state.ts";
 import { Backend, classify, E, WorkerError, WorkerRequest, WorkerResult } from "./types.ts";
 
@@ -140,13 +139,8 @@ function retries(stdout: string, stderr: string): number {
 
 function forgetSession(sid: string | undefined, major: number): void {
   if (!sid || cfgBool("opencode.keep_sessions", false)) return;
-  try {
-    const args = major >= 2 ? ["session", "delete", "--standalone", sid] : ["session", "delete", sid];
-    const child = spawn(bin(), args, { cwd: stateDir(), detached: true, stdio: "ignore" });
-    child.unref();
-  } catch {
-    /* best-effort */
-  }
+  const args = major >= 2 ? ["session", "delete", "--standalone", sid] : ["session", "delete", sid];
+  spawnDetached(bin(), args, stateDir());
 }
 
 export class OpencodeBackend implements Backend {

@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { VERSION } from "./assets.ts";
+import { killChildrenOnSignals } from "./proc.ts";
 import { UsageError } from "./args.ts";
 import { ExitError, cmdAsk, cmdExplore, cmdOutline, cmdRead, cmdRun, cmdSummarize, cmdWrite } from "./commands/core.ts";
 import { cmdConfig, cmdDoctor, cmdModels, cmdStats, cmdStatusline } from "./commands/admin.ts";
@@ -37,6 +38,8 @@ const HELP = () => `${banner()}
 `;
 
 async function main(argv: string[]): Promise<number> {
+  // a cancelled/timed-out offload must not leave worker trees behind
+  if (argv[0] !== "hook") killChildrenOnSignals();
   const [cmd = "help", ...rest] = argv;
   switch (cmd) {
     case "help":

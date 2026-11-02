@@ -50,3 +50,37 @@ describe("misc", () => {
     expect(shquote("plain/path.ts")).toBe("plain/path.ts");
   });
 });
+
+describe("runProcess", () => {
+  test("returns when the worker exits even if a descendant holds its stdout, and kills that descendant", async () => {
+    const { runProcess } = await import("../src/proc.ts");
+    const t0 = Date.now();
+    const r = await runProcess("bash", ["-c", "echo done; (sleep 30; echo late) & echo $! > \"$PIDF\""], { timeoutMs: 20_000, env: { ...process.env, PIDF: join(tmpdir(), `offload-pid-${process.pid}`) } });
+    expect(Date.now() - t0).toBeLessThan(5000);
+    expect(r.stdout).toContain("done");
+    expect(r.timedOut).toBe(false);
+    const { readFileSync } = await import("node:fs");
+    const pid = Number(readFileSync(join(tmpdir(), `offload-pid-${process.pid}`), "utf8"));
+    await new Promise((res) => setTimeout(res, 300));
+    // gone, or a zombie waiting for init to reap it
+    const { spawnSync } = await import("node:child_process");
+    const stat = spawnSync("ps", ["-o", "stat=", "-p", String(pid)], { encoding: "utf8" }).stdout.trim();
+    expect(stat === "" || stat.startsWith("Z")).toBe(true);
+  });
+
+  test("keeps multi-byte characters split across chunks intact", async () => {
+    const { runProcess } = await import("../src/proc.ts");
+    const r = await runProcess("node", ["-e", "const b=Buffer.from('ε'.repeat(100000));for(let i=0;i<b.length;i+=7)process.stdout.write(b.subarray(i,i+7))"], { timeoutMs: 20_000 });
+    expect(r.stdout).toBe("ε".repeat(100000));
+  });
+
+  test("an abort signal stops the process", async () => {
+    const { runProcess } = await import("../src/proc.ts");
+    const ac = new AbortController();
+    setTimeout(() => ac.abort(), 200);
+    const t0 = Date.now();
+    const r = await runProcess("sleep", ["30"], { timeoutMs: 20_000, signal: ac.signal });
+    expect(Date.now() - t0).toBeLessThan(4000);
+    expect(r.killedBy).toBe("cancelled");
+  });
+});

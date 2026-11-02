@@ -74,7 +74,7 @@ var init_assets2 = __esm(() => {
 });
 
 // src/outline.ts
-import { readFileSync as readFileSync7 } from "node:fs";
+import { readFileSync as readFileSync8 } from "node:fs";
 import { basename as basename2 } from "node:path";
 function posixToJs(ere) {
   let out = "";
@@ -140,7 +140,7 @@ function outlineRegex(path, firstLine = "") {
 function outline(path, max = 50) {
   let text;
   try {
-    text = readFileSync7(path, "utf8");
+    text = readFileSync8(path, "utf8");
   } catch {
     return "";
   }
@@ -225,8 +225,8 @@ var init_outline = __esm(() => {
 import { Type } from "typebox";
 
 // src/hooks/logic.ts
-import { existsSync as existsSync6, readFileSync as readFileSync8, statSync as statSync6 } from "node:fs";
-import { basename as basename3, isAbsolute as isAbsolute2, resolve as resolve2 } from "node:path";
+import { existsSync as existsSync7, readFileSync as readFileSync9, statSync as statSync6 } from "node:fs";
+import { basename as basename3, isAbsolute as isAbsolute3, resolve as resolve2 } from "node:path";
 
 // src/config.ts
 import { chmodSync, existsSync as existsSync2, mkdirSync, readFileSync, writeFileSync } from "node:fs";
@@ -409,7 +409,7 @@ function cfgList(path) {
 }
 
 // src/digest.ts
-import { readFileSync as readFileSync6, writeFileSync as writeFileSync5 } from "node:fs";
+import { readFileSync as readFileSync7, writeFileSync as writeFileSync5 } from "node:fs";
 
 // src/engine.ts
 init_assets2();
@@ -1025,12 +1025,85 @@ class HttpBackend {
 
 // src/backends/opencode.ts
 init_assets2();
-import { spawn as spawn2 } from "node:child_process";
-import { existsSync as existsSync5, readFileSync as readFileSync5, statSync as statSync5, writeFileSync as writeFileSync3 } from "node:fs";
-import { join as join5 } from "node:path";
+import { existsSync as existsSync6, readFileSync as readFileSync6, statSync as statSync5, writeFileSync as writeFileSync3 } from "node:fs";
+import { join as join6 } from "node:path";
 
 // src/proc.ts
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
+import { existsSync as existsSync4, readFileSync as readFileSync4 } from "node:fs";
+import { delimiter, dirname, extname, isAbsolute as isAbsolute2, join as join4, resolve as resolvePath } from "node:path";
+var isWin2 = process.platform === "win32";
+var live = new Set;
+var exitHooked = false;
+function killTree(child, sig = "SIGTERM") {
+  if (!child.pid)
+    return;
+  if (isWin2 && child.exitCode !== null)
+    return;
+  try {
+    if (isWin2)
+      spawnSync("taskkill", ["/T", "/F", "/PID", String(child.pid)], { stdio: "ignore", windowsHide: true });
+    else
+      process.kill(-child.pid, sig);
+  } catch {
+    if (child.exitCode !== null || child.signalCode !== null)
+      return;
+    try {
+      child.kill(sig);
+    } catch {}
+  }
+}
+function track(child) {
+  live.add(child);
+  child.once("exit", () => live.delete(child));
+  if (exitHooked)
+    return;
+  exitHooked = true;
+  process.once("exit", () => {
+    for (const c of live)
+      killTree(c, "SIGKILL");
+  });
+}
+function cmdQuote(arg) {
+  let a = arg.replace(/(\\*)"/g, "$1$1\\\"").replace(/(\\*)$/, "$1$1");
+  a = `"${a}"`;
+  a = a.replace(/\r?\n/g, " ");
+  return a.replace(/[()[\]%!^"`<>&|;, *?]/g, "^$&");
+}
+function shimTarget(cmdFile) {
+  try {
+    const text = readFileSync4(cmdFile, "utf8");
+    const m = text.match(/"%(?:~?dp0|dp0)%\\?([^"%]+\.(?:c|m)?js)"/i);
+    if (!m)
+      return;
+    const js = resolvePath(dirname(cmdFile), m[1].replace(/\\/g, "/"));
+    return existsSync4(js) ? js : undefined;
+  } catch {
+    return;
+  }
+}
+function plan(cmd, args) {
+  if (!isWin2)
+    return { file: cmd, args, opts: {} };
+  const found = whichSync(cmd) ?? cmd;
+  const ext = extname(found).toLowerCase();
+  if (ext === ".exe" || ext === ".com" || ext === "")
+    return { file: found, args, opts: { windowsHide: true } };
+  if (ext === ".js" || ext === ".mjs" || ext === ".cjs")
+    return { file: process.execPath, args: [found, ...args], opts: { windowsHide: true } };
+  if (ext === ".cmd" || ext === ".bat") {
+    const js = shimTarget(found);
+    if (js)
+      return { file: process.execPath, args: [js, ...args], opts: { windowsHide: true } };
+    const line = [cmdQuote(found), ...args.map(cmdQuote)].join(" ");
+    return { file: process.env.ComSpec || "cmd.exe", args: ["/d", "/s", "/c", `"${line}"`], opts: { windowsVerbatimArguments: true, windowsHide: true } };
+  }
+  return { file: found, args, opts: { windowsHide: true } };
+}
+function spawnSafe(cmd, args, opts) {
+  const p = plan(cmd, args);
+  return spawn(p.file, p.args, { ...opts, ...p.opts, shell: false });
+}
 function runProcess(cmd, args, opts) {
   return new Promise((resolve) => {
     let stdout = "";
@@ -1039,30 +1112,13 @@ function runProcess(cmd, args, opts) {
     let killedBy;
     let child;
     try {
-      child = spawn(cmd, args, {
-        cwd: opts.cwd,
-        env: opts.env,
-        stdio: ["pipe", "pipe", "pipe"],
-        detached: process.platform !== "win32",
-        shell: process.platform === "win32" && !cmd.includes("/") && !cmd.includes("\\")
-      });
+      child = spawnSafe(cmd, args, { cwd: opts.cwd, env: opts.env, stdio: ["pipe", "pipe", "pipe"], detached: !isWin2 });
     } catch (e) {
       resolve({ code: 127, stdout: "", stderr: String(e), timedOut: false });
       return;
     }
+    track(child);
     let done = false;
-    const signal = (sig) => {
-      try {
-        if (process.platform !== "win32" && child.pid)
-          process.kill(-child.pid, sig);
-        else
-          child.kill(sig);
-      } catch {
-        try {
-          child.kill(sig);
-        } catch {}
-      }
-    };
     const finish = (code) => {
       if (done)
         return;
@@ -1070,17 +1126,29 @@ function runProcess(cmd, args, opts) {
       clearTimeout(timer);
       if (poll)
         clearInterval(poll);
+      killTree(child, "SIGKILL");
+      child.stdout?.destroy();
+      child.stderr?.destroy();
       resolve({ code, stdout, stderr, timedOut, killedBy });
     };
     const kill = () => {
-      signal("SIGTERM");
-      setTimeout(() => signal("SIGKILL"), 1000).unref();
+      killTree(child, "SIGTERM");
+      setTimeout(() => killTree(child, "SIGKILL"), 1000).unref();
       setTimeout(() => finish(null), 2500).unref();
     };
     const timer = setTimeout(() => {
       timedOut = true;
       kill();
     }, opts.timeoutMs);
+    if (opts.signal) {
+      if (opts.signal.aborted)
+        kill();
+      else
+        opts.signal.addEventListener("abort", () => {
+          killedBy = "cancelled";
+          kill();
+        }, { once: true });
+    }
     const poll = opts.watchdog ? setInterval(() => {
       const why = opts.watchdog(stdout, stderr);
       if (why) {
@@ -1088,48 +1156,59 @@ function runProcess(cmd, args, opts) {
         kill();
       }
     }, 300) : undefined;
-    child.stdout.on("data", (d) => stdout += d.toString());
-    child.stderr.on("data", (d) => stderr += d.toString());
+    child.stdout.setEncoding("utf8");
+    child.stderr.setEncoding("utf8");
+    child.stdout.on("data", (d) => stdout += d);
+    child.stderr.on("data", (d) => stderr += d);
     child.on("error", (e) => {
       stderr += String(e);
+      finish(127);
     });
     child.on("close", (code) => finish(code));
+    child.on("exit", (code) => setTimeout(() => finish(code), 500).unref());
     child.stdin.on("error", () => {});
     child.stdin.end(opts.input ?? "");
   });
 }
-async function which(cmd) {
-  const { existsSync } = await import("node:fs");
-  const { delimiter, join } = await import("node:path");
-  if (cmd.includes("/") || cmd.includes("\\"))
-    return existsSync(cmd) ? cmd : undefined;
-  const exts = process.platform === "win32" ? (process.env.PATHEXT || ".EXE;.CMD;.BAT").split(";") : [""];
-  for (const dir of (process.env.PATH || "").split(delimiter)) {
+function spawnDetached(cmd, args, cwd) {
+  try {
+    const child = spawnSafe(cmd, args, { cwd, detached: true, stdio: "ignore" });
+    child.on("error", () => {});
+    child.unref();
+  } catch {}
+}
+function whichSync(cmd) {
+  if (isAbsolute2(cmd) || cmd.includes("/") || cmd.includes("\\"))
+    return existsSync4(cmd) ? cmd : undefined;
+  const exts = isWin2 ? (process.env.PATHEXT || ".COM;.EXE;.BAT;.CMD").split(";").filter(Boolean) : [""];
+  for (const dir of (process.env.PATH || process.env.Path || "").split(delimiter)) {
+    if (!dir)
+      continue;
     for (const ext of exts) {
-      const p = join(dir, cmd + ext.toLowerCase());
-      if (existsSync(p))
-        return p;
-      const p2 = join(dir, cmd + ext);
-      if (existsSync(p2))
-        return p2;
+      for (const p of [join4(dir, cmd + ext.toLowerCase()), join4(dir, cmd + ext)])
+        if (existsSync4(p))
+          return p;
     }
   }
   return;
 }
+async function which(cmd) {
+  return whichSync(cmd);
+}
 
 // src/state.ts
-import { appendFileSync, existsSync as existsSync4, mkdirSync as mkdirSync2, readFileSync as readFileSync4, readdirSync as readdirSync2, rmSync, statSync as statSync4, writeFileSync as writeFileSync2 } from "node:fs";
-import { join as join4 } from "node:path";
+import { appendFileSync, existsSync as existsSync5, mkdirSync as mkdirSync2, readFileSync as readFileSync5, readdirSync as readdirSync2, rmSync, statSync as statSync4, writeFileSync as writeFileSync2 } from "node:fs";
+import { join as join5 } from "node:path";
 function stateDir() {
-  const d = cfgStr("state_dir") || join4(stateHome(), "harness-offload");
+  const d = cfgStr("state_dir") || join5(stateHome(), "harness-offload");
   for (const sub of ["logs", "cooldowns", "work"])
-    mkdirSync2(join4(d, sub), { recursive: true });
+    mkdirSync2(join5(d, sub), { recursive: true });
   return d;
 }
-var workDir = () => join4(stateDir(), "work");
+var workDir = () => join5(stateDir(), "work");
 function appendStats(row) {
   try {
-    appendFileSync(join4(stateDir(), "stats.jsonl"), JSON.stringify({ ts: Math.floor(Date.now() / 1000), ...row }) + `
+    appendFileSync(join5(stateDir(), "stats.jsonl"), JSON.stringify({ ts: Math.floor(Date.now() / 1000), ...row }) + `
 `);
   } catch {}
 }
@@ -1140,26 +1219,26 @@ function newLogPath(label) {
   const d = new Date;
   const p = (n) => String(n).padStart(2, "0");
   const ts = `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}`;
-  return join4(stateDir(), "logs", `${ts}-${slug(label)}.log`);
+  return join5(stateDir(), "logs", `${ts}-${slug(label)}.log`);
 }
 function pruneLogs() {
   const days = cfgInt("log_retention_days", 7);
-  const dir = join4(stateDir(), "logs");
+  const dir = join5(stateDir(), "logs");
   const cutoff = Date.now() - days * 86400000;
   try {
     for (const f of readdirSync2(dir)) {
-      const p = join4(dir, f);
+      const p = join5(dir, f);
       if (f.endsWith(".log") && statSync4(p).mtimeMs < cutoff)
         rmSync(p, { force: true });
     }
   } catch {}
 }
-var cooldownFile = (model) => join4(stateDir(), "cooldowns", model.replace(/[^A-Za-z0-9._-]/g, "_"));
+var cooldownFile = (model) => join5(stateDir(), "cooldowns", model.replace(/[^A-Za-z0-9._-]/g, "_"));
 function cooling(model) {
   const f = cooldownFile(model);
-  if (!existsSync4(f))
+  if (!existsSync5(f))
     return;
-  const [until, ...reason] = readFileSync4(f, "utf8").trim().split(" ");
+  const [until, ...reason] = readFileSync5(f, "utf8").trim().split(" ");
   const u = Number(until);
   const now = Math.floor(Date.now() / 1000);
   if (!Number.isFinite(u) || u <= now) {
@@ -1182,10 +1261,10 @@ async function opencodeMajor() {
   if (majorCache)
     return majorCache;
   const b = bin();
-  const cache = join5(stateDir(), "opencode-version");
+  const cache = join6(stateDir(), "opencode-version");
   try {
-    if (existsSync5(cache) && Date.now() - statSync5(cache).mtimeMs < 3600000) {
-      const [maj, cbin] = readFileSync5(cache, "utf8").trim().split(" ");
+    if (existsSync6(cache) && Date.now() - statSync5(cache).mtimeMs < 3600000) {
+      const [maj, cbin] = readFileSync6(cache, "utf8").trim().split(" ");
       if (cbin === b && /^\d+$/.test(maj))
         return majorCache = Number(maj);
     }
@@ -1304,11 +1383,8 @@ function retries(stdout, stderr) {
 function forgetSession(sid, major) {
   if (!sid || cfgBool("opencode.keep_sessions", false))
     return;
-  try {
-    const args = major >= 2 ? ["session", "delete", "--standalone", sid] : ["session", "delete", sid];
-    const child = spawn2(bin(), args, { cwd: stateDir(), detached: true, stdio: "ignore" });
-    child.unref();
-  } catch {}
+  const args = major >= 2 ? ["session", "delete", "--standalone", sid] : ["session", "delete", sid];
+  spawnDetached(bin(), args, stateDir());
 }
 
 class OpencodeBackend {
@@ -1379,7 +1455,7 @@ class OpencodeBackend {
       if (/nknown argument|nknown option|nknown flag|nrecognized/.test(msg)) {
         resetOpencodeMajor();
         try {
-          writeFileSync3(join5(stateDir(), "opencode-version"), "");
+          writeFileSync3(join6(stateDir(), "opencode-version"), "");
         } catch {}
         msg += " (opencode version changed? cleared the cache — run again)";
       }
@@ -1406,7 +1482,7 @@ class OpencodeBackend {
 
 // src/backends/agents.ts
 import { writeFileSync as writeFileSync4 } from "node:fs";
-import { join as join6 } from "node:path";
+import { join as join7 } from "node:path";
 var jsonLines = (s) => s.split(`
 `).flatMap((l) => {
   const t = l.trim();
@@ -1513,7 +1589,7 @@ var CLI_AGENTS = {
       return { args: a, input: req.prompt };
     },
     env: (req, dir) => {
-      const file = join6(dir, `gemini-system-${req.task}.md`);
+      const file = join7(dir, `gemini-system-${req.task}.md`);
       writeFileSync4(file, req.system);
       return { GEMINI_SYSTEM_MD: file, GEMINI_CLI_TRUST_WORKSPACE: "true" };
     },
@@ -1871,7 +1947,7 @@ function logExcerpt(text) {
 `;
 }
 async function digest(log, label, code, focus, source, modelOverride, opts = {}) {
-  const text = readFileSync6(log, "utf8");
+  const text = readFileSync7(log, "utf8");
   const lines = countLines(text);
   const bytes = Buffer.byteLength(text);
   const kb = Math.ceil(bytes / 1024);
@@ -2029,8 +2105,8 @@ ${out}`;
 function readGuard(host, cwd, file, offset, limit) {
   if (!enabled() || cfgStr("hooks.read_guard", "block") === "off" || !file)
     return;
-  const p = isAbsolute2(file) ? file : resolve2(cwd, file);
-  if (!existsSync6(p) || !statSync6(p).isFile())
+  const p = isAbsolute3(file) ? file : resolve2(cwd, file);
+  if (!existsSync7(p) || !statSync6(p).isFile())
     return;
   if (ignored(file) || notForOffload(p))
     return;
@@ -2088,8 +2164,8 @@ function bashGuard(host, cwd, command) {
     if (a.startsWith("-"))
       continue;
     const clean = a.replace(/["']/g, "");
-    const abs = isAbsolute2(clean) ? clean : resolve2(cwd, clean);
-    if (prog === "sed" && !range && !existsSync6(abs))
+    const abs = isAbsolute3(clean) ? clean : resolve2(cwd, clean);
+    if (prog === "sed" && !range && !existsSync7(abs))
       range = clean;
     else
       files.push(clean);
@@ -2098,8 +2174,8 @@ function bashGuard(host, cwd, command) {
   const maxLines = cfgInt("hooks.read_threshold_lines", 600);
   const maxTokens = cfgInt("hooks.read_threshold_tokens", 6000);
   for (const f of files) {
-    const p = isAbsolute2(f) ? f : resolve2(cwd, f);
-    if (!existsSync6(p) || !statSync6(p).isFile() || ignored(f) || notForOffload(p))
+    const p = isAbsolute3(f) ? f : resolve2(cwd, f);
+    if (!existsSync7(p) || !statSync6(p).isFile() || ignored(f) || notForOffload(p))
       continue;
     const lines = fileLines(p);
     const tokens = estTokens(fileBytes(p));
@@ -2146,8 +2222,8 @@ async function postBash(opts) {
   }
   let text = opts.output;
   let compact = false;
-  if (opts.persistedPath && existsSync6(opts.persistedPath)) {
-    text = readFileSync8(opts.persistedPath, "utf8");
+  if (opts.persistedPath && existsSync7(opts.persistedPath)) {
+    text = readFileSync9(opts.persistedPath, "utf8");
     compact = true;
   }
   const lines = text.split(`
@@ -2179,23 +2255,18 @@ Keep for yourself: debugging reasoning, design decisions, edits (read slices for
 }
 
 // src/integrations/spawn-cli.ts
-import { spawn as spawn3 } from "node:child_process";
-import { existsSync as existsSync7 } from "node:fs";
-import { dirname, join as join7 } from "node:path";
+import { existsSync as existsSync8 } from "node:fs";
+import { dirname as dirname2, join as join8 } from "node:path";
 import { fileURLToPath } from "node:url";
-function runCli(args, cwd, input = "") {
-  const here = dirname(fileURLToPath(import.meta.url));
-  const js = [join7(here, "cli.js"), join7(here, "..", "dist", "cli.js")].find((p) => existsSync7(p));
+async function runCli(args, cwd, input = "", signal) {
+  const here = dirname2(fileURLToPath(import.meta.url));
+  const js = [join8(here, "cli.js"), join8(here, "..", "dist", "cli.js")].find((p) => existsSync8(p));
   const [cmd, pre] = js ? ["node", [js]] : ["offload", []];
-  return new Promise((resolve) => {
-    const child = spawn3(cmd, [...pre, ...args], { cwd, env: { ...process.env, NO_COLOR: "1" }, stdio: ["pipe", "pipe", "pipe"] });
-    let out = "";
-    child.stdout.on("data", (d) => out += d);
-    child.stderr.on("data", (d) => out += d);
-    child.on("error", (e) => resolve({ code: 15, out: String(e) }));
-    child.on("close", (code) => resolve({ code: code ?? 14, out }));
-    child.stdin.end(input);
-  });
+  const limit = (cfgInt("opencode.timeout_seconds", 180) * 2 + 60) * 1000;
+  const r = await runProcess(cmd, [...pre, ...args], { input, cwd, env: { ...process.env, NO_COLOR: "1" }, timeoutMs: args[0] === "run" ? cfgInt("mcp.run_timeout_seconds", 1800) * 1000 : limit, signal });
+  if (r.code === 127 && !r.stdout)
+    return { code: 15, out: r.stderr };
+  return { code: r.code ?? (r.timedOut ? 12 : 14), out: r.stdout + r.stderr };
 }
 var TOOLS = {
   offload_read: {
@@ -2281,8 +2352,8 @@ ${sessionGuide("pi")}`.trim();
       label: name.replace("offload_", "Offload "),
       description: t.description,
       parameters: schema(t.schema),
-      async execute(_id, params, _signal, _onUpdate, ctx) {
-        const r = await runCli(t.args(params), ctx?.cwd ?? process.cwd());
+      async execute(_id, params, signal, _onUpdate, ctx) {
+        const r = await runCli(t.args(params), ctx?.cwd ?? process.cwd(), "", signal);
         if (r.code !== 0 && name !== "offload_run")
           throw new Error(r.out.trim() || `offload exited ${r.code}`);
         return { content: [{ type: "text", text: r.out.trim() + (name === "offload_run" ? `

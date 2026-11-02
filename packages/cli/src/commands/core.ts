@@ -356,6 +356,7 @@ export async function cmdAsk(argv: string[]): Promise<void> {
 }
 
 export function cmdOutline(argv: string[]): void {
+  if (argv[0] === "--") argv = argv.slice(1);
   const file = argv[0];
   if (!file || !existsSync(file)) die("outline: give a file");
   process.stdout.write(outline(file, Number(argv[1]) || 80));

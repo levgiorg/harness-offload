@@ -1,22 +1,18 @@
-import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { cfgInt } from "../config.ts";
+import { runProcess } from "../proc.ts";
 
 /** Runs this package's CLI (dist/cli.js next to the integration bundle). */
-export function runCli(args: string[], cwd: string, input = ""): Promise<{ code: number; out: string }> {
+export async function runCli(args: string[], cwd: string, input = "", signal?: AbortSignal): Promise<{ code: number; out: string }> {
   const here = dirname(fileURLToPath(import.meta.url));
   const js = [join(here, "cli.js"), join(here, "..", "dist", "cli.js")].find((p) => existsSync(p));
   const [cmd, pre] = js ? ["node", [js]] : ["offload", []];
-  return new Promise((resolve) => {
-    const child = spawn(cmd, [...pre, ...args], { cwd, env: { ...process.env, NO_COLOR: "1" }, stdio: ["pipe", "pipe", "pipe"] });
-    let out = "";
-    child.stdout.on("data", (d) => (out += d));
-    child.stderr.on("data", (d) => (out += d));
-    child.on("error", (e) => resolve({ code: 15, out: String(e) }));
-    child.on("close", (code) => resolve({ code: code ?? 14, out }));
-    child.stdin.end(input);
-  });
+  const limit = (cfgInt("opencode.timeout_seconds", 180) * 2 + 60) * 1000;
+  const r = await runProcess(cmd, [...pre, ...args], { input, cwd, env: { ...process.env, NO_COLOR: "1" }, timeoutMs: args[0] === "run" ? cfgInt("mcp.run_timeout_seconds", 1800) * 1000 : limit, signal });
+  if (r.code === 127 && !r.stdout) return { code: 15, out: r.stderr };
+  return { code: r.code ?? (r.timedOut ? 12 : 14), out: r.stdout + r.stderr };
 }
 
 export const TOOLS = {

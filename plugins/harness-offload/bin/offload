@@ -727,7 +727,7 @@ main() {
     summarize|digest) cmd_summarize "$@" ;;
     write|code-write) cmd_write "$@" ;;
     ask)             cmd_ask "$@" ;;
-    outline)         [ -f "${1:-}" ] || die "outline: give a file"; co_outline "$1" "${2:-80}" ;;
+    outline)         [ "${1:-}" = "--" ] && shift; [ -f "${1:-}" ] || die "outline: give a file"; co_outline "$1" "${2:-80}" ;;
     doctor)          cmd_doctor "$@" ;;
     stats)           cmd_stats "$@" ;;
     statusline)      cmd_statusline ;;
