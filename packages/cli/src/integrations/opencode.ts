@@ -1,6 +1,8 @@
 // OpenCode plugin (works on v1 and v2 from one default export):
 // v2 reads { id, setup }, v1 calls server(). Guards big reads/dumps, digests
 // long shell output and adds a short guide to the system prompt.
+// the harness's own subscription for @host models
+process.env.OFFLOAD_HOST ||= "opencode";
 import { available, bashGuard, postBash, readGuard, sessionGuide } from "../hooks/logic.ts";
 
 const textOf = (v: any): string => (typeof v === "string" ? v : Array.isArray(v) ? v.map((p) => (typeof p === "string" ? p : (p?.text ?? ""))).join("") : v == null ? "" : JSON.stringify(v));

@@ -6,6 +6,8 @@
 
 command -v jq >/dev/null 2>&1 || exit 0
 
+# @host models resolve to the harness that runs this hook
+export OFFLOAD_HOST="${OFFLOAD_HOST:-claude}"
 HK_INPUT=$(cat)
 [ -z "$HK_INPUT" ] && exit 0
 # Debug aid: OFFLOAD_DEBUG_DIR=/some/dir keeps every hook input there.

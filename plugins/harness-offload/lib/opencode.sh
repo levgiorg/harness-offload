@@ -97,7 +97,8 @@ co_any_model_ready() {
   for task in read summarize; do
     while IFS= read -r m; do
       [ -z "$m" ] && continue
-      co_model_cooling "$m" >/dev/null || return 0
+      co_route "$m" "$task" 2>/dev/null || continue
+      co_model_cooling "$CO_RT_REF" >/dev/null || return 0
     done <<EOF
 $(co_model_chain "$task")
 EOF
@@ -232,16 +233,16 @@ co_oc_forget_session() {
 
 # ------------------------------------------------------------ other backends
 
-# The TypeScript CLI, used as the transport for every backend that is not
-# OpenCode (HTTP APIs, pi, codex, gemini, claude, cursor). Resolution order:
-# $OFFLOAD_TS_CLI, `harness-offload` on PATH, a built repo checkout, npx.
+# The TypeScript CLI: transport for what the bash engine cannot do natively
+# (explore over HTTP APIs needs a tool loop). Resolution order:
+# $OFFLOAD_TS_CLI, `harness-offload` on PATH, the bundled dist/cli.js, npx.
 co_ts_cli() {
   if [ -n "${OFFLOAD_TS_CLI:-}" ]; then printf '%s' "$OFFLOAD_TS_CLI"; return 0; fi
   if command -v harness-offload >/dev/null 2>&1; then printf 'harness-offload'; return 0; fi
   local js
-  # repo checkout (plugins/harness-offload → packages/cli) or the npm package's
-  # bundled marketplace (assets/marketplace/plugins/harness-offload → dist/)
-  for js in "$CO_ROOT/../../packages/cli/dist/cli.js" "$CO_ROOT/../../../../dist/cli.js"; do
+  # the plugin's own bundle, a repo checkout (plugins/harness-offload →
+  # packages/cli), or the npm package's bundled marketplace
+  for js in "$CO_ROOT/dist/cli.js" "$CO_ROOT/../../packages/cli/dist/cli.js" "$CO_ROOT/../../../../dist/cli.js"; do
     if [ -f "$js" ] && command -v node >/dev/null 2>&1; then printf 'node %s' "$js"; return 0; fi
   done
   if command -v npx >/dev/null 2>&1; then printf 'npx --yes harness-offload@%s' "$CO_VERSION"; return 0; fi
@@ -291,13 +292,32 @@ EOF2
   return $CO_E_WORKER
 }
 
-# One attempt against one model; writes the answer to answer_file.
-# Args: agent model(or @default) prompt_file workdir variant answer_file
+# One attempt against one model reference; writes the answer to answer_file.
+# Routes by reference (see co_route in agents.sh): OpenCode, a CLI agent on
+# the user's own plan (claude/codex/gemini/cursor/pi), an HTTP API via curl,
+# or the TypeScript engine. Args: agent ref prompt_file workdir variant answer_file
 co_oc_attempt() {
+  local agent="$1" ref="$2" prompt_file="$3" workdir="$4" variant="$5" answer_file="$6" start rc
+  CO_OC_TOKENS_IN=0 CO_OC_TOKENS_OUT=0 CO_OC_CTX_IN=0 CO_OC_COST=0 CO_OC_ERROR=""
+  co_route "$ref" "${agent#offload-}" || return $?
+  start=$(co_now)
+  case "$CO_RT_KIND" in
+    opencode) co_opencode_attempt "$agent" "${CO_RT_MODEL:-@default}" "$prompt_file" "$workdir" "$variant" "$answer_file" ;;
+    agent)    co_agent_attempt "$CO_RT_BACKEND" "${agent#offload-}" "$CO_RT_MODEL" "$prompt_file" "$workdir" "$variant" "$answer_file" ;;
+    http)     co_http_attempt "$CO_RT_BACKEND" "${agent#offload-}" "$CO_RT_MODEL" "$prompt_file" "$answer_file" ;;
+    *)        co_ts_attempt "$agent" "$CO_RT_REF" "$prompt_file" "$workdir" "$variant" "$answer_file" ;;
+  esac
+  rc=$?
+  CO_OC_SECONDS=$(co_elapsed "$start")
+  return $rc
+}
+
+# One `opencode run`. Args: agent model(or @default) prompt_file workdir variant answer_file
+co_opencode_attempt() {
   local agent="$1" model="$2" prompt_file="$3" workdir="$4" variant="$5" answer_file="$6"
-  if co_is_ts_ref "$model"; then
-    co_ts_attempt "$@"
-    return $?
+  if ! co_have_opencode; then
+    CO_OC_ERROR="opencode CLI not found ($(co_opencode_bin)). Install it from https://opencode.ai, set opencode.bin, or pick another backend (offload setup)."
+    return $CO_E_NOOC
   fi
   local bin major timeout max_err out errf pid start rc n sid msg text cfg
   bin=$(co_opencode_bin)
@@ -411,15 +431,19 @@ co_oc_invoke() {
   local task="$1" prompt_file="$2" workdir="$3" answer_file="$4" override="${5:-}"
   local agent="offload-$task" variant model rc=$CO_E_WORKER cool tried="" errors=""
   CO_OC_MODEL="" CO_OC_ERROR=""
-
-  if ! co_have_opencode; then
-    CO_OC_ERROR="opencode CLI not found ($(co_opencode_bin)). Install it from https://opencode.ai, or set opencode.bin in the offload config."
-    return $CO_E_NOOC
-  fi
   variant=$(co_cfg ".variants.$task")
 
   while IFS= read -r model; do
     [ -z "$model" ] && continue
+    # @host → the calling harness's own model, resolved before cooldowns so
+    # they are kept per real model
+    if ! co_route "$model" "$task"; then
+      errors="${errors}  - $model: $CO_OC_ERROR
+"
+      rc=$CO_E_USAGE
+      continue
+    fi
+    model="$CO_RT_REF"
     if [ -z "$override" ] && cool=$(co_model_cooling "$model"); then
       errors="${errors}  - $model: skipped, cooling down ($cool)
 "
@@ -444,6 +468,11 @@ co_oc_invoke() {
 $(co_model_chain "$task" "$override")
 EOF
 
+  if [ -z "$tried" ] && [ "$rc" = "$CO_E_USAGE" ]; then
+    CO_OC_ERROR="no usable model:
+$errors"
+    return "$rc"
+  fi
   if [ -z "$tried" ]; then
     CO_OC_ERROR="every configured model is cooling down after errors:
 ${errors}(\`offload doctor --reset\` clears cooldowns)"
@@ -453,3 +482,6 @@ ${errors}(\`offload doctor --reset\` clears cooldowns)"
 $errors"
   return "$rc"
 }
+
+# shellcheck source=agents.sh
+. "$CO_ROOT/lib/agents.sh"

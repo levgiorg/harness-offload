@@ -1,0 +1,108 @@
+{
+  "_comment": "HTTP endpoint presets and the default cheap model per harness for the @host model ref. Shared by the bash and TypeScript engines; override with `endpoints` / `host_models` in your config.",
+  "endpoints": {
+    "openai": {
+      "type": "openai",
+      "base_url": "https://api.openai.com/v1",
+      "api_key_env": "OPENAI_API_KEY",
+      "label": "OpenAI API"
+    },
+    "openrouter": {
+      "type": "openai",
+      "base_url": "https://openrouter.ai/api/v1",
+      "api_key_env": "OPENROUTER_API_KEY",
+      "label": "OpenRouter"
+    },
+    "anthropic": {
+      "type": "anthropic",
+      "base_url": "https://api.anthropic.com",
+      "api_key_env": "ANTHROPIC_API_KEY",
+      "label": "Anthropic API"
+    },
+    "google": {
+      "type": "openai",
+      "base_url": "https://generativelanguage.googleapis.com/v1beta/openai",
+      "api_key_env": "GEMINI_API_KEY",
+      "label": "Google AI Studio (Gemini API)"
+    },
+    "groq": {
+      "type": "openai",
+      "base_url": "https://api.groq.com/openai/v1",
+      "api_key_env": "GROQ_API_KEY",
+      "label": "Groq"
+    },
+    "deepseek": {
+      "type": "openai",
+      "base_url": "https://api.deepseek.com/v1",
+      "api_key_env": "DEEPSEEK_API_KEY",
+      "label": "DeepSeek"
+    },
+    "mistral": {
+      "type": "openai",
+      "base_url": "https://api.mistral.ai/v1",
+      "api_key_env": "MISTRAL_API_KEY",
+      "label": "Mistral"
+    },
+    "together": {
+      "type": "openai",
+      "base_url": "https://api.together.xyz/v1",
+      "api_key_env": "TOGETHER_API_KEY",
+      "label": "Together AI"
+    },
+    "fireworks": {
+      "type": "openai",
+      "base_url": "https://api.fireworks.ai/inference/v1",
+      "api_key_env": "FIREWORKS_API_KEY",
+      "label": "Fireworks"
+    },
+    "cerebras": {
+      "type": "openai",
+      "base_url": "https://api.cerebras.ai/v1",
+      "api_key_env": "CEREBRAS_API_KEY",
+      "label": "Cerebras"
+    },
+    "xai": {
+      "type": "openai",
+      "base_url": "https://api.x.ai/v1",
+      "api_key_env": "XAI_API_KEY",
+      "label": "xAI"
+    },
+    "zai": {
+      "type": "openai",
+      "base_url": "https://api.z.ai/api/paas/v4",
+      "api_key_env": "ZAI_API_KEY",
+      "label": "Z.ai (GLM)"
+    },
+    "moonshot": {
+      "type": "openai",
+      "base_url": "https://api.moonshot.ai/v1",
+      "api_key_env": "MOONSHOT_API_KEY",
+      "label": "Moonshot (Kimi)"
+    },
+    "ollama": {
+      "type": "openai",
+      "base_url": "http://127.0.0.1:11434/v1",
+      "label": "Ollama (local)"
+    },
+    "lmstudio": {
+      "type": "openai",
+      "base_url": "http://127.0.0.1:1234/v1",
+      "label": "LM Studio (local)"
+    },
+    "vllm": {
+      "type": "openai",
+      "base_url": "http://127.0.0.1:8000/v1",
+      "label": "vLLM (local)"
+    }
+  },
+  "host_models": {
+    "claude": "claude:haiku",
+    "codex": "codex:gpt-6-luna",
+    "gemini": "gemini:flash-lite",
+    "cursor": "cursor:",
+    "pi": "pi:",
+    "opencode": "@default",
+    "kilo": "@default",
+    "devin": "claude:haiku"
+  }
+}

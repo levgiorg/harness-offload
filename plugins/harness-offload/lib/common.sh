@@ -258,14 +258,14 @@ co_available() {
   co_any_model_ready
 }
 
-# True when the backend of the first read/summarize model can run here:
-# opencode on PATH for OpenCode refs, the TypeScript CLI for BACKEND:MODEL refs.
+# True when the backend of the first read/summarize model can run here
+# (opencode, the agent CLI, curl, or the TypeScript CLI — see co_route).
 co_backend_present() {
-  local m
-  for m in "$(co_model_chain read | head -n 1)" "$(co_model_chain summarize | head -n 1)"; do
-    if co_is_ts_ref "$m"; then co_ts_cli >/dev/null && return 0
-    else co_have_opencode && return 0
-    fi
+  local m task
+  for task in read summarize; do
+    m=$(co_model_chain "$task" | head -n 1)
+    co_route "$m" "$task" 2>/dev/null || continue
+    co_route_ready && return 0
   done
   return 1
 }

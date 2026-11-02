@@ -29,7 +29,17 @@ export async function invoke(task: Task, prompt: string, cwd: string, override?:
   const errors: string[] = [];
   let tried = 0;
   let lastCode: number = E.WORKER;
-  for (const ref of modelChain(task, override)) {
+  for (const raw of modelChain(task, override)) {
+    let ref = raw;
+    let parsed;
+    try {
+      parsed = parseRef(raw);
+      if (raw === "@host" || raw === "@self") ref = parsed.ref;
+    } catch (e) {
+      errors.push(`  - ${raw}: ${(e as Error).message}`);
+      lastCode = E.USAGE;
+      continue;
+    }
     if (!override) {
       const c = cooling(ref);
       if (c) {
@@ -37,7 +47,7 @@ export async function invoke(task: Task, prompt: string, cwd: string, override?:
         continue;
       }
     }
-    const { backend, model } = parseRef(ref);
+    const { backend, model } = parsed;
     const b = backendFor(backend);
     if (!b) {
       errors.push(`  - ${ref}: unknown backend "${backend}"`);

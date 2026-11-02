@@ -1,9 +1,11 @@
 // Shared assets (worker prompts, default config, outline regexes) come from
 // the Claude Code plugin directory via scripts/gen-assets.mjs.
-import { DEFAULTS_JSON, OUTLINE_JSON, PLUGIN_VERSION, PROMPT_TEXT } from "./generated/assets.ts";
+import { CONNECTORS_JSON, DEFAULTS_JSON, OUTLINE_JSON, PLUGIN_VERSION, PROMPT_TEXT } from "./generated/assets.ts";
 
 export const DEFAULTS: Record<string, unknown> = JSON.parse(JSON.stringify(DEFAULTS_JSON));
 export const OUTLINE: { languages: { exts: string[]; regex: string }[]; default: string } = JSON.parse(JSON.stringify(OUTLINE_JSON));
+
+export const CONNECTORS: { endpoints: Record<string, Record<string, string>>; host_models: Record<string, string> } = JSON.parse(JSON.stringify(CONNECTORS_JSON));
 
 export type Task = "read" | "summarize" | "explore" | "write" | "ask";
 export const TASKS: Task[] = ["read", "explore", "summarize", "write", "ask"];

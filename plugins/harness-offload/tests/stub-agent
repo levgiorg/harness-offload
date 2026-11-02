@@ -1,0 +1,45 @@
+#!/usr/bin/env bash
+# Stand-in for the agent CLIs offload can use as workers (claude, codex,
+# gemini, cursor-agent, pi). Symlink it under those names. Prints each CLI's
+# headless JSON shape; logs args/env to $STUB_AGENT_LOG.
+#   STUB_AGENT_MODE=ok|auth|quota|slow|empty
+name=$(basename "$0")
+mode="${STUB_AGENT_MODE:-ok}"
+input=""
+[ "$name" = cursor-agent ] || input=$(cat)
+# first non-empty line of the user prompt (after </instructions> when merged)
+user_line() { awk 'BEGIN{ins=0} /<instructions>/{ins=1} ins&&/<\/instructions>/{ins=0; next} !ins && NF {print; exit}' | cut -c1-60; }
+first=$(printf '%s\n' "$input" | user_line)
+if [ -n "${STUB_AGENT_LOG:-}" ]; then
+  {
+    printf '== %s cwd=%s OFFLOAD_DISABLE=%s GEMINI_SYSTEM_MD=%s\n' "$name" "$PWD" "${OFFLOAD_DISABLE:-}" "${GEMINI_SYSTEM_MD:-}"
+    for a in "$@"; do printf 'arg[%s]\n' "$(printf '%s' "$a" | head -c 80 | tr '\n' ' ')"; done
+    printf 'stdin-bytes=%s\n' "${#input}"
+  } >> "$STUB_AGENT_LOG"
+fi
+[ "$mode" = slow ] && sleep 30
+case "$name:$mode" in
+  claude:auth) echo '{"type":"result","is_error":true,"result":"Invalid API key · Please run /login"}'; exit 1 ;;
+  claude:quota) echo '{"type":"result","is_error":true,"result":"Claude AI usage limit reached"}'; exit 1 ;;
+  claude:*) jq -nc --arg t "CLAUDE-STUB: $first" '{type:"result",is_error:false,result:$t,usage:{input_tokens:100,cache_read_input_tokens:20,output_tokens:5},total_cost_usd:0.001}' ;;
+  codex:quota) echo '{"type":"thread.started"}'; echo '{"type":"turn.failed","error":{"message":"You have hit your usage limit"}}'; exit 1 ;;
+  codex:auth) echo '{"type":"error","message":"401 Unauthorized: please run codex login"}'; exit 1 ;;
+  codex:*)
+    echo '{"type":"thread.started","thread_id":"t"}'
+    jq -nc --arg t "CODEX-STUB: $first" '{type:"item.completed",item:{type:"agent_message",text:$t}}'
+    echo '{"type":"turn.completed","usage":{"input_tokens":50,"cached_input_tokens":10,"output_tokens":7}}' ;;
+  gemini:auth) echo '{"error":{"type":"auth","message":"Please set an Auth method"}}'; exit 41 ;;
+  gemini:*)
+    sys=missing; [ -f "${GEMINI_SYSTEM_MD:-/nonexistent}" ] && grep -q . "$GEMINI_SYSTEM_MD" && sys=ok
+    jq -nc --arg t "GEMINI-STUB sys=$sys: $first" '{response:$t,stats:{models:{"gemini-x":{tokens:{prompt:40,candidates:3}}}}}' ;;
+  cursor-agent:*)
+    last=""; for a in "$@"; do last="$a"; done
+    f=$(printf '%s\n' "$last" | user_line)
+    jq -nc --arg t "CURSOR-STUB: $f" '{type:"result",is_error:false,result:$t,usage:{inputTokens:30,outputTokens:4}}' ;;
+  pi:quota) jq -nc '{type:"message_end",message:{role:"assistant",content:[],stopReason:"error",errorMessage:"429 rate limit exceeded"}}'; exit 1 ;;
+  pi:*)
+    jq -nc '{type:"session"}'
+    jq -nc --arg t "PI-STUB: $first" '{type:"message_end",message:{role:"assistant",content:[{type:"text",text:$t}],usage:{input:60,output:6}}}' ;;
+  *:empty) echo '{}' ;;
+esac
+exit 0

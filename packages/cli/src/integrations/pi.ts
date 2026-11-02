@@ -2,6 +2,8 @@
 // offload_* tools and a short guide to the system prompt.
 // Loaded by pi from this package ("pi": {"extensions": ["./dist/pi.js"]}).
 import { Type } from "typebox";
+// the harness's own subscription for @host models
+process.env.OFFLOAD_HOST ||= "pi";
 import { available, bashGuard, postBash, readGuard, sessionGuide } from "../hooks/logic.ts";
 import { runCli, TOOLS } from "./spawn-cli.ts";
 

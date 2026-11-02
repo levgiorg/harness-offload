@@ -2,6 +2,7 @@
 // local tool loop (read_file/grep/glob/list_dir, read-only, sandboxed).
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
+import { CONNECTORS } from "../assets.ts";
 import { cfg } from "../config.ts";
 import { configHome } from "../paths.ts";
 import { runTool, TOOL_SPECS } from "./tools.ts";
@@ -19,25 +20,8 @@ export interface Endpoint {
   list_models?: boolean;
 }
 
-/** Built-in presets; `endpoints.<name>` in the config overrides or adds. */
-export const PRESETS: Record<string, Omit<Endpoint, "name">> = {
-  openai: { type: "openai", base_url: "https://api.openai.com/v1", api_key_env: "OPENAI_API_KEY", label: "OpenAI API" },
-  openrouter: { type: "openai", base_url: "https://openrouter.ai/api/v1", api_key_env: "OPENROUTER_API_KEY", label: "OpenRouter" },
-  anthropic: { type: "anthropic", base_url: "https://api.anthropic.com", api_key_env: "ANTHROPIC_API_KEY", label: "Anthropic API" },
-  google: { type: "openai", base_url: "https://generativelanguage.googleapis.com/v1beta/openai", api_key_env: "GEMINI_API_KEY", label: "Google AI Studio (Gemini API)" },
-  groq: { type: "openai", base_url: "https://api.groq.com/openai/v1", api_key_env: "GROQ_API_KEY", label: "Groq" },
-  deepseek: { type: "openai", base_url: "https://api.deepseek.com/v1", api_key_env: "DEEPSEEK_API_KEY", label: "DeepSeek" },
-  mistral: { type: "openai", base_url: "https://api.mistral.ai/v1", api_key_env: "MISTRAL_API_KEY", label: "Mistral" },
-  together: { type: "openai", base_url: "https://api.together.xyz/v1", api_key_env: "TOGETHER_API_KEY", label: "Together AI" },
-  fireworks: { type: "openai", base_url: "https://api.fireworks.ai/inference/v1", api_key_env: "FIREWORKS_API_KEY", label: "Fireworks" },
-  cerebras: { type: "openai", base_url: "https://api.cerebras.ai/v1", api_key_env: "CEREBRAS_API_KEY", label: "Cerebras" },
-  xai: { type: "openai", base_url: "https://api.x.ai/v1", api_key_env: "XAI_API_KEY", label: "xAI" },
-  zai: { type: "openai", base_url: "https://api.z.ai/api/paas/v4", api_key_env: "ZAI_API_KEY", label: "Z.ai (GLM)" },
-  moonshot: { type: "openai", base_url: "https://api.moonshot.ai/v1", api_key_env: "MOONSHOT_API_KEY", label: "Moonshot (Kimi)" },
-  ollama: { type: "openai", base_url: "http://127.0.0.1:11434/v1", label: "Ollama (local)" },
-  lmstudio: { type: "openai", base_url: "http://127.0.0.1:1234/v1", label: "LM Studio (local)" },
-  vllm: { type: "openai", base_url: "http://127.0.0.1:8000/v1", label: "vLLM (local)" },
-};
+/** Built-in presets (config/connectors.json); `endpoints.<name>` in the config overrides or adds. */
+export const PRESETS: Record<string, Omit<Endpoint, "name">> = CONNECTORS.endpoints as unknown as Record<string, Omit<Endpoint, "name">>;
 
 export function credentialsPath(): string {
   return process.env.OFFLOAD_CREDENTIALS || join(configHome(), "harness-offload", "credentials.json");

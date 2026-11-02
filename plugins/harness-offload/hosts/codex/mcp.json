@@ -1,5 +1,15 @@
 {
   "mcpServers": {
-    "offload": { "command": "sh", "args": ["-c", "exec ./bin/offload-ts mcp"], "cwd": "." }
+    "offload": {
+      "command": "sh",
+      "args": [
+        "-c",
+        "exec ./bin/offload-ts mcp"
+      ],
+      "cwd": ".",
+      "env": {
+        "OFFLOAD_HOST": "codex"
+      }
+    }
   }
 }

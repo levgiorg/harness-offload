@@ -39,6 +39,9 @@ export OFFLOAD_CONFIG="$T/config.json"
 export OFFLOAD_MODEL=stub/ok
 export STUB_VERSION=1.19.5
 unset OPENCODE_CONFIG_CONTENT OFFLOAD_DISABLE OFFLOAD_READ_GUARD OFFLOAD_TIMEOUT OFFLOAD_NO_MODEL CLAUDE_PROJECT_DIR
+# no harness detected unless a test says so (@host)
+unset OFFLOAD_HOST CLAUDECODE CLAUDE_CODE_ENTRYPOINT CODEX_THREAD_ID CODEX_SANDBOX CODEX_CI CURSOR_AGENT \
+  CURSOR_CONVERSATION_ID GEMINI_CLI GEMINI_SESSION_ID OPENCODE OPENCODE_SESSION_ID PI_CODING_AGENT PI_SESSION_ID
 export CLAUDE_PLUGIN_ROOT="$PLUGIN"
 chmod +x "$HERE/stub-opencode" "$OFFLOAD" "$PLUGIN"/hooks/* 2>/dev/null
 P="$T/proj"; mkdir -p "$P"; cd "$P" || exit 1
@@ -255,38 +258,116 @@ expect_has "stats: aggregates" "$out" "delegations:"
 out=$("$OFFLOAD" doctor 2>&1)
 expect_has "doctor runs" "$out" "worker agents load"
 
+# ------------------------------------------------------- agent connectors
+section "agent connectors (stub claude/codex/gemini/cursor-agent/pi)"
+AB="$T/agent-bin"; mkdir -p "$AB"
+for n in claude codex gemini cursor-agent pi; do ln -sf "$HERE/stub-agent" "$AB/$n"; done
+chmod +x "$HERE/stub-agent"
+export STUB_AGENT_LOG="$T/agent.log"
+ag() { PATH="$AB:$PATH" "$OFFLOAD" "$@" 2>&1; }
+: > "$STUB_AGENT_LOG"
+out=$(ag ask -m claude:haiku "hello claude"); rc=$?
+expect_eq "claude: exit 0" "$rc" 0
+expect_has "claude: answer" "$out" "CLAUDE-STUB: hello claude"
+expect_has "claude: footer names the ref" "$out" "[offload ask · claude:haiku"
+alog=$(cat "$STUB_AGENT_LOG")
+expect_has "claude: lean headless flags" "$alog" "arg[--strict-mcp-config]"
+expect_has "claude: no recursion into offload" "$alog" "OFFLOAD_DISABLE=1"
+expect_not "claude: never --bare (it cannot use subscription logins)" "$alog" "arg[--bare]"
+expect_has "claude: model passed" "$alog" "arg[haiku]"
+: > "$STUB_AGENT_LOG"; ag explore -m claude:haiku "where is fn3?" >/dev/null
+expect_has "claude: explore gets read-only tools" "$(cat "$STUB_AGENT_LOG")" "arg[Read,Grep,Glob]"
+out=$(ag ask -m codex:gpt-6-luna "hello codex")
+expect_has "codex: answer (merged prompt on stdin)" "$out" "CODEX-STUB: hello codex"
+: > "$STUB_AGENT_LOG"; ag ask -m codex:gpt-6-luna "x" >/dev/null
+expect_has "codex: read-only sandbox" "$(cat "$STUB_AGENT_LOG")" "arg[read-only]"
+out=$(ag ask -m gemini:flash-lite "hello gemini")
+expect_has "gemini: answer + system prompt file" "$out" "GEMINI-STUB sys=ok: hello gemini"
+out=$(ag ask -m cursor: "hello cursor")
+expect_has "cursor: answer (prompt as argument)" "$out" "CURSOR-STUB: hello cursor"
+out=$(ag ask -m pi: "hello pi")
+expect_has "pi: answer" "$out" "PI-STUB: hello pi"
+out=$(ag read -m pi: -q "what?" small.txt)
+expect_has "pi: read footer" "$out" "[offload read · pi:"
+STUB_AGENT_MODE=auth ag ask -m claude:haiku "hi" >/dev/null; expect_eq "claude: login problem → exit 11" "$?" 11
+STUB_AGENT_MODE=quota ag ask -m claude:sonnet "hi" >/dev/null; expect_eq "claude: usage limit → exit 10" "$?" 10
+STUB_AGENT_MODE=quota ag ask -m codex:x "hi" >/dev/null; expect_eq "codex: usage limit → exit 10" "$?" 10
+STUB_AGENT_MODE=auth ag ask -m gemini:y "hi" >/dev/null; expect_eq "gemini: exit 41 → exit 11" "$?" 11
+STUB_AGENT_MODE=quota ag ask -m pi:z "hi" >/dev/null; expect_eq "pi: 429 → exit 10" "$?" 10
+s=$(date +%s); STUB_AGENT_MODE=slow OFFLOAD_TIMEOUT=1 ag ask -m codex:slow "hi" >/dev/null; rc=$?
+expect_eq "agent timeout → exit 12, fast" "$rc:$(( $(date +%s) - s < 10 ))" "12:1"
+printf '{"agents":{"claude":{"bin":"%s/nope-claude"}}}' "$T" > "$OFFLOAD_CONFIG"
+ag ask -m claude:haiku "hi" >/dev/null; expect_eq "missing agent CLI → exit 15" "$?" 15
+rm -f "$OFFLOAD_CONFIG"
+"$OFFLOAD" doctor --reset >/dev/null 2>&1
+
+section "@host (the calling harness's own subscription)"
+out=$(OFFLOAD_HOST=claude ag ask -m @host "same plan")
+expect_has "@host on Claude Code → claude:haiku" "$out" "[offload ask · claude:haiku"
+out=$(CLAUDECODE=1 ag ask -m @host "detected")
+expect_has "@host detects Claude Code from its env" "$out" "CLAUDE-STUB: detected"
+out=$(OFFLOAD_HOST=codex ag ask -m @self "codex plan")
+expect_has "@self on Codex → codex default luna" "$out" "[offload ask · codex:gpt-6-luna"
+out=$(GEMINI_CLI=1 ag ask -m @host "g")
+expect_has "@host on Gemini CLI → gemini:flash-lite" "$out" "[offload ask · gemini:flash-lite"
+out=$(OFFLOAD_HOST=pi ag ask -m @host "p")
+expect_has "@host on Pi → pi default model" "$out" "PI-STUB: p"
+out=$(ag ask -m @host "who?"); rc=$?
+expect_eq "@host with no harness → usage exit 2" "$rc" 2
+expect_has "@host with no harness explains OFFLOAD_HOST" "$out" "OFFLOAD_HOST"
+printf '{"host_models":{"claude":"claude:sonnet"}}' > "$OFFLOAD_CONFIG"
+out=$(OFFLOAD_HOST=claude ag ask -m @host "override")
+expect_has "config host_models overrides the default" "$out" "[offload ask · claude:sonnet"
+rm -f "$OFFLOAD_CONFIG"
+out=$(OFFLOAD_MODEL=@host OFFLOAD_HOST=claude ag read -q "q" small.txt)
+expect_has "model @host routes reads to the host plan" "$out" "[offload read · claude:haiku"
+d=$(OFFLOAD_MODEL=@host OFFLOAD_HOST=claude PATH="$AB:$PATH" pre_read '{"file_path":"'"$P"'/big.ts"}' | jq -r '.hookSpecificOutput.permissionDecision // "none"')
+expect_eq "hook: @host + claude CLI present → large read redirected" "$d" "deny"
+printf '{"agents":{"claude":{"bin":"%s/nope"}}}' "$T" > "$OFFLOAD_CONFIG"
+d=$(decision "$(OFFLOAD_MODEL=@host OFFLOAD_HOST=claude PATH="$AB:$PATH" pre_read '{"file_path":"'"$P"'/big.ts"}')")
+expect_eq "hook: @host but CLI missing → fail open" "$d" "none"
+rm -f "$OFFLOAD_CONFIG"
+
 # ------------------------------------------------------------ http connector
 section "http connector (mock OpenAI-compatible endpoint)"
-if command -v python3 >/dev/null 2>&1 && { [ -n "${OFFLOAD_TS_CLI:-}" ] || [ -f "$PLUGIN/../../packages/cli/dist/cli.js" ] || command -v harness-offload >/dev/null 2>&1; }; then
+HAVE_TS=false
+{ [ -n "${OFFLOAD_TS_CLI:-}" ] || [ -f "$PLUGIN/dist/cli.js" ] || [ -f "$PLUGIN/../../packages/cli/dist/cli.js" ] || command -v harness-offload >/dev/null 2>&1; } && HAVE_TS=true
+if command -v python3 >/dev/null 2>&1 && command -v curl >/dev/null 2>&1; then
   HPORT=$(( 20000 + $$ % 20000 ))
   MOCK_PORT=$HPORT MOCK_LOG="$T/http-mock.log" python3 "$HERE/mock_openai.py" > "$T/http-mock.out" 2>&1 &
   HPID=$!
   for _ in 1 2 3 4 5 6 7 8 9 10; do curl -s --noproxy '*' -m 1 "http://127.0.0.1:$HPORT/v1/models" >/dev/null 2>&1 && break; sleep 0.3; done
   jq -n --arg u "http://127.0.0.1:$HPORT/v1" '{endpoints: {mock: {type: "openai", base_url: $u}}}' > "$OFFLOAD_CONFIG"
-  out=$(NO_PROXY='127.0.0.1,localhost' "$OFFLOAD" ask -m mock:echo "hello http" 2>&1); rc=$?
+  # non-explore HTTP needs no TypeScript CLI in the bash engine (curl)
+  out=$(OFFLOAD_TS_CLI=false NO_PROXY='127.0.0.1,localhost' "$OFFLOAD" ask -m mock:echo "hello http" 2>&1); rc=$?
   expect_eq "http: ask exit 0" "$rc" 0
   expect_has "http: answer comes from the endpoint" "$out" "MOCK-REPLY"
   expect_has "http: footer names the model ref" "$out" "[offload ask · mock:echo"
-  out=$(NO_PROXY='127.0.0.1,localhost' "$OFFLOAD" read -m mock:echo -q "what?" small.txt 2>&1)
+  out=$(OFFLOAD_TS_CLI=false NO_PROXY='127.0.0.1,localhost' "$OFFLOAD" read -m mock:echo -q "what?" small.txt 2>&1)
   expect_has "http: read sends no tools" "$out" "tools=none"
-  out=$(NO_PROXY='127.0.0.1,localhost' "$OFFLOAD" explore -m mock:echo "where?" 2>&1)
-  expect_has "http: explore gets the read-only tool set" "$out" "tools=glob,grep,list_dir,read_file"
-  out=$(NO_PROXY='127.0.0.1,localhost' "$OFFLOAD" explore -m mock:m-readenv "what is in READ:small.txt ?" 2>&1)
-  expect_has "http: explore tool loop reads files" "$out" "small.txt (lines 1-40 of 40)"
-  out=$(NO_PROXY='127.0.0.1,localhost' "$OFFLOAD" explore -m mock:m-readenv "READ:.env ?" 2>&1)
-  expect_has "http: explore refuses secrets" "$out" "secret-file rules"
-  expect_not "http: secret content never sent" "$(cat "$T/http-mock.log")" "SECRET=abc"
-  out=$(NO_PROXY='127.0.0.1,localhost' "$OFFLOAD" explore -m mock:m-readenv "READ:../../etc/passwd ?" 2>&1)
-  expect_has "http: explore stays inside the project" "$out" "outside the project"
   NO_PROXY='127.0.0.1,localhost' "$OFFLOAD" ask -m mock:m-auth "hi" >/dev/null 2>&1; expect_eq "http: 401 → exit 11" "$?" 11
   NO_PROXY='127.0.0.1,localhost' "$OFFLOAD" ask -m mock:m-error "hi" >/dev/null 2>&1; expect_eq "http: 429 → exit 10" "$?" 10
+  if $HAVE_TS; then
+    out=$(NO_PROXY='127.0.0.1,localhost' "$OFFLOAD" explore -m mock:echo "where?" 2>&1)
+    expect_has "http: explore gets the read-only tool set" "$out" "tools=glob,grep,list_dir,read_file"
+    out=$(NO_PROXY='127.0.0.1,localhost' "$OFFLOAD" explore -m mock:m-readenv "what is in READ:small.txt ?" 2>&1)
+    expect_has "http: explore tool loop reads files" "$out" "small.txt (lines 1-40 of 40)"
+    out=$(NO_PROXY='127.0.0.1,localhost' "$OFFLOAD" explore -m mock:m-readenv "READ:.env ?" 2>&1)
+    expect_has "http: explore refuses secrets" "$out" "secret-file rules"
+    out=$(NO_PROXY='127.0.0.1,localhost' "$OFFLOAD" explore -m mock:m-readenv "READ:../../etc/passwd ?" 2>&1)
+    expect_has "http: explore stays inside the project" "$out" "outside the project"
+  else
+    printf '  skip  explore over HTTP (needs the TypeScript CLI)\n'
+  fi
+  expect_not "http: secret content never sent" "$(cat "$T/http-mock.log")" "SECRET=abc"
   "$OFFLOAD" ask -m nokey:whatever "hi" >/dev/null 2>&1; rc=$?
   [ "$rc" != 0 ] && ok "http: unknown backend prefix fails cleanly (exit $rc)" || bad "http: unknown backend prefix fails cleanly"
   rm -f "$OFFLOAD_CONFIG"
   kill "$HPID" 2>/dev/null
 else
-  printf '  skip  (needs python3 and a built TypeScript CLI)\n'
+  printf '  skip  (needs python3 and curl)\n'
 fi
+"$OFFLOAD" doctor --reset >/dev/null 2>&1
 
 # ------------------------------------------------------------------ hooks
 section "hooks"

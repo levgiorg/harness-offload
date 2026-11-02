@@ -1,4 +1,5 @@
-import { cfgStr } from "../config.ts";
+import { CONNECTORS } from "../assets.ts";
+import { cfg, cfgStr } from "../config.ts";
 import { endpoint, endpointNames, HttpBackend } from "./http.ts";
 import { OpencodeBackend } from "./opencode.ts";
 import { cliAgentBackend, CLI_AGENTS } from "./agents.ts";
@@ -13,13 +14,44 @@ export interface ModelRef {
 
 const LOCAL = new Set(["opencode", ...Object.keys(CLI_AGENTS)]);
 
+export const HOST_NAMES = ["claude", "codex", "gemini", "cursor", "pi", "opencode", "kilo", "devin"] as const;
+
+/** Which harness is calling us: OFFLOAD_HOST (set by our hooks, MCP launchers and
+ * in-process integrations), else the environment the harness gives its shell. */
+export function detectHost(): string | undefined {
+  const e = process.env;
+  if (e.OFFLOAD_HOST) return e.OFFLOAD_HOST;
+  if (e.CLAUDECODE === "1" || e.CLAUDE_CODE_ENTRYPOINT) return "claude";
+  if (e.CODEX_THREAD_ID || e.CODEX_SANDBOX || e.CODEX_CI) return "codex";
+  if (e.CURSOR_AGENT || e.CURSOR_CONVERSATION_ID) return "cursor";
+  if (e.GEMINI_CLI === "1" || e.GEMINI_SESSION_ID) return "gemini";
+  if (e.OPENCODE === "1" || e.OPENCODE_SESSION_ID) return "opencode";
+  if (e.PI_CODING_AGENT === "1" || e.PI_SESSION_ID) return "pi";
+  return undefined;
+}
+
+/** "@host" → the calling harness's own cheap model (same subscription). */
+export function hostModel(host = detectHost()): string | undefined {
+  if (!host) return undefined;
+  const own = cfg(`host_models.${host}`);
+  if (typeof own === "string") return own;
+  return CONNECTORS.host_models[host];
+}
+
 /**
+ * "@host" → the harness's own subscription (see hostModel).
  * "opencode-go/glm-5" (no known prefix) → default backend (opencode).
  * "openrouter:qwen/qwen3-coder", "ollama:qwen3:8b", "pi:anthropic/claude-haiku" → that backend.
  * "@default" → the default backend's own default model.
  */
 export function parseRef(ref: string): ModelRef {
   const def = cfgStr("backend", "opencode");
+  if (ref === "@host" || ref === "@self") {
+    const m = hostModel();
+    if (m === undefined) throw new Error("@host: cannot tell which agent harness is calling (set OFFLOAD_HOST=claude|codex|gemini|cursor|pi|opencode)");
+    if (m === "@host" || m === "@self") return { backend: def, model: "", ref: "@default" };
+    return parseRef(m);
+  }
   if (!ref || ref === "@default") return { backend: def, model: "", ref: "@default" };
   const i = ref.indexOf(":");
   if (i > 0) {

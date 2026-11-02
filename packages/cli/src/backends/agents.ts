@@ -50,14 +50,17 @@ const merged = (req: WorkerRequest) => `<instructions>\n${req.system}\n</instruc
 
 export const CLI_AGENTS: Record<string, AgentSpec> = {
   claude: {
-    label: "Claude Code (claude -p) — uses your Claude plan",
+    label: "Claude Code (claude -p) — your Claude plan (Haiku)",
     models: async () => ["haiku", "sonnet"],
     bin: "claude",
     install: "https://claude.com/claude-code",
     args: (req) => {
-      const a = ["-p", "--output-format", "json", "--system-prompt", req.system, "--no-session-persistence"];
+      // A lean headless Claude on the user's own plan: no settings/plugins/MCP/
+      // slash commands, our system prompt instead of Claude Code's (~1.3K tokens
+      // of overhead instead of ~20K). Not --bare: it never reads OAuth logins.
+      const a = ["-p", "--output-format", "json", "--no-session-persistence", "--setting-sources", "", "--strict-mcp-config", "--disable-slash-commands", "--system-prompt", req.system];
       if (req.model) a.push("--model", req.model);
-      if (req.task === "explore") a.push("--allowedTools", "Read,Grep,Glob,LS", "--permission-mode", "default");
+      if (req.task === "explore") a.push("--tools", "Read,Grep,Glob", "--allowedTools", "Read,Grep,Glob");
       else a.push("--tools", "");
       return { args: a, input: req.prompt };
     },
@@ -224,8 +227,9 @@ export function cliAgentBackend(name: string): Backend {
       try {
         res = spec.parse(r.stdout, r.stderr);
       } catch (e) {
-        if (e instanceof WorkerError) throw e;
-        throw new WorkerError(E.WORKER, `${name}: ${(e as Error).message}`);
+        // the CLI's own exit code is more precise than our message heuristics
+        if (e instanceof WorkerError) throw mapped !== undefined && e.code === E.WORKER ? new WorkerError(mapped, e.message) : e;
+        throw new WorkerError(mapped ?? E.WORKER, `${name}: ${(e as Error).message}`);
       }
       if (!res.text.trim()) {
         const msg = (r.stderr || r.stdout).trim().split("\n").slice(-3).join(" ").slice(0, 300);

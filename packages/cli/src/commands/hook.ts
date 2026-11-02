@@ -89,6 +89,7 @@ async function handle(host: Host, event: string, input: J): Promise<J | undefine
 
 export async function cmdHook(argv: string[]): Promise<number> {
   const [host = "claude", event = ""] = argv;
+  process.env.OFFLOAD_HOST ||= host; // lets @host models resolve to this harness's subscription
   try {
     const raw = await readStdin();
     if (!raw.trim()) return 0;
