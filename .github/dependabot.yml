@@ -6,3 +6,7 @@ updates:
   - package-ecosystem: github-actions
     directory: /
     schedule: { interval: weekly }
+    # one PR for all action bumps: they share workflow files and are reviewed together
+    groups:
+      actions:
+        patterns: ["*"]
