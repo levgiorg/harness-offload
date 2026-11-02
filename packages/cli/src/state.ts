@@ -84,6 +84,23 @@ export function coolDown(model: string, seconds: number, reason: string): void {
   }
 }
 
+/** Active cooldowns (file names are the sanitised model refs). */
+export function listCooldowns(): { model: string; until: number; reason: string }[] {
+  const dir = join(stateDir(), "cooldowns");
+  const now = Math.floor(Date.now() / 1000);
+  const out: { model: string; until: number; reason: string }[] = [];
+  for (const f of readdirSync(dir)) {
+    try {
+      const [until, ...reason] = readFileSync(join(dir, f), "utf8").trim().split(" ");
+      const u = Number(until);
+      if (Number.isFinite(u) && u > now) out.push({ model: f, until: u, reason: reason.join(" ") || "error" });
+    } catch {
+      /* skip */
+    }
+  }
+  return out.sort((a, b) => a.until - b.until);
+}
+
 export function clearCooldowns(): void {
   const dir = join(stateDir(), "cooldowns");
   for (const f of readdirSync(dir)) rmSync(join(dir, f), { force: true });

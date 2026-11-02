@@ -34,18 +34,20 @@
   --step-3: clamp(1.9rem, 1.2rem + 2.6vw, 2.75rem);
   --step-4: clamp(2.4rem, 1.2rem + 4.8vw, 4.6rem);
   --radius: 3px;
+  --ink-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' seed='7'/%3E%3CfeColorMatrix values='0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 -2.4 2.15'/%3E%3C/filter%3E%3Crect width='180' height='180' filter='url(%23n)'/%3E%3C/svg%3E");
 }
+/* dark: the same carbon blue, deeper; the slips stay paper, dimmed, with dark ink */
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
-    --field: #0f1b52; --field-deep: #0a1440; --paper: #18224e; --paper-2: #222e62; --ink: #b8c6ff;
-    --type: #eef1ff; --rule: #3c4c8f; --stamp: #ff5d71; --ok: #5ad69a; --on-field: #eef1ff; --on-field-dim: #a9b8f2;
-    --shadow: 2 6 30; color-scheme: dark;
+    --field: #172d85; --field-deep: #10226a; --paper: #cdd6ef; --paper-2: #b4c1e6; --ink: #10236b;
+    --type: #141826; --rule: #8495cf; --stamp: #b81a31; --ok: #155f3a; --on-field: #eef1ff; --on-field-dim: #c3cff8;
+    --shadow: 3 8 40; color-scheme: dark;
   }
 }
 :root[data-theme="dark"] {
-  --field: #0f1b52; --field-deep: #0a1440; --paper: #18224e; --paper-2: #222e62; --ink: #b8c6ff;
-  --type: #eef1ff; --rule: #3c4c8f; --stamp: #ff5d71; --ok: #5ad69a; --on-field: #eef1ff; --on-field-dim: #a9b8f2;
-  --shadow: 2 6 30; color-scheme: dark;
+  --field: #172d85; --field-deep: #10226a; --paper: #cdd6ef; --paper-2: #b4c1e6; --ink: #10236b;
+  --type: #141826; --rule: #8495cf; --stamp: #b81a31; --ok: #155f3a; --on-field: #eef1ff; --on-field-dim: #c3cff8;
+  --shadow: 3 8 40; color-scheme: dark;
 }
 
 *, *::before, *::after { box-sizing: border-box; }
@@ -130,7 +132,24 @@ p { margin: 0; }
 .fields dt { padding-top: 0.2rem; }
 .fields dd { margin: 0; font: 400 var(--step-0)/1.55 var(--font-type); color: var(--type); min-width: 0; overflow-wrap: anywhere; }
 .fields dd .mark { font-weight: 700; color: var(--ink); white-space: nowrap; }
-.fields dd .check { color: var(--ok); font-weight: 700; white-space: nowrap; }
+.fields dd .ck {
+  display: inline-block;
+  font: 800 0.66rem/1 var(--font-display);
+  font-stretch: 70%;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--stamp);
+  border: 1.5px solid var(--stamp);
+  border-radius: 2px;
+  padding: 0.18rem 0.3rem 0.14rem;
+  transform: rotate(-3deg) translateY(-1px);
+  mix-blend-mode: multiply;
+  -webkit-mask-image: var(--ink-mask);
+  mask-image: var(--ink-mask);
+  -webkit-mask-size: 120px 120px;
+  mask-size: 120px 120px;
+  white-space: nowrap;
+}
 .fields dd .dim { color: var(--ink); opacity: 0.8; }
 .typed { animation: type-in 420ms cubic-bezier(0.16, 1, 0.3, 1) both; }
 @keyframes type-in { from { clip-path: inset(0 100% 0 0); } to { clip-path: inset(0 0 0 0); } }
@@ -156,9 +175,12 @@ p { margin: 0; }
   text-transform: uppercase;
   letter-spacing: 0.12em;
   mix-blend-mode: multiply;
+  /* an inked impression: uneven coverage from an authored noise mask */
+  -webkit-mask-image: var(--ink-mask);
+  mask-image: var(--ink-mask);
+  -webkit-mask-size: 180px 180px;
+  mask-size: 180px 180px;
 }
-:root[data-theme="dark"] .stamp { mix-blend-mode: normal; }
-@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .stamp { mix-blend-mode: normal; } }
 .stamp b { font: 850 1.65rem/1 var(--font-display); font-stretch: 85%; letter-spacing: 0; font-variant-numeric: tabular-nums; }
 .stamp.press { animation: press 300ms cubic-bezier(0.22, 1, 0.36, 1); }
 @keyframes press { from { transform: rotate(-4deg) scale(1.35); opacity: 0; filter: blur(2px); } to { transform: rotate(-4deg) scale(1); opacity: 1; filter: blur(0); } }
@@ -204,13 +226,14 @@ p { margin: 0; }
   padding: 0.85rem 0.9rem;
   font: 400 0.9rem/1.55 var(--font-type);
   color: var(--type);
-  white-space: pre;
-  overflow-x: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
+.scroll, .cmd { scrollbar-width: thin; scrollbar-color: var(--rule) transparent; }
 .copy {
   font: 700 var(--step--1)/1 var(--font-body);
   color: var(--paper);
-  background: var(--stamp);
+  background: var(--ink);
   border: 0;
   border-radius: var(--radius);
   padding: 0.8rem 1rem;
@@ -235,7 +258,7 @@ section.band { padding-block: 4rem; }
 .route { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 0; }
 .route li { padding: 1.4rem 1.3rem 1.6rem; display: grid; align-content: start; gap: 0.6rem; border-left: 2px dashed var(--rule); min-width: 0; }
 .route li:first-child { border-left: 0; }
-.route .n { font: 800 2.4rem/1 var(--font-display); font-stretch: 70%; color: var(--stamp); font-variant-numeric: tabular-nums; }
+.route .n { font: 800 2.4rem/1 var(--font-display); font-stretch: 70%; color: var(--ink); font-variant-numeric: tabular-nums; }
 .route h3 { font-size: var(--step-1); font-weight: 750; color: var(--ink); line-height: 1.2; }
 .route p { font-size: 0.95rem; color: var(--type); }
 .route code { font-size: 0.85rem; color: var(--ink); overflow-wrap: anywhere; }
@@ -247,7 +270,8 @@ table { border-collapse: collapse; width: 100%; font-size: 0.95rem; font-variant
 th { text-align: left; font: 600 0.72rem/1.2 var(--font-display); font-stretch: 75%; text-transform: uppercase; letter-spacing: 0.09em; color: var(--ink); padding: 0.5rem 0.75rem; border-bottom: 2px solid var(--ink); white-space: nowrap; }
 td { padding: 0.7rem 0.75rem; border-bottom: 1px solid var(--rule); vertical-align: top; }
 td.num, th.num { text-align: right; }
-td .saved { font: 700 1rem/1 var(--font-type); color: var(--stamp); }
+td .saved { font: 700 1rem/1 var(--font-type); color: var(--ink); }
+td.num { font-family: var(--font-type); }
 .ledger-notes { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem 2rem; border-top: 1px solid var(--rule); padding-top: 1.1rem; }
 .ledger-notes p { font-size: 0.95rem; color: var(--type); }
 .ledger-notes strong { color: var(--ink); }
@@ -272,12 +296,14 @@ td .saved { font: 700 1rem/1 var(--font-type); color: var(--stamp); }
 .plans .aside strong { color: var(--on-field); }
 .plans .aside code { color: var(--on-field); font-size: 0.92rem; }
 
-/* guarantees */
-.rules { margin: 0; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 2rem 2.5rem; }
-.rules > div { display: grid; gap: 0.5rem; border-top: 2px solid var(--on-field); padding-top: 1rem; }
-.rules dt { font: 750 var(--step-1)/1.2 var(--font-display); font-stretch: 105%; }
-.rules dd { margin: 0; color: var(--on-field-dim); }
-.rules code { color: var(--on-field); }
+/* guarantees: printed conditions on the back of the slip */
+.rules { margin: 0; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0; padding: clamp(1rem, 2.5vw, 1.75rem); }
+.rules > div { display: grid; align-content: start; gap: 0.5rem; padding: 0.4rem 1.4rem 0.6rem; border-left: 1px solid var(--rule); min-width: 0; }
+.rules > div:first-child { border-left: 0; padding-left: 0.4rem; }
+.rules dt { font: 750 var(--step-1)/1.2 var(--font-display); font-stretch: 105%; color: var(--ink); }
+.rules dd { margin: 0; color: var(--type); }
+.rules code { color: var(--ink); }
+.form-no { font: 600 0.66rem/1 var(--font-display); font-stretch: 75%; text-transform: uppercase; letter-spacing: 0.1em; color: var(--ink); opacity: 0.75; justify-self: end; }
 
 /* close */
 .close { padding-block: 3rem 4rem; }
@@ -301,10 +327,22 @@ footer .wrap { display: flex; flex-wrap: wrap; gap: 0.5rem 2rem; justify-content
   .route li:nth-child(n + 3) { border-top: 2px dashed var(--rule); }
   .plans, .close .slip { grid-template-columns: minmax(0, 1fr); }
   .rules { grid-template-columns: minmax(0, 1fr); }
+  .rules > div, .rules > div:first-child { border-left: 0; border-top: 1px solid var(--rule); padding: 0.9rem 0.4rem; }
+  .rules > div:first-child { border-top: 0; }
   .ledger-notes { grid-template-columns: minmax(0, 1fr); }
 }
 @media (max-width: 560px) {
   .wide-only { display: none; }
+  /* ledger rows become stacked records: no sideways scrolling for the numbers */
+  .ledger table, .ledger tbody, .ledger tr, .ledger td { display: block; }
+  .ledger thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+  .ledger tr { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.35rem 1rem; padding-block: 0.85rem; border-bottom: 1px solid var(--rule); }
+  .ledger td { border: 0; padding: 0; text-align: left; min-width: 0; }
+  .ledger td.num { text-align: left; }
+  .ledger td:first-child { grid-column: 1 / -1; }
+  .ledger td[data-label]:not(:first-child)::before { content: attr(data-label); display: block; font: 600 0.68rem/1.3 var(--font-display); font-stretch: 75%; text-transform: uppercase; letter-spacing: 0.09em; color: var(--ink); }
+  .register td:last-child { grid-column: 1 / -1; }
+  .register code { white-space: normal; overflow-wrap: anywhere; }
   .fields > div, .plan-rows > div { grid-template-columns: minmax(0, 1fr); }
   .route { grid-template-columns: minmax(0, 1fr); }
   .route li { border-left: 0; }
@@ -356,7 +394,7 @@ footer .wrap { display: flex; flex-wrap: wrap; gap: 0.5rem 2rem; justify-content
 
           <div class="form-foot">
             <div class="stamp" id="stamp" aria-live="polite"><span>Kept off the desk</span><b id="kept">9,213</b><span>tokens</span></div>
-            <small>Example request. Files, answers and token counts come from the benchmark in docs/VALIDATION.md (worker: Claude Haiku).</small>
+            <small>Example request. Files, token counts and the facts found come from the benchmark in docs/VALIDATION.md (worker: Claude Haiku); the answer wording is abridged.</small>
           </div>
         </div>
 
@@ -412,7 +450,7 @@ offload setup</pre>
     <div class="wrap">
       <div class="band-head">
         <h2 id="measured-h">Measured on real files</h2>
-        <p>Tokens the agent would have read, against what Harness Offload handed back. Same questions, both engines, a real worker model.</p>
+        <p>Tokens the agent would have read, against what Harness Offload handed back to it. Real worker model; bash-engine figures (the TypeScript engine was within a few tokens).</p>
       </div>
       <div class="slip ledger">
         <div class="scroll">
@@ -424,7 +462,7 @@ offload setup</pre>
               <tr><td>Questions about a 919-line module</td><td class="num">9,666</td><td class="num">453</td><td class="num"><span class="saved">95%</span></td><td class="num">4 / 4</td></tr>
               <tr><td>Digest of a 2,323-line CI log with two failures</td><td class="num">32,771</td><td class="num">659</td><td class="num"><span class="saved">97%</span></td><td class="num">3 / 3</td></tr>
               <tr><td>Pytest file written from a reference test</td><td class="num">759</td><td class="num">54</td><td class="num"><span class="saved">92%</span></td><td class="num">2 / 2</td></tr>
-              <tr><td>Two small files, one question</td><td class="num">1,230</td><td class="num">544</td><td class="num"><span class="saved">55%</span></td><td class="num">3 / 3</td></tr>
+              <tr><td>Two small files, one question</td><td class="num">1,230</td><td class="num">665</td><td class="num"><span class="saved">45%</span></td><td class="num">3 / 3</td></tr>
             </tbody>
           </table>
         </div>
@@ -433,6 +471,7 @@ offload setup</pre>
           <p><strong>In a real Claude Code session</strong> about 4 KB reached the agent’s context instead of 48 KB. On a debugging task it kept the work for itself, as it should.</p>
         </div>
         <p class="source">Source: docs/VALIDATION.md, 2026-11-01. Small inputs save little, so the read guard leaves them alone.</p>
+        <p class="form-no">Form HO-2 · Circulation record</p>
       </div>
     </div>
   </section>
@@ -463,6 +502,7 @@ offload setup</pre>
           </table>
         </div>
         <p class="source">Amp (experimental plugin) and Aider (conventions file) are covered too. Verified end to end in Claude Code, OpenCode, Pi, Codex, Copilot CLI, Crush and Qwen Code.</p>
+        <p class="form-no">Form HO-3 · Register of reading rooms</p>
       </div>
     </div>
   </section>
@@ -491,7 +531,7 @@ offload setup</pre>
   <section class="band" aria-labelledby="rules-h">
     <div class="wrap">
       <div class="band-head"><h2 id="rules-h">Careful with your code</h2></div>
-      <dl class="rules">
+      <dl class="rules slip">
         <div><dt>Fails open</dt><dd>If a backend is missing, slow or out of quota, the hooks step aside and your agent’s tools work as before.</dd></div>
         <div><dt>Secrets stay home</dt><dd><code>.env</code>, keys and certificates are never sent, links to them included, and credentials in output are masked.</dd></div>
         <div><dt>Answers are checked</dt><dd>A citation must quote text within three lines of where it points. Anything else is marked unverified.</dd></div>
@@ -525,7 +565,7 @@ offload setup</pre>
 (() => {
   const esc = (s) => s.replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" })[c]);
   const mark = (s) => `<span class="mark">${esc(s)}</span>`;
-  const ok = '<span class="check">✓ checked</span>';
+  const ok = '<span class="ck">checked</span>';
   const KINDS = {
     file: {
       ask: "Read ledger.ts — 919 lines, about 9,666 tokens",
@@ -545,8 +585,8 @@ offload setup</pre>
       ask: "Read inventory.ts and inventory.test.ts — 138 lines, about 1,230 tokens",
       held: "Nothing: small files pass straight through. Here the agent asked offload directly",
       by: "@host → claude:haiku, on your Claude plan",
-      answer: `The tests cover reserve and commit ${mark("inventory.test.ts:L17")} ${ok} ${mark("inventory.test.ts:L34")} ${ok}. release, restock, needsReorder and expireStale have none. reserve throws OutOfStockError when free stock is short ${mark("inventory.ts:L43")} ${ok}. <span class="dim">544 tokens.</span>`,
-      kept: 686,
+      answer: `The tests cover reserve and commit ${mark("inventory.test.ts:L17")} ${ok} ${mark("inventory.test.ts:L34")} ${ok}. release, restock, needsReorder and expireStale have none. reserve throws OutOfStockError when free stock is short ${mark("inventory.ts:L43")} ${ok}. <span class="dim">665 tokens.</span>`,
+      kept: 565,
     },
   };
   const fields = document.getElementById("fields");
@@ -625,6 +665,11 @@ offload setup</pre>
       }
       setTimeout(() => (btn.textContent = "Copy command"), 1800);
     });
+  }
+  // stacked ledger records on phones label each value from its column header
+  for (const t of document.querySelectorAll(".ledger table")) {
+    const heads = [...t.querySelectorAll("thead th")].map((th) => th.textContent.trim());
+    for (const tr of t.querySelectorAll("tbody tr")) [...tr.children].forEach((td, i) => td.setAttribute("data-label", heads[i] || ""));
   }
   copyFrom(document.getElementById("copy"), cmd);
   copyFrom(document.getElementById("copy-all"), document.getElementById("cmd-all"));

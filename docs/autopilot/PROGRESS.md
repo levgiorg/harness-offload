@@ -53,3 +53,8 @@
 - Copilot CLI (loads the Claude plugin; bash hooks speak its dialect), Qwen Code (converted extension), Crush (crush.json hooks + global context guide), Amp (experimental plugin), Aider (conventions file), MCP snippets for Cline/Zed/Continue/Goose/Kiro/VS Code/Claude Desktop.
 - Real end-to-end runs with Copilot CLI 1.0.105, Crush 0.99.0 and Qwen Code 0.26.5 against a mock model: big read denied with outline (all three), long output digested (Copilot, Crush), guide injected (all three).
 - Suites: conformance 236/236 ×2, bun 50/50, routing 49/49 ×2.
+
+## 2026-11-02 ~13:30 UTC — loop: validation report, per-host e2e, UI fix round
+- docs/VALIDATION.md: 2026-11-02 section (real Claude plan via @host in both engines; Copilot/Crush/Qwen runs).
+- tests/mock_openai.py gained a scripted tool-call mode; tests/e2e-hosts.sh runs the real Copilot CLI, Crush and Qwen Code against it in throwaway homes: 9/9. Manual + weekly workflow hosts-e2e.yml.
+- Impeccable finish review (fresh reviewer): fix on both surfaces; fix batch applied (dark paper, ink-masked stamp, CHECKED impressions, red reserved, stacked phone records, cooldowns panel, square stamp chips, empty-period message); recaptured; verdict pass pending.

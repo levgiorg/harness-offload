@@ -20,5 +20,5 @@ with Copy — the primary action. Nothing else competes.
 FORM: Closed-stack library request slip (1st of 7 on the ordered list: request slip, pneumatic dispatch
 capsule, shipping manifest, triage tag, flight strip, cue sheet, wire digest). Signature interaction:
 switching the request type re-types the slip and presses the stamp once.
-seed: none (unavailable)
+seed: none (not rolled: the launcher was not run in this unattended session)
 FINISH: unreviewed and undocumented is unfinished; this build ends with the finish review, the verdict, DESIGN.md, and every shipping raster carrying its provenance

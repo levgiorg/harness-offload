@@ -3,6 +3,22 @@
 Mock-based suites run in CI on every push (conformance ×2 engines, routing table ×2, TS unit/adapter/MCP/installer tests).
 Real-model runs are recorded here.
 
+## 2026-11-02 — same subscription (`@host`), more harnesses
+
+- **Claude plan as the worker, bash engine only (no Node):** `OFFLOAD_HOST=claude offload read -q "what does co_route do?" lib/agents.sh`
+  → `claude:haiku` via a lean `claude -p` (no settings/plugins/MCP), 311-line file, 11 s, **5/5 citations verified**,
+  ~4,170 tokens kept out of context. Worker cost: 11,347 tokens in / 1,691 out on the plan.
+- **Claude plan as the worker, bundled TypeScript CLI:** `offload ask` → `pong` from `claude:haiku` in 3 s.
+- **GitHub Copilot CLI 1.0.105** (real binary, plugin installed from the local marketplace, scripted mock model):
+  a 3,000-line `view` was denied with the outline; `seq 1 400` came back as a digest through `modifiedResult`;
+  the guide arrived as session context; messages name the CLI by absolute path.
+- **Crush 0.99.0** (real binary, `offload install crush`, scripted mock model): `view` of the 3,000-line file blocked
+  (`Tool call blocked by hook`), `bash seq 1 400` replaced by the digest (`updated_output`), guide in the system prompt
+  via `global_context_paths`.
+- **Qwen Code 0.26.5** (real binary, `qwen extensions install` of the plugin, scripted mock model): `read_file` denied
+  with the outline, guide injected as session-start context; shell output untouched (Qwen can't replace it — documented).
+- Worker in those three runs: the stub agent CLI (`claude:haiku` stand-in), so the hosts were real and the model was not.
+
 ## 2026-11-01 — real worker model, both engines
 
 Worker: Claude Haiku (the only real model reachable from the build container) — through OpenCode 2.2.5's

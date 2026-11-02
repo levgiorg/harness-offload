@@ -6,6 +6,9 @@ MOCK_MODE (env or per-request via the model name suffix):
   error  -> HTTP 429 on every call
   tool   -> first turn asks to call tool MOCK_TOOL (default "edit"), then answers
   slow   -> sleeps MOCK_SLEEP seconds before answering
+  script -> MOCK_SCRIPT is a JSON file {"steps": [{"tool": NAME, "args": {...}}, ..., {"text": "..."}]};
+            the step played is the number of tool results already in the conversation, so a
+            host's agent loop walks through the script (requests without tools get "ok")
 Every request is appended as JSON to MOCK_LOG (if set) for inspection.
 """
 import json, os, sys, time
@@ -15,10 +18,13 @@ PORT = int(os.environ.get("MOCK_PORT", "18080"))
 LOG = os.environ.get("MOCK_LOG")
 
 def mode_for(model):
-    for m in ("error", "auth", "tool", "readenv", "slow", "echo"):
+    for m in ("error", "auth", "tool", "readenv", "slow", "script", "echo"):
         if model.endswith("-" + m):
             return m
     return os.environ.get("MOCK_MODE", "echo")
+
+def tool_results_of(msgs):
+    return [m for m in msgs if m.get("role") == "tool"]
 
 class H(BaseHTTPRequestHandler):
     def log_message(self, *a):
@@ -50,7 +56,16 @@ class H(BaseHTTPRequestHandler):
             last = "".join(p.get("text", "") for p in last if isinstance(p, dict))
         system = " ".join(m["content"] if isinstance(m.get("content"), str) else json.dumps(m.get("content")) for m in msgs if m.get("role") == "system")
         tool_results = [m for m in msgs if m.get("role") == "tool"]
-        tools = [t["function"]["name"] for t in body.get("tools", []) or []]
+        tools = [t["function"]["name"] for t in body.get("tools", []) or [] if isinstance(t, dict) and "function" in t]
+        if mode == "script":
+            if not tools:
+                return self.stream(text="ok", stream=body.get("stream", False))
+            with open(os.environ["MOCK_SCRIPT"]) as f:
+                steps = json.load(f)["steps"]
+            step = steps[min(len(tool_results_of(msgs)), len(steps) - 1)]
+            if "tool" in step:
+                return self.stream(tool_call=(step["tool"], step.get("args", {})), stream=body.get("stream", False))
+            return self.stream(text=step.get("text", "done"), stream=body.get("stream", False))
         if mode == "tool" and not tool_results and tools:
             name = os.environ.get("MOCK_TOOL", "edit")
             args = json.loads(os.environ.get("MOCK_TOOL_ARGS", '{"filePath":"pwned.txt","oldString":"","newString":"x"}'))

@@ -1,0 +1,28 @@
+name: hosts-e2e
+
+# Real agent harnesses (GitHub Copilot CLI, Crush, Qwen Code) driven by a
+# scripted local mock model — no accounts or API keys. Manual and weekly,
+# because it installs the harnesses from npm.
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "17 4 * * 1"
+
+permissions:
+  contents: read
+
+jobs:
+  hosts:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install the harnesses
+        run: npm install -g @github/copilot @qwen-code/qwen-code @charmland/crush
+      - name: Plugin bundle is current
+        run: node packages/cli/scripts/source-hash.mjs --check
+      - name: End to end in each harness
+        run: |
+          QWEN_CMD="$(command -v qwen)" bash plugins/harness-offload/tests/e2e-hosts.sh copilot crush qwen

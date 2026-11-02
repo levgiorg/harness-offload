@@ -27,19 +27,25 @@
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
-    --shell: #13205e; --on-shell: #eef1ff; --on-shell-2: #a9b8f2; --bg: #0b1230; --panel: #141c40; --line: #2a3566;
+    --shell: #1c379f; --on-shell: #eef1ff; --on-shell-2: #c3cff8; --bg: #0b1230; --panel: #141c40; --line: #2a3566;
     --grid: #1f2a55; --text: #e9edff; --text-2: #a7b2dc; --accent: #5f79ec; --accent-hover: #7a90f2; --ok: #2a9f6a;
     --bad: #ec4f64; --warn: #e0a347; color-scheme: dark;
   }
 }
 :root[data-theme="dark"] {
-  --shell: #13205e; --on-shell: #eef1ff; --on-shell-2: #a9b8f2; --bg: #0b1230; --panel: #141c40; --line: #2a3566;
+  --shell: #1c379f; --on-shell: #eef1ff; --on-shell-2: #c3cff8; --bg: #0b1230; --panel: #141c40; --line: #2a3566;
   --grid: #1f2a55; --text: #e9edff; --text-2: #a7b2dc; --accent: #5f79ec; --accent-hover: #7a90f2; --ok: #2a9f6a;
   --bad: #ec4f64; --warn: #e0a347; color-scheme: dark;
 }
 *, *::before, *::after { box-sizing: border-box; }
 body { margin: 0; background: var(--bg); color: var(--text); font: 400 15px/1.5 var(--font); }
 ::selection { background: var(--accent); color: var(--panel); }
+.scroll { scrollbar-width: thin; scrollbar-color: var(--line) transparent; }
+details.table-view summary { list-style: none; display: inline-flex; align-items: center; gap: 0.4rem; }
+details.table-view summary::-webkit-details-marker { display: none; }
+details.table-view summary::before { content: ""; width: 0.45rem; height: 0.45rem; border-right: 1.5px solid currentColor; border-bottom: 1.5px solid currentColor; transform: rotate(-45deg); transition: transform 150ms ease-out; }
+details.table-view[open] summary::before { transform: rotate(45deg); }
+.chart-empty { padding: 2.5rem 0.25rem; color: var(--text-2); }
 :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .gutter { padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
 .wrap { max-width: 76rem; margin: 0 auto; }
@@ -93,6 +99,8 @@ td { padding: 0.5rem 0.6rem; border-bottom: 1px solid var(--grid); vertical-alig
 tbody tr:hover td { background: color-mix(in srgb, var(--accent) 5%, transparent); }
 .num { text-align: right; }
 .mono { font-family: var(--mono); font-size: 0.82rem; white-space: nowrap; }
+td.mono { padding-top: calc(0.5rem + 1px); }
+.split .mono { white-space: normal; overflow-wrap: anywhere; }
 .split table { min-width: 30rem; }
 #recent { min-width: 52rem; }
 .more { margin-top: 0.75rem; font: 600 0.85rem/1 var(--font); color: var(--accent); background: transparent; border: 1px solid var(--line); border-radius: 6px; padding: 0.5rem 0.8rem; cursor: pointer; }
@@ -100,11 +108,12 @@ tbody tr:hover td { background: color-mix(in srgb, var(--accent) 5%, transparent
 .what { max-width: 26rem; overflow-wrap: anywhere; }
 .muted { color: var(--text-2); }
 
-.chip { display: inline-flex; align-items: center; gap: 0.3rem; padding: 0.12rem 0.45rem; border-radius: 4px; font-size: 0.78rem; font-weight: 600; white-space: nowrap; border: 1px solid currentColor; }
-.chip svg { width: 12px; height: 12px; flex: none; }
+/* the verification stamp: square corners, double rule, letter-spaced caps */
+.chip { display: inline-flex; align-items: center; gap: 0.35rem; padding: 0.16rem 0.45rem 0.12rem; border-radius: 0; border: 3px double currentColor; font: 700 0.68rem/1.1 var(--font); letter-spacing: 0.1em; text-transform: uppercase; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.chip svg { width: 11px; height: 11px; flex: none; }
 .chip.ok { color: var(--ok); }
 .chip.bad { color: var(--bad); }
-.chip.none { color: var(--text-2); border-color: var(--line); font-weight: 500; }
+.chip.none { color: var(--text-2); border: 0; padding-inline: 0; letter-spacing: 0; text-transform: none; font-weight: 400; font-size: 0.85rem; }
 
 .empty { padding: 2rem 1rem; text-align: left; display: grid; gap: 0.5rem; max-width: 40rem; }
 .empty h2 { font-size: 1.05rem; }
@@ -112,6 +121,18 @@ tbody tr:hover td { background: color-mix(in srgb, var(--accent) 5%, transparent
 
 footer { padding-block: 0 2rem; font-size: 0.8rem; color: var(--text-2); }
 
+@media (max-width: 640px) {
+  /* latest delegations become stacked records; breakdowns keep count, kept, failures */
+  #recent { min-width: 0; }
+  #recent thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+  #recent, #recent tbody, #recent tr, #recent td { display: block; }
+  #recent tr { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0.2rem 0.75rem; padding-block: 0.7rem; border-bottom: 1px solid var(--grid); }
+  #recent td { border: 0; padding: 0; text-align: left; min-width: 0; }
+  #recent td.what, #recent td.mono { grid-column: 1 / -1; }
+  #recent td.mono { white-space: normal; overflow-wrap: anywhere; color: var(--text-2); }
+  .split table { min-width: 0; }
+  .split .opt { display: none; }
+}
 @media (max-width: 900px) {
   .summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .split { grid-template-columns: minmax(0, 1fr); }
@@ -164,6 +185,11 @@ footer { padding-block: 0 2rem; font-size: 0.8rem; color: var(--text-2); }
         <div class="scroll"><table id="by-model"></table></div>
       </section>
     </div>
+
+    <section class="panel" aria-labelledby="cool-h">
+      <div class="panel-head"><h2 id="cool-h">Cooling down</h2><span class="hint">models skipped after quota, login or unknown-model errors</span></div>
+      <div class="scroll"><table id="cool"></table></div>
+    </section>
 
     <section class="panel" aria-labelledby="recent-h">
       <div class="panel-head"><h2 id="recent-h">Latest delegations</h2><span class="hint" id="hooks-line"></span></div>
@@ -224,6 +250,13 @@ footer { padding-block: 0 2rem; font-size: 0.8rem; color: var(--text-2); }
   radio.checked = true;
   for (const r of document.querySelectorAll(".period input")) r.addEventListener("change", () => { days = Number(r.value); render(); });
 
+  function cool() {
+    const list = (DATA.cooldowns || []).filter((c) => c.until > now);
+    table("cool", [["Model"], ["Reason"], ["Back in", "num"]],
+      list.map((c) => [[c.model, "mono"], [c.reason], [`${Math.max(1, Math.round((c.until - now) / 60))} min`, "num"]]),
+      "No model is cooling down. offload doctor --reset clears cooldowns.");
+  }
+
   function render() {
     const since = days ? now - days * 86400 : -Infinity;
     const rows = all.filter((r) => r.ts >= since);
@@ -234,6 +267,7 @@ footer { padding-block: 0 2rem; font-size: 0.8rem; color: var(--text-2); }
     byKind(del);
     byModel(del);
     recent(del, hooks);
+    cool();
   }
 
   function summary(del) {
@@ -291,6 +325,14 @@ footer { padding-block: 0 2rem; font-size: 0.8rem; color: var(--text-2); }
     host.replaceChildren();
     const { out, fmt, unit } = buckets(del);
     document.getElementById("chart-hint").textContent = `estimated tokens, ${unit}`;
+    const tb0 = document.getElementById("chart-table");
+    if (!del.length) {
+      host.append(el("p", { class: "chart-empty", text: "No delegations in this period, so nothing to chart yet." }));
+      tb0.replaceChildren();
+      tb0.closest("details").hidden = true;
+      return;
+    }
+    tb0.closest("details").hidden = false;
     const W = Math.max(320, host.clientWidth || 800);
     const H = 240, L = 44, R = 8, T = 10, B = 26;
     const max = niceMax(Math.max(0, ...out.map((b) => b.kept)));
@@ -374,13 +416,13 @@ footer { padding-block: 0 2rem; font-size: 0.8rem; color: var(--text-2); }
   const failCell = (n) => (n ? chip("bad", `${n} failed`) : el("span", { class: "muted", text: "–" }));
 
   function byKind(del) {
-    table("by-kind", [["Kind"], ["Count", "num"], ["Kept", "num"], ["Avg time", "num"], ["Failures"]],
-      group(del, kindName).map((g) => [[g.k], [nf.format(g.n), "num"], [compact(g.kept), "num"], [`${(g.secs / g.n).toFixed(1)} s`, "num"], [failCell(g.fails)]]), "No delegations in this period.");
+    table("by-kind", [["Kind"], ["Count", "num"], ["Kept", "num"], ["Avg time", "num opt"], ["Failures"]],
+      group(del, kindName).map((g) => [[g.k], [nf.format(g.n), "num"], [compact(g.kept), "num"], [`${(g.secs / g.n).toFixed(1)} s`, "num opt"], [failCell(g.fails)]]), "No delegations in this period.");
   }
 
   function byModel(del) {
-    table("by-model", [["Model"], ["Count", "num"], ["Kept", "num"], ["Worker tokens", "num"], ["Failures"]],
-      group(del, (r) => r.model || "(no model: deterministic digest)").map((g) => [[g.k, "mono"], [nf.format(g.n), "num"], [compact(g.kept), "num"], [compact(g.worker), "num"], [failCell(g.fails)]]), "No delegations in this period.");
+    table("by-model", [["Model"], ["Count", "num"], ["Kept", "num"], ["Worker tokens", "num opt"], ["Failures"]],
+      group(del, (r) => r.model || "(no model: deterministic digest)").map((g) => [[g.k, "mono"], [nf.format(g.n), "num"], [compact(g.kept), "num"], [compact(g.worker), "num opt"], [failCell(g.fails)]]), "No delegations in this period.");
   }
 
   function citeCell(r) {

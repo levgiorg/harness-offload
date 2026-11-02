@@ -16,5 +16,5 @@ trend, then where it came from (by kind, by model), then the latest delegations.
 FIRST VIEWPORT: Blue header band with the product name, period filter (1/7/30/all days) and the data
 source path; one summary line of four figures; the daily chart below; tables follow.
 FORM: Circulation report (operate: the world lends palette, density, type and the stamp move only).
-seed: none (unavailable)
+seed: none (not rolled: the launcher was not run in this unattended session)
 FINISH: unreviewed and undocumented is unfinished; this build ends with the finish review, the verdict, DESIGN.md, and every shipping raster carrying its provenance

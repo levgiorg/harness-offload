@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { parseFlags, str } from "../args.ts";
 import { VERSION } from "../assets.ts";
 import { runProcess } from "../proc.ts";
-import { readStats, stateDir } from "../state.ts";
+import { listCooldowns, readStats, stateDir } from "../state.ts";
 import { DASHBOARD_TEMPLATE } from "./dashboard-template.ts";
 
 type Row = Record<string, unknown> & { ts: number; kind: string };
@@ -47,8 +47,8 @@ export function sampleStats(now = Math.floor(Date.now() / 1000)): Row[] {
 }
 
 /** The report page for a set of stats rows. */
-export function renderDashboard(rows: Row[], opts: { source: string; sample?: boolean; days?: number }): string {
-  const data = { rows, source: opts.source, sample: Boolean(opts.sample), generated: Math.floor(Date.now() / 1000), version: VERSION, days: opts.days ?? 0 };
+export function renderDashboard(rows: Row[], opts: { source: string; sample?: boolean; days?: number; cooldowns?: { model: string; until: number; reason: string }[] }): string {
+  const data = { rows, cooldowns: opts.cooldowns ?? [], source: opts.source, sample: Boolean(opts.sample), generated: Math.floor(Date.now() / 1000), version: VERSION, days: opts.days ?? 0 };
   // JSON inside <script>: "<" escaped so no row can close the element
   const json = JSON.stringify(data).replace(/</g, "\\u003c");
   return DASHBOARD_TEMPLATE.replace("/*__OFFLOAD_DATA__*/null", json);
@@ -61,7 +61,9 @@ export async function cmdDashboard(argv: string[]): Promise<number> {
   const rows = sample ? sampleStats() : (readStats() as Row[]);
   const out = str(opts.out) || join(stateDir(), sample ? "dashboard-sample.html" : "dashboard.html");
   const days = Number(str(opts.days)) || 0;
-  writeFileSync(out, renderDashboard(rows, { source: sample ? "example data" : source, sample, days }));
+  const now = Math.floor(Date.now() / 1000);
+  const cooldowns = sample ? [{ model: "opencode-go_glm-5.3-flash", until: now + 212, reason: "rate-limit/quota" }] : listCooldowns();
+  writeFileSync(out, renderDashboard(rows, { source: sample ? "example data" : source, sample, days, cooldowns }));
   process.stdout.write(`${out}\n`);
   if (!sample && !existsSync(source)) process.stderr.write("offload: no activity recorded yet; the report shows how to start\n");
   if (opts.open) {
