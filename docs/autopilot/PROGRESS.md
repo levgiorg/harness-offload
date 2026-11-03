@@ -142,3 +142,10 @@ R5, N3, G2, A3, E1, N4, I1, R2/N2, R11/B6, N1, B2, D1, C1, K1, A4/R3, H1–H5, G
 TS redaction: 4 MB post-bash >30 s → 163 ms), K2–K4, E2, C2, C3 (Gemini ask/dir_path fixes from upstream source),
 E5, E6, E4, E3/L6. Conformance 558/555, bun 80, routing 49×2, backends 464, hooks within budget, dist reproducible.
 Resume: `python3 - <<…` list of `todo` items in MASTER-BACKLOG (P2 then P3); mark each with done/rejected/blocked.
+
+## 2026-11-03 — goal run, checkpoint 2
+Done since checkpoint 1: R4b, I2/I3/I4/G6/J4, R12 (existing), D3 (rejected), L3 (existing), J2, F2 (TS streams huge
+outputs: 315 → 120 MB, flat), F5 (git list buffer bug: 50k-file explore 1,332 → 205 ms), L1, A7 (diff view), J5 (launcher
+fix), B5 (fallback reasons), B8 (prompt fencing), F3/C6 (blocked), F4/A9/R9/L4 (rejected with reasons), A6 (answer
+cache), G7 (bash orphan workers fixed), J3 (worker crash messages). Conformance 600/597, bun 81, backends 464.
+Open (P2/P3): A5 A8 A10 A11 B3 B4 B7 C4 C5 D2 D4 D5 G5 L2 L5 R6 R7 R8 R10 R13 R14.

@@ -36,7 +36,9 @@ for (const s of ["preinstall", "install", "postinstall", "prepare"]) if (pkg.scr
 if (!/^#!\/usr\/bin\/env node/.test(readFileSync(join(pkgDir, "dist", "cli.js"), "utf8"))) problems.push("dist/cli.js has no node shebang");
 if (pkg.repository?.url !== "git+https://github.com/levgiorg/harness-offload.git") problems.push(`repository.url must match the GitHub repo exactly (provenance): ${pkg.repository?.url}`);
 const mb = info.unpackedSize / 1e6;
-if (mb > 12) problems.push(`unpacked size ${mb.toFixed(1)} MB is unexpectedly large`);
+// a budget a little over today's size (0.97 MB packed, 3.7 MB unpacked): growth is a choice, not an accident
+if (mb > 5) problems.push(`unpacked size ${mb.toFixed(1)} MB is over the 5 MB budget`);
+if (info.size / 1e6 > 1.5) problems.push(`packed size ${(info.size / 1e6).toFixed(2)} MB is over the 1.5 MB budget`);
 
 if (problems.length) {
   console.error(`npm pack check failed for ${info.name}@${info.version}:\n  ${problems.join("\n  ")}`);

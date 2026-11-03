@@ -1,5 +1,5 @@
 import { redact } from "./secrets.ts";
-import { appendFileSync, chmodSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { appendFileSync, chmodSync, closeSync, existsSync, openSync, readSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { cfgInt, cfgStr } from "./config.ts";
 import { stateHome } from "./paths.ts";
@@ -91,16 +91,47 @@ const CRC = (() => {
   }
   return t;
 })();
-/** POSIX `cksum` of a buffer: "<crc>-<length>". */
-export function cksum(buf: Buffer): string {
+/** POSIX `cksum` of a buffer, or of a file read in 1 MB chunks: "<crc>-<length>". */
+export function cksum(src: Buffer | { file: string }): string {
   let crc = 0;
   const step = (b: number) => (crc = ((crc << 8) ^ CRC[((crc >>> 24) ^ b) & 0xff]) >>> 0);
-  for (const b of buf) step(b);
-  for (let n = buf.length; n > 0; n = Math.floor(n / 256)) step(n & 0xff);
-  return `${(~crc) >>> 0}-${buf.length}`;
+  let len = 0;
+  if (Buffer.isBuffer(src)) {
+    for (const b of src) step(b);
+    len = src.length;
+  } else {
+    const fd = openSync(src.file, "r");
+    const buf = Buffer.alloc(1 << 20);
+    try {
+      for (let n; (n = readSync(fd, buf, 0, buf.length, null)) > 0; len += n) for (let i = 0; i < n; i++) step(buf[i]);
+    } finally {
+      closeSync(fd);
+    }
+  }
+  for (let n = len; n > 0; n = Math.floor(n / 256)) step(n & 0xff);
+  return `${(~crc) >>> 0}-${len}`;
+}
+/** Two files with the same bytes (read in chunks). */
+export function sameFile(a: string, b: string): boolean {
+  if (statSync(a).size !== statSync(b).size) return false;
+  const fa = openSync(a, "r");
+  const fb = openSync(b, "r");
+  const ba = Buffer.alloc(1 << 20);
+  const bb = Buffer.alloc(1 << 20);
+  try {
+    for (;;) {
+      const na = readSync(fa, ba, 0, ba.length, null);
+      const nb = readSync(fb, bb, 0, bb.length, null);
+      if (na !== nb || !ba.subarray(0, na).equals(bb.subarray(0, nb))) return false;
+      if (na === 0) return true;
+    }
+  } finally {
+    closeSync(fa);
+    closeSync(fb);
+  }
 }
 const seenSession = (s: string) => s.replace(/[^A-Za-z0-9_-]/g, "_").slice(0, 64);
-export const seenFile = (session: string, text: string): string => join(stateDir(), "seen", `${seenSession(session)}-${cksum(Buffer.from(text))}`);
+export const seenFile = (session: string, output: Buffer | { file: string }): string => join(stateDir(), "seen", `${seenSession(session)}-${cksum(output)}`);
 /** The last run of one command in a session (for a re-run's "what changed" digest). */
 export const seenCmdFile = (session: string, cmd: string): string => join(stateDir(), "seen", `${seenSession(session)}-cmd-${cksum(Buffer.from(cmd))}`);
 /** Forget what a session saw (after a compaction or /clear the agent no longer has it). */

@@ -6,6 +6,8 @@
 # chars/4 of what the agent would have read vs. what offload returned, plus a
 # quality check: each scenario lists facts the answer must mention.
 set -u
+# every scenario must reach the worker: an answer cache hit would fake the timing and quality
+export OFFLOAD_NO_CACHE=1
 HERE="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$(cd "$HERE/.." && pwd)"
 CLI="$ROOT/plugins/harness-offload/bin/offload"

@@ -1,8 +1,9 @@
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { closeSync, existsSync, openSync, readFileSync, readSync, statSync, writeFileSync } from "node:fs";
+import { StringDecoder } from "node:string_decoder";
 import { cfgBool, cfgInt } from "./config.ts";
 import { invoke } from "./engine.ts";
 import { WorkerError } from "./backends/types.ts";
-import { redact } from "./secrets.ts";
+import { fence, redact } from "./secrets.ts";
 import { appendStats, pruneLogs, workDir } from "./state.ts";
 import { countLines, fmtInt, shquote, stripAnsi, truncate } from "./text.ts";
 
@@ -14,6 +15,96 @@ const splitLines = (text: string): string[] => {
   if (text.endsWith("\n")) l.pop();
   return l;
 };
+
+/** The lines of a text one by one, as slices of it: a 50 MB log never becomes an array
+ *  of a million strings (same lines as splitLines). */
+function* eachLine(text: string): Generator<string> {
+  for (let start = 0; start < text.length; ) {
+    let end = text.indexOf("\n", start);
+    if (end < 0) end = text.length;
+    yield text.slice(start, end);
+    start = end + 1;
+  }
+}
+
+/** A log as lines: from a string, or — over BIG bytes — read from its file in 1 MB chunks, so a
+ *  50 MB log is never held whole (as the bash engine's awk does). Same lines either way. */
+export interface Src {
+  bytes: number;
+  lines(): Iterable<string>;
+  count(): number;
+  last(n: number): string[];
+  whole(): string;
+}
+export const BIG = 8 * 1024 * 1024;
+export const textSrc = (t: string): Src => ({ bytes: Buffer.byteLength(t), lines: () => eachLine(t), count: () => countLines(t), last: (n) => lastLines(t, n), whole: () => t });
+function* fileLines(path: string): Generator<string> {
+  const fd = openSync(path, "r");
+  const buf = Buffer.alloc(1 << 20);
+  const dec = new StringDecoder("utf8");
+  let rest = "";
+  try {
+    for (;;) {
+      const n = readSync(fd, buf, 0, buf.length, null);
+      if (n <= 0) break;
+      rest += dec.write(buf.subarray(0, n));
+      let start = 0;
+      for (let i = rest.indexOf("\n"); i >= 0; i = rest.indexOf("\n", start)) {
+        yield rest.slice(start, i);
+        start = i + 1;
+      }
+      rest = rest.slice(start);
+    }
+    rest += dec.end();
+    if (rest !== "") yield rest;
+  } finally {
+    closeSync(fd);
+  }
+}
+/** The end of a file as text (up to max bytes; a cut first line is dropped). */
+function fileTail(path: string, size: number, max: number): string {
+  const len = Math.min(size, max);
+  const buf = Buffer.alloc(len);
+  const fd = openSync(path, "r");
+  try {
+    readSync(fd, buf, 0, len, size - len);
+  } finally {
+    closeSync(fd);
+  }
+  const t = buf.toString("utf8");
+  return len < size ? t.slice(t.indexOf("\n") + 1) : t;
+}
+export function logSrc(path: string, given?: string): Src {
+  if (given !== undefined) return textSrc(given);
+  const size = statSync(path).size;
+  if (size <= BIG) return textSrc(readFileSync(path, "utf8"));
+  return {
+    bytes: size,
+    lines: () => fileLines(path),
+    count: () => {
+      let n = 0;
+      for (const _ of fileLines(path)) n++;
+      return n;
+    },
+    last: (n) => lastLines(fileTail(path, size, 1 << 20), n),
+    whole: () => readFileSync(path, "utf8"),
+  };
+}
+const asSrc = (s: string | Src): Src => (typeof s === "string" ? textSrc(s) : s);
+
+/** The last n lines (same as splitLines(text).slice(-n)), scanning from the end. */
+function lastLines(text: string, n: number): string[] {
+  if (!text || n <= 0) return [];
+  const out: string[] = [];
+  let end = text.endsWith("\n") ? text.length - 1 : text.length;
+  while (out.length < n) {
+    const s = end > 0 ? text.lastIndexOf("\n", end - 1) : -1;
+    out.push(text.slice(s + 1, end));
+    if (s < 0) break;
+    end = s;
+  }
+  return out.reverse();
+}
 
 /** Stack frames in libraries, test runners and the runtime: they fill key lines and say
  *  nothing about the project's code, so they are counted, not shown. Twin: digest.sh. */
@@ -27,21 +118,23 @@ const STRONG_RE = /●|error|fail|exception|traceback|panic|fatal|segmentation f
  *  ("(N similar lines)"; exact repeats "(xN)"), so 600 warnings can't push a real error
  *  out: error-like kinds get the slots first (up to 3 lines each), the rest one line
  *  each; then they print in log order. Twin: co_key_lines in digest.sh. */
-export function keyLines(text: string, max: number): { lines: string[]; distinct: number } {
+export function keyLines(src: string | Src, max: number): { lines: string[]; distinct: number } {
   type Kind = { count: number; strong: boolean; lines: string[]; distinct: number; take: number };
   const kinds = new Map<string, Kind>();
   const order: string[] = [];
   const seen = new Map<string, number>();
   let libFrames = 0;
-  splitLines(text).forEach((raw, i) => {
+  let i = -1;
+  for (const raw of asSrc(src).lines()) {
+    i++;
     const l = raw.toLowerCase();
-    if (!KEY_RE.test(l) || ZERO_RE.test(l)) return;
+    if (!KEY_RE.test(l) || ZERO_RE.test(l)) continue;
     if (FRAME_RE.test(raw) && LIBFRAME_RE.test(raw)) {
       libFrames++;
-      return;
+      continue;
     }
     const t = stripAnsi(raw).replace(/[ \t\r]+$/, "");
-    if (!t) return;
+    if (!t) continue;
     const k = t.replace(/[0-9]+/g, "#");
     let kind = kinds.get(k);
     if (!kind) {
@@ -50,11 +143,11 @@ export function keyLines(text: string, max: number): { lines: string[]; distinct
       order.push(k);
     }
     kind.count++;
-    if (seen.has(t)) return;
+    if (seen.has(t)) continue;
     seen.set(t, i + 1);
     kind.distinct++;
     if (kind.distinct <= 3) kind.lines.push(t);
-  });
+  }
   let left = max;
   for (const strongPass of [true, false])
     for (const k of order) {
@@ -84,9 +177,9 @@ export function keyLines(text: string, max: number): { lines: string[]; distinct
 
 /** Every distinct key-line text (same filters and truncation as keyLines), in log order:
  *  what a later run is compared with. Twin: co_key_texts. */
-export function keyTexts(text: string): string[] {
+export function keyTexts(src: string | Src): string[] {
   const seen = new Set<string>();
-  for (const raw of splitLines(text)) {
+  for (const raw of asSrc(src).lines()) {
     const l = raw.toLowerCase();
     if (!KEY_RE.test(l) || ZERO_RE.test(l)) continue;
     if (FRAME_RE.test(raw) && LIBFRAME_RE.test(raw)) continue;
@@ -98,9 +191,9 @@ export function keyTexts(text: string): string[] {
 
 /** The key-line section of a re-run: only lines new since the previous run, with counts of
  *  unchanged and gone ones (the first gone ones: what was fixed). Twin: co_key_changes. */
-export function keyChanges(shown: string[], text: string, prevText: string, at: string): string[] {
-  const cur = new Set(keyTexts(text));
-  const prev = keyTexts(prevText);
+export function keyChanges(shown: string[], cur0: string | Src, prev0: string | Src, at: string): string[] {
+  const cur = new Set(keyTexts(cur0));
+  const prev = keyTexts(prev0);
   const P = new Set(prev);
   const fresh: string[] = [];
   let same = 0;
@@ -120,24 +213,28 @@ export function keyChanges(shown: string[], text: string, prevText: string, at: 
   return out;
 }
 
-export function logExcerpt(text: string): string {
-  const lines = splitLines(text);
-  const total = lines.length;
+export function logExcerpt(src: string | Src): string {
+  // two passes over the lines (no array): where the key lines are, then what to keep
+  const S = asSrc(src);
   const hit = new Set<number>();
-  lines.forEach((l, i) => {
+  let total = 0;
+  for (const l of S.lines()) {
+    total++;
     const s = l.toLowerCase();
-    if (KEY_RE.test(s) && !ZERO_RE.test(s)) hit.add(i + 1);
-  });
+    if (KEY_RE.test(s) && !ZERO_RE.test(s)) hit.add(total);
+  }
   const out: string[] = [];
   let gap = 0;
   let kept = 0;
-  for (let i = 1; i <= total; i++) {
+  let i = 0;
+  for (const line of S.lines()) {
+    i++;
     let keep = i <= 150 || i > total - 300;
     if (!keep) for (let j = i - 2; j <= i + 2; j++) if (hit.has(j)) keep = true;
     if (keep && kept < 1500) {
       if (gap) out.push(`[... ${gap} lines omitted ...]`);
       gap = 0;
-      out.push(lines[i - 1]);
+      out.push(line);
       kept++;
     } else gap++;
   }
@@ -155,14 +252,16 @@ export interface DigestOptions {
   budgetSec?: number;
   /** The same command's previous log in this session (a re-run shows what changed). */
   prev?: { log: string; at: string };
+  /** The log's text when the caller already holds it (saves reading a big log twice). */
+  text?: string;
 }
 
 export async function digest(log: string, rawLabel: string, code: string, focus: string, source: string, modelOverride?: string, opts: DigestOptions = {}): Promise<string> {
   // a command line can carry credentials (FOO_KEY=… cmd): never send/store them
   const label = redact(rawLabel);
-  const text = readFileSync(log, "utf8");
-  const lines = countLines(text);
-  const bytes = Buffer.byteLength(text);
+  const S = logSrc(log, opts.text);
+  const lines = S.count();
+  const bytes = S.bytes;
   const kb = Math.ceil(bytes / 1024);
   const compact = opts.compact ?? process.env.OFFLOAD_DIGEST_COMPACT === "1";
   let keyMax = cfgInt("digest.key_lines", 30);
@@ -177,7 +276,7 @@ export async function digest(log: string, rawLabel: string, code: string, focus:
   }
   const maxIn = cfgInt("digest.max_model_input_bytes", 400000);
   const t0 = Date.now();
-  const key = keyLines(text, keyMax);
+  const key = keyLines(S, keyMax);
   let summary = "";
   let note = "";
   let model = "";
@@ -190,7 +289,7 @@ export async function digest(log: string, rawLabel: string, code: string, focus:
       code ? `<exit_code>${code}</exit_code>` : "",
       focus ? `<focus>${focus}</focus>` : "",
       `<output lines="${lines}" bytes="${bytes}">`,
-      redact(bytes <= maxIn ? text : logExcerpt(text)).replace(/\n$/, ""),
+      fence(redact(bytes <= maxIn ? S.whole() : logExcerpt(S))).replace(/\n$/, ""),
       "</output>",
     ]
       .filter((s) => s !== "")
@@ -214,13 +313,13 @@ export async function digest(log: string, rawLabel: string, code: string, focus:
       : [];
   // a re-run of the same command in this session: only what changed
   const keySection = opts.prev && existsSync(opts.prev.log)
-    ? keyChanges(key.lines, text, readFileSync(opts.prev.log, "utf8"), opts.prev.at).map((l) => l.slice(0, width))
+    ? keyChanges(key.lines, S, logSrc(opts.prev.log), opts.prev.at).map((l) => l.slice(0, width))
     : key.distinct > 0 ? [`── key lines, verbatim (${key.distinct} distinct) ──`, ...key.lines.map((l) => l.slice(0, width))] : ["── no error-like lines found ──"];
   if (compact) out.push(...keySection, ...sumSection);
   else out.push(...sumSection, ...keySection);
   if (!summary && !compact) tailN += 10;
   out.push(`── last ${tailN} lines ──`);
-  out.push(...splitLines(text).slice(-tailN).map((l) => stripAnsi(l).slice(0, width)));
+  out.push(...S.last(tailN).map((l) => stripAnsi(l).slice(0, width)));
   out.push(`── more: grep -n -iE "error|fail" ${shquote(log)} | head -50   ·   sed -n "START,ENDp" ${shquote(log)}`);
   const result = out.join("\n") + "\n";
   const bout = Buffer.byteLength(result);
@@ -245,11 +344,11 @@ export function saveLog(path: string, text: string): void {
  *  (or per folder for path lists), the first matches of the busiest files, and how to
  *  narrow it. Deterministic and instant (no model). Twin: co_search_view in digest.sh —
  *  the output must stay identical. */
-export function searchView(log: string, rawLabel: string): string {
+export function searchView(log: string, rawLabel: string, given?: string): string {
   const t0 = Date.now();
   const label = redact(rawLabel);
-  const text = readFileSync(log, "utf8");
-  const bytes = Buffer.byteLength(text);
+  const S = logSrc(log, given);
+  const bytes = S.bytes;
   const kb = Math.ceil(bytes / 1024);
   const cut = (s: string) => (s.length > 200 ? s.slice(0, 197) + "..." : s);
   const pathy = (p: string) => p !== "" && !/[ \t]/.test(p) && (p.includes("/") || /\.[A-Za-z0-9]+$/.test(p));
@@ -266,13 +365,19 @@ export function searchView(log: string, rawLabel: string): string {
   };
   const m = groups();
   const d = groups();
-  const all: string[] = [];
+  // the first 40 and the last 10 lines are all the plain-lines view needs (no array of every line)
+  const first: string[] = [];
+  const tail: string[] = [];
+  let n = 0;
   let nm = 0;
   let np = 0;
-  for (const raw of splitLines(text)) {
+  for (const raw of S.lines()) {
     const t = raw.replace(/\x1b\[[0-9;]*[A-Za-z]/g, "").replace(/\r$/, "");
     if (t === "") continue;
-    all.push(t);
+    n++;
+    if (first.length < 40) first.push(t);
+    tail.push(t);
+    if (tail.length > 10) tail.shift();
     const c = t.indexOf(":");
     const p = c > 0 ? t.slice(0, c) : "";
     if (pathy(p)) {
@@ -284,17 +389,17 @@ export function searchView(log: string, rawLabel: string): string {
       add(d, slash >= 0 ? t.slice(0, slash) : ".", t);
     }
   }
-  const n = all.length;
   const mode = nm * 10 >= n * 6 ? "m" : np * 10 >= n * 6 ? "d" : "l";
   const out: string[] = [];
-  let head = `[offload] \`${label.slice(0, 120)}\` · ${fmtInt(countLines(text))} lines / ${kb} KB`;
+  let head = `[offload] \`${label.slice(0, 120)}\` · ${fmtInt(S.count())} lines / ${kb} KB`;
   if (mode === "m") head += ` · ${fmtInt(nm)} matches in ${fmtInt(m.order.length)} files`;
   if (mode === "d") head += ` · ${fmtInt(np)} paths in ${fmtInt(d.order.length)} folders`;
   out.push(`${head} · full log: ${log}`);
+  let topKeys: string[] = [];
   const list = (g: Groups, unit: string, what: string) => {
     const shown = Math.min(g.order.length, 20);
     // busiest first; ties keep the order they appeared in
-    const top = g.order.map((k, i) => ({ k, i, c: g.cnt.get(k)! })).sort((a, b) => b.c - a.c || a.i - b.i).slice(0, shown).map((x) => x.k);
+    const top = (topKeys = g.order.map((k, i) => ({ k, i, c: g.cnt.get(k)! })).sort((a, b) => b.c - a.c || a.i - b.i).slice(0, shown).map((x) => x.k));
     out.push(`── ${what} per ${unit} (${fmtInt(g.order.length)} ${unit}s) ──`);
     for (const k of top) out.push(`${String(g.cnt.get(k)).padStart(7)}  ${cut(k)}`);
     if (g.order.length > shown) {
@@ -308,15 +413,74 @@ export function searchView(log: string, rawLabel: string): string {
   if (mode === "m") list(m, "file", "matches");
   else if (mode === "d") list(d, "folder", "paths");
   else {
-    out.push(`── first ${Math.min(n, 40)} lines ──`, ...all.slice(0, 40).map(cut));
-    if (n > 40) out.push(`── last ${Math.min(n - 40, 10)} lines ──`, ...all.slice(Math.max(n - 10, 40)).map(cut));
+    out.push(`── first ${Math.min(n, 40)} lines ──`, ...first.map(cut));
+    if (n > 40) out.push(`── last ${Math.min(n - 40, 10)} lines ──`, ...tail.slice(-Math.min(n - 40, 10)).map(cut));
   }
-  out.push(`── narrow it: a path or a sharper pattern; counts: grep -c / rg -c; the rest: sed -n "START,ENDp" ${shquote(log)}; or ask: offload read -q "QUESTION" FILE ──`);
+  // the busiest files (or folders) as a ready question; FILE when there are none
+  const asks = (mode !== "l" ? topKeys.slice(0, 3).map(shquote).join(" ") : "") || "FILE";
+  out.push(`── narrow it: a path or a sharper pattern; counts: grep -c / rg -c; the rest: sed -n "START,ENDp" ${shquote(log)}; or ask: offload read -q "QUESTION" ${asks} ──`);
   const result = out.join("\n") + "\n";
   const bout = Buffer.byteLength(result);
   appendStats({
     kind: "digest", source: "search", label, log, model: "", bytes_in: bytes, bytes_out: bout,
     saved_tokens: Math.max(0, Math.floor((bytes - bout) / 4)), seconds: Math.round((Date.now() - t0) / 1000),
+    model_ok: false, model_tried: false, worker_tokens_in: 0, worker_tokens_out: 0,
+  });
+  pruneLogs();
+  return result;
+}
+
+/** What the agent sees instead of a huge diff (git diff/show): files changed with +added
+ *  −removed (busiest first), the first hunk headers of the busiest files, and how to look at
+ *  one file. Deterministic. Twin: co_diff_view in digest.sh — the output must stay identical. */
+export function diffView(log: string, rawLabel: string, given?: string): string {
+  const t0 = Date.now();
+  const label = redact(rawLabel);
+  const S = logSrc(log, given);
+  const cut = (s: string) => (s.length > 200 ? s.slice(0, 197) + "..." : s);
+  const order: string[] = [];
+  const add = new Map<string, number>();
+  const del = new Map<string, number>();
+  const hunks = new Map<string, string[]>();
+  let cur = "";
+  let ta = 0;
+  let td = 0;
+  for (const l of S.lines()) {
+    if (l.startsWith("diff --git ")) {
+      cur = l.replace(/^diff --git a\/.* b\//, "");
+      order.push(cur);
+      add.set(cur, 0);
+      del.set(cur, 0);
+      hunks.set(cur, []);
+      continue;
+    }
+    if (!cur || /^(\+\+\+|---) /.test(l)) continue;
+    if (l.startsWith("@@")) {
+      const h = hunks.get(cur)!;
+      if (h.length < 2) h.push(l);
+    } else if (l.startsWith("+")) {
+      add.set(cur, add.get(cur)! + 1);
+      ta++;
+    } else if (l.startsWith("-")) {
+      del.set(cur, del.get(cur)! + 1);
+      td++;
+    }
+  }
+  const out: string[] = [];
+  out.push(`[offload] \`${label.slice(0, 120)}\` · ${fmtInt(S.count())} lines / ${Math.ceil(S.bytes / 1024)} KB · ${fmtInt(order.length)} files, +${fmtInt(ta)} −${fmtInt(td)} · full log: ${log}`);
+  const size = (f: string) => add.get(f)! + del.get(f)!;
+  const top = order.map((f, i) => ({ f, i })).sort((a, b) => size(b.f) - size(a.f) || a.i - b.i).slice(0, 20).map((x) => x.f);
+  out.push("── files changed (busiest first) ──");
+  for (const f of top) out.push(`${`+${add.get(f)}`.padStart(7)} ${`-${del.get(f)}`.padStart(7)}  ${cut(f)}`);
+  if (order.length > top.length) out.push(`      … ${fmtInt(order.length - top.length)} more files`);
+  out.push("── first changes in the busiest files ──");
+  for (const f of top.slice(0, 8)) for (const h of hunks.get(f)!) out.push(cut(`${f}: ${h}`));
+  out.push(`── one file: git diff -- PATH (or sed -n "START,ENDp" ${shquote(log)}); totals: git diff --stat ──`);
+  const result = out.join("\n") + "\n";
+  const bout = Buffer.byteLength(result);
+  appendStats({
+    kind: "digest", source: "diff", label, log, model: "", bytes_in: S.bytes, bytes_out: bout,
+    saved_tokens: Math.max(0, Math.floor((S.bytes - bout) / 4)), seconds: Math.round((Date.now() - t0) / 1000),
     model_ok: false, model_tried: false, worker_tokens_in: 0, worker_tokens_out: 0,
   });
   pruneLogs();

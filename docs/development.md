@@ -4,6 +4,7 @@
 cd packages/cli && bun install && bun run build && bun test   # TypeScript: unit, adapters, MCP, installers
 bash plugins/harness-offload/tests/run.sh                         # conformance suite (bash engine)
 OFFLOAD_CLI=$PWD/packages/cli/dist/offload-node bash plugins/harness-offload/tests/run.sh   # … TS engine
+TS=$PWD/packages/cli/dist/offload-node; OFFLOAD_ENGINE=ts OFFLOAD_TS_CLI=$TS OFFLOAD_CLI=$TS bash plugins/harness-offload/tests/run.sh   # … TS answering the hooks too
 bash plugins/harness-offload/tests/run.sh --e2e                   # + real Claude Code against a mock API
 bash plugins/harness-offload/tests/e2e-backends.sh                # every HTTP preset in both engines (mock; CI)
 bash plugins/harness-offload/tests/e2e-backends.sh --live --agents   # + real URLs with a fake key, real CLIs logged out
@@ -97,3 +98,12 @@ packages/cli/             TypeScript package: CLI, wizard, MCP server, connector
 evals/                    routing table, fixtures, benchmarks
 docs/                     design notes, host details, research, autopilot logs
 ```
+
+## Dependencies
+
+Three at run time, each for one feature, loaded only when that feature runs:
+`@clack/prompts` (the installer's and the setup wizard's questions), `@modelcontextprotocol/sdk` (`offload mcp`) and
+`zod` (the MCP tools' input schemas, which the SDK requires). `typebox` is provided by the Pi host (external in the
+build). Everything else is Node's standard library. The release job checks every dependency's registry signature
+(`npm audit signatures`), attaches a CycloneDX SBOM (`harness-offload.cdx.json`) and SHA-256 sums, and `pack-check`
+fails when the package grows past 1.5 MB packed / 5 MB unpacked.

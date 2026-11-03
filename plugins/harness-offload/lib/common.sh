@@ -117,6 +117,31 @@ co_cleanup() {
   [ -n "$CO_TMPDIR" ] && rm -rf "$CO_TMPDIR" 2>/dev/null
 }
 
+# co_kill_tree PID... — a process and everything it started (children first), so a
+# worker's own subprocesses don't outlive it. Twin: the process-tree kill in proc.ts.
+co_kill_tree() {
+  local p c
+  for p in "$@"; do
+    [ -n "$p" ] || continue
+    for c in $(pgrep -P "$p" 2>/dev/null); do co_kill_tree "$c"; done
+    kill "$p" 2>/dev/null
+  done
+  return 0
+}
+
+# co_wait_worker PID WATCHDOG — wait for a worker; if offload itself is stopped meanwhile
+# (TERM, INT, HUP), take the worker's whole tree and the watchdog with it, then exit.
+# Sets CO_WAIT_RC.
+co_wait_worker() {
+  local w="$1" d="$2"
+  trap 'co_kill_tree "$w" "$d"; co_cleanup; exit 143' TERM
+  trap 'co_kill_tree "$w" "$d"; co_cleanup; exit 130' INT
+  trap 'co_kill_tree "$w" "$d"; co_cleanup; exit 129' HUP
+  # (bash's own "Killed (cd …)" job notice must not reach the agent: the error says it better)
+  wait "$w" 2>/dev/null; CO_WAIT_RC=$?
+  trap - TERM INT HUP
+}
+
 # ------------------------------------------------------------------- config
 
 co_project_dir() {
@@ -256,7 +281,7 @@ co_config_load() {
     c=${pdir//[!A-Za-z0-9._-]/_}
     [ ${#c} -gt 180 ] && c=${c:$((${#c} - 180))}
     cache="$cdir/config$c"
-    if [ -f "$cache" ] && [ -O "$cache" ] && [ -O "$cdir" ]; then
+    if [ -f "$cache" ] && [ ! -h "$cache" ] && [ -O "$cache" ] && [ -O "$cdir" ]; then
       out=""
       IFS= read -r -d '' out < "$cache"
       case "$out" in
@@ -472,6 +497,7 @@ co_prune_logs() {
   days=$(co_cfg_int '.log_retention_days' 7)
   find "$d/logs" -type f -name '*.log' -mtime +"$days" -exec rm -f {} + 2>/dev/null || true
   find "$d/seen" -type f -mmin +120 -exec rm -f {} + 2>/dev/null || true
+  find "$d/cache/answers" -type f -mmin +1440 -exec rm -f {} + 2>/dev/null || true
 }
 
 # Outputs this session already saw (digested or search view): one marker per
@@ -651,4 +677,24 @@ co_config_unknown() {
       for (i = 1; i <= nk; i++) { e = lev(k, kl[i]); if (e < bd) { bd = e; best = kl[i] } }
       printf "%s\t%s\n", k, best
     }'
+}
+
+# co_fence — stdin to stdout with offload's own prompt tags neutralised inside material
+# (a file, a log or piped text), so content can't close a block or start a new question:
+# the "<" of <file>, <question>, <instructions>, <previous_answer>, <check> (open or close)
+# and of </input>, </output> becomes "&lt;". Opening <input>/<output> (HTML, JSX) stay.
+# Twin: fence() in secrets.ts.
+co_fence() {
+  LC_ALL=C awk '
+    function fence(s,    line, out) {
+      out = ""
+      while (index(s, "<") > 0) {
+        line = tolower(s)
+        if (!match(line, /<\/?(file|question|instructions|previous_answer|check)([ \t>\/]|$)|<\/(input|output)([ \t>\/]|$)/)) break
+        out = out substr(s, 1, RSTART - 1) "&lt;"
+        s = substr(s, RSTART + 1)
+      }
+      return out s
+    }
+    { print fence($0) }'
 }

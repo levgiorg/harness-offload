@@ -60,6 +60,8 @@ function check(p, a, b, q,    n, i, lo, hi, hay) {
   lo = a - slack; hi = b + slack
   if (lo < 1) lo = 1
   if (hi > n) hi = n
+  # the worker saw offload's own tags inside the material as "&lt;…" (fenced): read them back
+  gsub(/&lt;/, "<", q)
   q = norm(q)
   if (q == "") return 0
   for (i = lo; i <= hi; i++) {

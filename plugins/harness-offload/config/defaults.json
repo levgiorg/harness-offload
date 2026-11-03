@@ -34,7 +34,8 @@
     "max_input_bytes": 1500000,
     "max_files": 60,
     "verify_citations": true,
-    "retry_unverified": true
+    "retry_unverified": true,
+    "cache_seconds": 3600
   },
   "explore": {
     "max_steps": 40
@@ -60,6 +61,8 @@
     "bash_output_threshold_bytes": 20000,
     "digest_timeout_seconds": 20,
     "search_view": true,
+    "diff_view": true,
+    "json_view": true,
     "search_commands": "^[[:space:]]*(sudo[[:space:]]+)?(grep|egrep|fgrep|rg|ag|ack|git[[:space:]]+grep|find|fd)([[:space:]]|$)",
     "bash_never_summarize": "^[[:space:]]*(sudo[[:space:]]+)?(cat|bat|nl|head|tail|less|more|sed|awk|grep|egrep|fgrep|rg|ag|ack|jq|yq|diff|wc|ls|tree|find|fd|stat|file|echo|printf|offload|git[[:space:]]+(diff|show|blame|status|log))([[:space:]]|$)",
     "autowrap": false,

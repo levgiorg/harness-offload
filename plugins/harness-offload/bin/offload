@@ -72,7 +72,7 @@ need() { [ $# -ge 2 ] || die "option $1 needs a value"; }
 need_jq() { command -v jq >/dev/null 2>&1 || die "jq is required (macOS: brew install jq · Debian/Ubuntu: apt install jq)" "$CO_E_USAGE"; }
 
 # Footer helper: one compact line so Claude knows where the answer came from.
-footer() { printf '\n[offload %s]\n' "$*"; }
+footer() { printf '\n[offload %s%s]\n' "$*" "${CO_OC_FALLBACK:+ · $CO_OC_FALLBACK}"; }
 
 report_failure() {
   local what="$1" rc="$2"
@@ -93,7 +93,7 @@ report_failure() {
 emit_file() {
   local path="$1" from="$2" to="$3" total="$4"
   printf '<file path="%s" lines="%s-%s" total_lines="%s">\n' "$path" "$from" "$to" "$total"
-  awk -v a="$from" -v b="$to" 'NR >= a && NR <= b { printf "%6d\t%s\n", NR, $0 } NR > b { exit }' "$path" | co_redact
+  awk -v a="$from" -v b="$to" 'NR >= a && NR <= b { printf "%6d\t%s\n", NR, $0 } NR > b { exit }' "$path" | co_redact | co_fence
   printf '</file>\n\n'
 }
 
@@ -110,7 +110,7 @@ list_dir_files() {
 }
 
 cmd_read() {
-  local question="" model="" verify=true allow_secrets=false
+  local question="" model="" verify=true allow_secrets=false use_cache=true
   local -a items
   items=()
   while [ $# -gt 0 ]; do
@@ -118,6 +118,7 @@ cmd_read() {
       -q|--question) need "$@"; question="$2"; shift 2 ;;
       -m|--model) need "$@"; model="$2"; shift 2 ;;
       --no-verify) verify=false; shift ;;
+      --no-cache) use_cache=false; shift ;;
       --allow-secrets) allow_secrets=true; shift ;;
       --paths) shift ;;  # alias: the paths simply follow
       --) shift; while [ $# -gt 0 ]; do items+=("$1"); shift; done ;;
@@ -182,6 +183,25 @@ EOF
   fi
   printf '<question>%s</question>\n' "$question" >> "$prompt"
 
+  # The same question about the same file contents (the prompt holds them) with the same
+  # model and instructions: the checked answer from earlier, if it is recent. Twin: cmdRead.
+  local cache_s=0 cachef="" c_at c_hms c_ok c_bad c_model
+  co_cfgi cache_s '.read.cache_seconds' 3600
+  [ "${OFFLOAD_NO_CACHE:-}" = 1 ] && use_cache=false
+  if $use_cache && [ "$cache_s" -gt 0 ]; then
+    cachef="$(co_state_dir)/cache/answers/$({ cat "$prompt"; printf '\n%s|%s|%s|' "$model" "${CO_TASK_NAME:-}" "$verify"; cat "${CO_TASK_SYSTEM_FILE:-/dev/null}"; } | LC_ALL=C cksum | LC_ALL=C awk '{ print $1 "-" $2 }')"
+    if [ -f "$cachef" ] && read -r c_at c_hms c_ok c_bad c_model < "$cachef" && [ $(( $(co_now) - ${c_at:-0} )) -le "$cache_s" ]; then
+      tail -n +2 "$cachef"
+      footer "${CO_CMD_LABEL:-read} · $c_model · $nfiles file(s), $(co_fmt_int "$nlines") lines (~$(co_fmt_int "$(co_est_tokens "$bytes")") tokens) kept out of your context · 0s$($verify && printf ' · citations: %s verified, %s unverified' "$c_ok" "$c_bad") · cached from $c_hms (--no-cache to ask again)"
+      [ "${c_bad:-0}" -gt 0 ] && echo "⚠unverified = quote not found near the cited lines; confirm with Read(offset/limit) before acting on it."
+      co_stats_append "$(jq -nc --arg model "$c_model" --argjson files "$nfiles" --argjson bin "$bytes" --argjson bout "$(tail -n +2 "$cachef" | wc -c | tr -d ' ')" \
+        '{ts: now | floor, kind: "read", source: "cache", model: $model, files: $files, bytes_in: $bin, bytes_out: $bout,
+          saved_tokens: ((($bin - $bout) / 4) | floor | if . < 0 then 0 else . end), seconds: 0, cites_ok: 0, cites_bad: 0,
+          worker_tokens_in: 0, worker_tokens_out: 0}')"
+      return 0
+    fi
+  fi
+
   local t0 rc
   t0=$(co_now)
   co_oc_invoke read "$prompt" "$(co_work_dir)" "$answer" "$model"; rc=$?
@@ -218,6 +238,9 @@ EOF
     cite=" · citations: $ok verified, $bad unverified$retried"
   fi
   cat "$answer"
+  if [ -n "$cachef" ]; then
+    mkdir -p "${cachef%/*}" 2>/dev/null && { printf '%s %s %s %s %s\n' "$(co_now)" "$(date +%H:%M:%S)" "$ok" "$bad" "$CO_OC_MODEL"; cat "$answer"; } > "$cachef" 2>/dev/null
+  fi
   footer "${CO_CMD_LABEL:-read} · $CO_OC_MODEL · $nfiles file(s), $(co_fmt_int "$nlines") lines (~$(co_fmt_int "$(co_est_tokens "$bytes")") tokens) kept out of your context · $(co_elapsed "$t0")s$cite"
   [ "${bad:-0}" -gt 0 ] && echo "⚠unverified = quote not found near the cited lines; confirm with Read(offset/limit) before acting on it."
   [ -n "$skipped" ] && echo "skipped:$skipped"
@@ -471,11 +494,11 @@ cmd_ask() {
   local prompt answer rc t0
   co_tmp prompt; co_tmp answer
   {
-    if $use_stdin; then printf '<input>\n'; co_redact; printf '</input>\n\n'; fi
+    if $use_stdin; then printf '<input>\n'; co_redact | co_fence; printf '</input>\n\n'; fi
     if [ -n "$file" ]; then
       [ -f "$file" ] || die "ask: no such file: $file"
       co_is_secret_target "$file" && die "ask: refusing to send $file (matches privacy.secret_globs)" "$CO_E_REFUSED"
-      printf '<input path="%s">\n' "$file"; co_redact < "$file"; printf '</input>\n\n'
+      printf '<input path="%s">\n' "$file"; co_redact < "$file" | co_fence; printf '</input>\n\n'
     fi
     printf '%s\n' "$question"
   } > "$prompt"
@@ -1097,7 +1120,7 @@ cmd_explain() {
     def file: if (.file // "") == "" then "a file (not recorded)" else .file end;
     def full: "over hooks.read_threshold_lines (\($rl)) or hooks.read_threshold_tokens (\($rt))";
     def out: "over hooks.bash_output_threshold_lines (\($bl)) or hooks.bash_output_threshold_bytes (\($bb))";
-    map(select(.kind == "hook" or (.kind == "digest" and ((.source // "") as $s | $s == "hook" or $s == "search" or $s == "repeat"))))
+    map(select(.kind == "hook" or (.kind == "digest" and ((.source // "") as $s | $s == "hook" or $s == "search" or $s == "diff" or $s == "json" or $s == "repeat"))))
     | if length == 0 then "Nothing yet: offload'"'"'s hooks have not blocked or replaced anything (\($f))." else
       length as $all | reverse | .[:$n] |
       "offload explain — what the hooks did, newest first (\(length) of \($all))",
@@ -1114,6 +1137,10 @@ cmd_explain() {
           "hook event \(.event // "?")"
         elif .source == "search" then
           "showed a search view of `\(.label // "?")` (\(.bytes_in | kb) → \(.bytes_out | kb))\n               why: a search \(out)\n               all of it: \(.log // "(log not recorded)") · off: offload config set hooks.search_view false"
+        elif .source == "diff" then
+          "showed a diff view of `\(.label // "?")` (\(.bytes_in | kb) → \(.bytes_out | kb))\n               why: a diff \(out)\n               all of it: \(.log // "(log not recorded)") · off: offload config set hooks.diff_view false"
+        elif .source == "json" then
+          "showed the JSON structure of `\(.label // "?")` (\(.bytes_in | kb) → \(.bytes_out | kb))\n               why: JSON output \(out)\n               all of it: \(.log // "(log not recorded)") · off: offload config set hooks.json_view false"
         elif .source == "repeat" then
           "said `\(.label // "?")` printed the same output as before (\(.bytes_in | kb))\n               why: the same output again in this session\n               all of it: \(.log // "(log not recorded)")"
         else

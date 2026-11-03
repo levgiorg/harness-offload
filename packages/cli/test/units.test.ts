@@ -143,3 +143,28 @@ describe("NO_COLOR", () => {
       expect(cli(args, { env: { ...env, NO_COLOR: "1" } }).stdout).not.toContain("\x1b[");
   });
 });
+
+describe("explore in a big repo", () => {
+  test("a git file list over 1 MB is read in full (ignored files stay out, so a shortened citation is unique)", () => {
+    const { mkdirSync, writeFileSync } = require("node:fs");
+    const { execFileSync } = require("node:child_process");
+    const s = sandbox();
+    const repo = join(s.dir, "repo");
+    const deep = "a-rather-long-folder-name-that-makes-the-git-listing-big/".repeat(3);
+    for (let i = 0; i < 6000; i++) {
+      if (i % 500 === 0) mkdirSync(join(repo, `p${i}`, deep), { recursive: true });
+      writeFileSync(join(repo, `p${i - (i % 500)}`, deep, `m${i}.ts`), "x\n");
+    }
+    mkdirSync(join(repo, "src", "fx"), { recursive: true });
+    writeFileSync(join(repo, "src", "fx", "ledger.ts"), "export const x = 1\nexport function post(e) { ledger.push(e) }\n");
+    mkdirSync(join(repo, "generated"), { recursive: true });
+    writeFileSync(join(repo, "generated", "ledger.ts"), "generated\n");
+    writeFileSync(join(repo, ".gitignore"), "generated/\n");
+    execFileSync("git", ["init", "-q"], { cwd: repo });
+    const listing = execFileSync("git", ["ls-files", "--others", "--exclude-standard"], { cwd: repo, maxBuffer: 1 << 26 }).length;
+    expect(listing).toBeGreaterThan(1024 * 1024);
+    const r = cli(["explore", "where is post?"], { env: { ...s.env, STUB_ANSWER: "post — ledger.ts:L2 `ledger.push(e)`" }, cwd: repo });
+    expect(r.stdout).toContain("citations: 1 verified, 0 unverified");
+    expect(r.stdout).toContain("src/fx/ledger.ts:L2");
+  }, 60_000);
+});

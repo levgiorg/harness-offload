@@ -57,6 +57,13 @@ if [ -n "$offset" ] || [ -n "$limit" ]; then
   if [ -n "$limit" ]; then span=$limit; else span=$(( lines - start + 1 )); fi
   remaining=$(( lines - start + 1 ))
   [ "$span" -gt "$remaining" ] && span=$remaining
+  # lines averaging over 4,000 characters (minified/generated): count the slice's size too
+  avg=$(( bytes / (lines > 0 ? lines : 1) ))
+  if [ "$avg" -gt 4000 ] && [ $(( (span * avg + 3) / 4 )) -gt "$max_tokens" ]; then
+    may_stop || exit 0
+    hk_event read_slice_blocked "$(jq -nc --argjson l "$span" --arg f "$file" '{lines: $l, file: $f}')"
+    hk_guard "offload: that Read slice is $(co_fmt_int "$span") lines of $file, but its lines average $(co_fmt_int "$avg") characters (minified or generated): ~$(co_fmt_int $(( (span * avg + 3) / 4 ))) tokens. Bash: grep -noE '.{0,80}PATTERN.{0,80}' $(co_shquote "$file") shows each match with 80 characters around it, or ask: $HK_CLI read -q \"<question>\" $(co_shquote "$file")"
+  fi
   [ "$span" -le "$chunk" ] && exit 0
   may_stop || exit 0
   hk_event read_slice_blocked "$(jq -nc --argjson l "$span" --arg f "$file" '{lines: $l, file: $f}')"

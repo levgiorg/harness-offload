@@ -67,6 +67,11 @@ jobs:
           node scripts/release-files.mjs
           node scripts/pack-check.mjs
           node scripts/pack-smoke.mjs
+      - name: Dependencies are signed as published; SBOM of what ships
+        working-directory: packages/cli
+        run: |
+          npm audit signatures
+          npm sbom --sbom-format cyclonedx --omit dev > ../../dist/harness-offload.cdx.json
       - name: Plugin zip
         run: |
           cd plugins && zip -qr ../dist/harness-offload-plugin.zip harness-offload -x 'harness-offload/tests/*' && cd ..

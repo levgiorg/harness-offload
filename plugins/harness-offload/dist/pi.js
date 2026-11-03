@@ -13,7 +13,7 @@ var __esm = (fn, res, err) => () => {
 // src/generated/assets.ts
 var DEFAULTS_JSON, OUTLINE_JSON, CONNECTORS_JSON, PROMPT_TEXT;
 var init_assets = __esm(() => {
-  DEFAULTS_JSON = { enabled: true, backend: "opencode", endpoints: {}, agents: {}, hosts: { codex: { call: "mcp" }, cursor: { call: "mcp" } }, models: { default: "@host", read: "", explore: "", summarize: "", write: "", ask: "", fallback: ["@default"] }, variants: { read: "", explore: "", summarize: "", write: "", ask: "" }, opencode: { bin: "opencode", timeout_seconds: 180, max_stream_errors: 2, keep_sessions: false, disable_claude_code_compat: true }, read: { max_input_bytes: 1500000, max_files: 60, verify_citations: true, retry_unverified: true }, explore: { max_steps: 40 }, digest: { threshold_lines: 150, threshold_bytes: 12000, use_model: true, max_model_input_bytes: 400000, key_lines: 30, tail_lines: 15 }, hooks: { read_guard: "block", read_threshold_lines: 600, read_threshold_tokens: 6000, read_max_chunk_lines: 600, context_tight_tokens: 0, bash_read_guard: true, summarize_bash_output: true, bash_output_threshold_lines: 250, bash_output_threshold_bytes: 20000, digest_timeout_seconds: 20, search_view: true, search_commands: "^[[:space:]]*(sudo[[:space:]]+)?(grep|egrep|fgrep|rg|ag|ack|git[[:space:]]+grep|find|fd)([[:space:]]|$)", bash_never_summarize: "^[[:space:]]*(sudo[[:space:]]+)?(cat|bat|nl|head|tail|less|more|sed|awk|grep|egrep|fgrep|rg|ag|ack|jq|yq|diff|wc|ls|tree|find|fd|stat|file|echo|printf|offload|git[[:space:]]+(diff|show|blame|status|log))([[:space:]]|$)", autowrap: false, autowrap_pattern: "^[[:space:]]*((npm|pnpm|yarn|bun)[[:space:]]+(run[[:space:]]+)?(test|build|lint|install|ci|typecheck)|npx[[:space:]]+(jest|vitest|tsc|eslint|playwright)|(jest|vitest|pytest|tox|tsc|eslint|ruff|mypy)([[:space:]]|$)|go[[:space:]]+(test|build|vet)|cargo[[:space:]]+(test|build|check|clippy)|(mvn|mvnw|\\./mvnw|gradle|\\./gradlew)([[:space:]]|$)|make([[:space:]]|$)|pip[[:space:]]+install|docker[[:space:]]+(build|compose[[:space:]]+build)|terraform[[:space:]]+plan)", subagents: true, ignore_globs: [] }, privacy: { secret_globs: [".env", ".env.*", "*.pem", "*.key", "*.p12", "*.pfx", "*.jks", "*.keystore", "id_rsa*", "id_ecdsa*", "id_ed25519*", ".npmrc", ".pypirc", ".netrc", "credentials", "credentials.*", "secrets.*", "*.tfvars", "*.tfstate"], secret_allow_globs: ["*.example", "*.sample", "*.template", "*.dist"], redact: true }, state_dir: "", log_retention_days: 7 };
+  DEFAULTS_JSON = { enabled: true, backend: "opencode", endpoints: {}, agents: {}, hosts: { codex: { call: "mcp" }, cursor: { call: "mcp" } }, models: { default: "@host", read: "", explore: "", summarize: "", write: "", ask: "", fallback: ["@default"] }, variants: { read: "", explore: "", summarize: "", write: "", ask: "" }, opencode: { bin: "opencode", timeout_seconds: 180, max_stream_errors: 2, keep_sessions: false, disable_claude_code_compat: true }, read: { max_input_bytes: 1500000, max_files: 60, verify_citations: true, retry_unverified: true, cache_seconds: 3600 }, explore: { max_steps: 40 }, digest: { threshold_lines: 150, threshold_bytes: 12000, use_model: true, max_model_input_bytes: 400000, key_lines: 30, tail_lines: 15 }, hooks: { read_guard: "block", read_threshold_lines: 600, read_threshold_tokens: 6000, read_max_chunk_lines: 600, context_tight_tokens: 0, bash_read_guard: true, summarize_bash_output: true, bash_output_threshold_lines: 250, bash_output_threshold_bytes: 20000, digest_timeout_seconds: 20, search_view: true, diff_view: true, json_view: true, search_commands: "^[[:space:]]*(sudo[[:space:]]+)?(grep|egrep|fgrep|rg|ag|ack|git[[:space:]]+grep|find|fd)([[:space:]]|$)", bash_never_summarize: "^[[:space:]]*(sudo[[:space:]]+)?(cat|bat|nl|head|tail|less|more|sed|awk|grep|egrep|fgrep|rg|ag|ack|jq|yq|diff|wc|ls|tree|find|fd|stat|file|echo|printf|offload|git[[:space:]]+(diff|show|blame|status|log))([[:space:]]|$)", autowrap: false, autowrap_pattern: "^[[:space:]]*((npm|pnpm|yarn|bun)[[:space:]]+(run[[:space:]]+)?(test|build|lint|install|ci|typecheck)|npx[[:space:]]+(jest|vitest|tsc|eslint|playwright)|(jest|vitest|pytest|tox|tsc|eslint|ruff|mypy)([[:space:]]|$)|go[[:space:]]+(test|build|vet)|cargo[[:space:]]+(test|build|check|clippy)|(mvn|mvnw|\\./mvnw|gradle|\\./gradlew)([[:space:]]|$)|make([[:space:]]|$)|pip[[:space:]]+install|docker[[:space:]]+(build|compose[[:space:]]+build)|terraform[[:space:]]+plan)", subagents: true, ignore_globs: [] }, privacy: { secret_globs: [".env", ".env.*", "*.pem", "*.key", "*.p12", "*.pfx", "*.jks", "*.keystore", "id_rsa*", "id_ecdsa*", "id_ed25519*", ".npmrc", ".pypirc", ".netrc", "credentials", "credentials.*", "secrets.*", "*.tfvars", "*.tfstate"], secret_allow_globs: ["*.example", "*.sample", "*.template", "*.dist"], redact: true }, state_dir: "", log_retention_days: 7 };
   OUTLINE_JSON = { _comment: "Symbol-outline regexes (POSIX ERE), shared by the bash and TypeScript engines. Matched with grep -E / converted to JS RegExp.", languages: [{ exts: ["ts", "tsx", "js", "jsx", "mjs", "cjs", "mts", "cts", "vue", "svelte"], regex: "^[[:space:]]*(export[[:space:]]+)?(default[[:space:]]+)?(declare[[:space:]]+)?(abstract[[:space:]]+)?(async[[:space:]]+)?(function\\*?|class|interface|type|enum|namespace|module)[[:space:]]+[A-Za-z_$]|^[[:space:]]*(export[[:space:]]+)?(const|let|var)[[:space:]]+[A-Za-z_$][A-Za-z0-9_$]*[[:space:]]*(:[^=]*)?=[[:space:]]*(async[[:space:]]+)?(\\(|function|[A-Za-z_$][A-Za-z0-9_$]*[[:space:]]*=>)|^[[:space:]]{2,4}((public|private|protected|static|async|readonly|override|get|set)[[:space:]]+)*[A-Za-z_$#][A-Za-z0-9_$]*[[:space:]]*(<[^>]*>)?\\([^;]*\\)[[:space:]]*(:[^=;{]*)?\\{|^[[:space:]]*(describe|it|test)(\\.[a-z]+)?\\(" }, { exts: ["py", "pyi"], regex: "^[[:space:]]*(async[[:space:]]+)?def[[:space:]]+[A-Za-z_]|^[[:space:]]*class[[:space:]]+[A-Za-z_]" }, { exts: ["go"], regex: "^func[[:space:]]|^type[[:space:]]+[A-Za-z_][A-Za-z0-9_]*[[:space:]]|^(var|const)[[:space:]]+\\(" }, { exts: ["rs"], regex: "^[[:space:]]*(pub(\\([^)]*\\))?[[:space:]]+)?(async[[:space:]]+)?(unsafe[[:space:]]+)?(fn|struct|enum|trait|impl|mod|macro_rules!|type)[[:space:]<]" }, { exts: ["java", "kt", "kts", "scala", "cs", "groovy", "swift", "dart"], regex: "^[[:space:]]*(@[A-Za-z]+[[:space:]]+)*((public|private|protected|internal|open|override|abstract|final|static|sealed|data|suspend|async|virtual|partial)[[:space:]]+)*(class|interface|enum|record|struct|object|fun|func|extension|protocol)[[:space:]]+[A-Za-z_]|^[[:space:]]*((public|private|protected|internal|static|final|abstract|synchronized|override|async|virtual)[[:space:]]+)+[][A-Za-z_<>,.?[:space:]]+[[:space:]]+[A-Za-z_][A-Za-z0-9_]*[[:space:]]*\\(" }, { exts: ["rb", "rake"], regex: "^[[:space:]]*(def|class|module)[[:space:]]" }, { exts: ["php"], regex: "^[[:space:]]*((public|private|protected|static|abstract|final)[[:space:]]+)*(function|class|interface|trait|enum)[[:space:]]+[A-Za-z_]" }, { exts: ["c", "h", "cc", "cpp", "cxx", "hpp", "hh", "m", "mm"], regex: "^[A-Za-z_][A-Za-z0-9_:<>,*&[:space:]]*[[:space:]*&]+[A-Za-z_~][A-Za-z0-9_:~]*[[:space:]]*\\([^;]*$|^(typedef[[:space:]]+)?(struct|class|enum|union|namespace)[[:space:]]+[A-Za-z_]|^#define[[:space:]]+[A-Z_]" }, { exts: ["sh", "bash", "zsh"], regex: "^[[:space:]]*(function[[:space:]]+)?[A-Za-z_][A-Za-z0-9_:-]*[[:space:]]*\\(\\)[[:space:]]*\\{?|^[[:space:]]*function[[:space:]]+[A-Za-z_]" }, { exts: ["md", "mdx", "markdown", "rst", "adoc"], regex: "^#{1,4}[[:space:]]" }, { exts: ["yml", "yaml"], regex: "^[A-Za-z_][A-Za-z0-9_.-]*:|^  [A-Za-z_][A-Za-z0-9_.-]*:[[:space:]]*$" }, { exts: ["toml", "ini", "cfg"], regex: "^\\[" }, { exts: ["sql"], regex: "^[[:space:]]*(create|alter|CREATE|ALTER)[[:space:]]+" }, { exts: ["json"], regex: '^  "[^"]+"[[:space:]]*:' }], default: "^[[:space:]]*(export[[:space:]]+)?(pub[[:space:]]+)?(async[[:space:]]+)?(def|fn|func|function|class|interface|struct|enum|trait|impl|module|type)[[:space:]]+[A-Za-z_]|^#{1,3}[[:space:]]" };
   CONNECTORS_JSON = { _comment: "HTTP endpoint presets, the default cheap model per harness for the @host model ref, and the API-key backup per harness for @host-api. Shared by the bash and TypeScript engines; override with `endpoints` / `host_models` / `host_api_models` in your config.", endpoints: { openai: { type: "openai", base_url: "https://api.openai.com/v1", api_key_env: "OPENAI_API_KEY", label: "OpenAI API" }, openrouter: { type: "openai", base_url: "https://openrouter.ai/api/v1", api_key_env: "OPENROUTER_API_KEY", label: "OpenRouter" }, anthropic: { type: "anthropic", base_url: "https://api.anthropic.com", api_key_env: "ANTHROPIC_API_KEY", label: "Anthropic API" }, google: { type: "openai", base_url: "https://generativelanguage.googleapis.com/v1beta/openai", api_key_env: "GEMINI_API_KEY", label: "Google AI Studio (Gemini API)" }, groq: { type: "openai", base_url: "https://api.groq.com/openai/v1", api_key_env: "GROQ_API_KEY", label: "Groq" }, deepseek: { type: "openai", base_url: "https://api.deepseek.com/v1", api_key_env: "DEEPSEEK_API_KEY", label: "DeepSeek" }, mistral: { type: "openai", base_url: "https://api.mistral.ai/v1", api_key_env: "MISTRAL_API_KEY", label: "Mistral" }, together: { type: "openai", base_url: "https://api.together.xyz/v1", api_key_env: "TOGETHER_API_KEY", label: "Together AI" }, fireworks: { type: "openai", base_url: "https://api.fireworks.ai/inference/v1", api_key_env: "FIREWORKS_API_KEY", label: "Fireworks" }, cerebras: { type: "openai", base_url: "https://api.cerebras.ai/v1", api_key_env: "CEREBRAS_API_KEY", label: "Cerebras" }, xai: { type: "openai", base_url: "https://api.x.ai/v1", api_key_env: "XAI_API_KEY", label: "xAI" }, zai: { type: "openai", base_url: "https://api.z.ai/api/paas/v4", api_key_env: "ZAI_API_KEY", label: "Z.ai (GLM)" }, moonshot: { type: "openai", base_url: "https://api.moonshot.ai/v1", api_key_env: "MOONSHOT_API_KEY", label: "Moonshot (Kimi)" }, ollama: { type: "openai", base_url: "http://127.0.0.1:11434/v1", label: "Ollama (local)" }, lmstudio: { type: "openai", base_url: "http://127.0.0.1:1234/v1", label: "LM Studio (local)" }, vllm: { type: "openai", base_url: "http://127.0.0.1:8000/v1", label: "vLLM (local)" }, dashscope: { type: "openai", base_url: "https://dashscope-intl.aliyuncs.com/compatible-mode/v1", api_key_env: "DASHSCOPE_API_KEY", label: "Alibaba Model Studio (Qwen)" }, github: { type: "openai", base_url: "https://models.github.ai/inference", api_key_env: "GITHUB_TOKEN", label: "GitHub Models" } }, host_models: { claude: "claude:haiku", codex: "codex:gpt-6-luna", gemini: "gemini:flash-lite", cursor: "cursor:", pi: "pi:", opencode: "@default", kilo: "@default", devin: "claude:haiku", copilot: "copilot:", qwen: "qwen:", crush: "crush:", amp: "@default" }, host_api_models: { claude: "anthropic:claude-haiku-5-5", devin: "anthropic:claude-haiku-5-5", codex: "openai:gpt-6-luna", gemini: "google:gemini-flash-lite-latest", qwen: "dashscope:qwen-flash", copilot: "github:openai/gpt-4.1-mini" }, worker_names: { _comment: 'How offload names a worker for the user, e.g. "Haiku on your Claude plan".', plans: { claude: "your Claude plan", codex: "your ChatGPT plan", gemini: "your Google account", cursor: "your Cursor plan", copilot: "your Copilot plan", qwen: "your Qwen Code login", pi: "Pi's own login", crush: "Crush's own setup" }, models: { haiku: "Haiku", sonnet: "Sonnet", opus: "Opus", "flash-lite": "Gemini Flash-Lite", flash: "Gemini Flash" } } };
   PROMPT_TEXT = {
@@ -225,7 +225,7 @@ var init_outline = __esm(() => {
 import { Type } from "typebox";
 
 // src/hooks/logic.ts
-import { closeSync as closeSync3, existsSync as existsSync8, mkdirSync as mkdirSync3, openSync as openSync3, readFileSync as readFileSync10, readSync as readSync3, statSync as statSync6 } from "node:fs";
+import { closeSync as closeSync5, copyFileSync, existsSync as existsSync8, mkdirSync as mkdirSync3, openSync as openSync5, readFileSync as readFileSync10, readSync as readSync5, statSync as statSync7 } from "node:fs";
 import { basename as basename3, delimiter as delimiter2, dirname as dirname2, isAbsolute as isAbsolute3, join as join8, resolve as resolve2 } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -419,7 +419,8 @@ function cfgList(path) {
 }
 
 // src/digest.ts
-import { existsSync as existsSync7, readFileSync as readFileSync8, writeFileSync as writeFileSync5 } from "node:fs";
+import { closeSync as closeSync4, existsSync as existsSync7, openSync as openSync4, readFileSync as readFileSync8, readSync as readSync4, statSync as statSync6, writeFileSync as writeFileSync5 } from "node:fs";
+import { StringDecoder } from "node:string_decoder";
 
 // src/secrets.ts
 import { lstatSync, realpathSync } from "node:fs";
@@ -480,6 +481,9 @@ function redact(text) {
     return text;
   return text.replace(/(?:AKIA|ASIA)[0-9A-Z]{16}/g, "[REDACTED-AWS-KEY]").replace(/(gh[pousr]_)[A-Za-z0-9]{30,}/g, "$1[REDACTED]").replace(/github_pat_[A-Za-z0-9_]{30,}/g, "github_pat_[REDACTED]").replace(/glpat-[A-Za-z0-9_-]{20,}/g, "glpat-[REDACTED]").replace(/npm_[A-Za-z0-9]{36}/g, "npm_[REDACTED]").replace(/hf_[A-Za-z0-9]{30,}/g, "hf_[REDACTED]").replace(/((?:sk|rk)_(?:live|test)_)[A-Za-z0-9]{10,}/g, "$1[REDACTED]").replace(/(sk-(?:proj-|ant-)?)[A-Za-z0-9_-]{20,}/g, "$1[REDACTED]").replace(/xox[abprs]-[A-Za-z0-9-]{10,}/g, "xox-[REDACTED]").replace(/AIza[0-9A-Za-z_-]{35}/g, "[REDACTED-GOOGLE-KEY]").replace(/eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}/g, "[REDACTED-JWT]").replace(/(bearer[ \t]+)[A-Za-z0-9._~+/=-]{16,}/gi, "$1[REDACTED]").replace(/(basic[ \t]+)[A-Za-z0-9+/=]{16,}/gi, "$1[REDACTED]").replace(/(?<![A-Za-z0-9+.-])([A-Za-z][A-Za-z0-9+.-]*:\/\/[^/\s:@]+:)[^@\s/]+@/g, "$1[REDACTED]@").replace(QUOTED_DQ, '$1[REDACTED]"').replace(QUOTED_SQ, "$1[REDACTED]'").replace(KEY_NAME, "$1[REDACTED]").replace(/-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?(?:-----END [A-Z ]*PRIVATE KEY-----\n?|$)/g, `[REDACTED PRIVATE KEY]
 `);
+}
+function fence(text) {
+  return text.replace(/<(?=\/?(?:file|question|instructions|previous_answer|check)(?:[ \t>\/]|$)|\/(?:input|output)(?:[ \t>\/]|$))/gim, "&lt;");
 }
 
 // src/engine.ts
@@ -1139,6 +1143,7 @@ function runProcess(cmd, args, opts) {
     }
     track(child);
     let done = false;
+    let signal;
     const finish = (code) => {
       if (done)
         return;
@@ -1149,7 +1154,7 @@ function runProcess(cmd, args, opts) {
       killTree(child, "SIGKILL");
       child.stdout?.destroy();
       child.stderr?.destroy();
-      resolve({ code, stdout, stderr, timedOut, killedBy });
+      resolve({ code, stdout, stderr, timedOut, killedBy, signal });
     };
     const kill = () => {
       killTree(child, "SIGTERM");
@@ -1184,7 +1189,11 @@ function runProcess(cmd, args, opts) {
       stderr += String(e);
       finish(127);
     });
-    child.on("close", (code) => finish(code));
+    child.on("close", (code, sig) => {
+      if (sig)
+        signal = sig;
+      finish(code);
+    });
     child.on("exit", (code) => setTimeout(() => finish(code), 500).unref());
     child.stdin.on("error", () => {});
     child.stdin.end(opts.input ?? "");
@@ -1217,7 +1226,7 @@ async function which(cmd) {
 }
 
 // src/state.ts
-import { appendFileSync, chmodSync as chmodSync2, existsSync as existsSync5, mkdirSync as mkdirSync2, readFileSync as readFileSync5, readdirSync as readdirSync2, rmSync, statSync as statSync4, writeFileSync as writeFileSync2 } from "node:fs";
+import { appendFileSync, chmodSync as chmodSync2, closeSync as closeSync3, existsSync as existsSync5, openSync as openSync3, readSync as readSync3, mkdirSync as mkdirSync2, readFileSync as readFileSync5, readdirSync as readdirSync2, rmSync, statSync as statSync4, writeFileSync as writeFileSync2 } from "node:fs";
 import { join as join5 } from "node:path";
 function stateDir() {
   const d = cfgStr("state_dir") || join5(stateHome(), "harness-offload");
@@ -1277,17 +1286,52 @@ var CRC = (() => {
   }
   return t;
 })();
-function cksum(buf) {
+function cksum(src) {
   let crc = 0;
   const step = (b) => crc = (crc << 8 ^ CRC[(crc >>> 24 ^ b) & 255]) >>> 0;
-  for (const b of buf)
-    step(b);
-  for (let n = buf.length;n > 0; n = Math.floor(n / 256))
+  let len = 0;
+  if (Buffer.isBuffer(src)) {
+    for (const b of src)
+      step(b);
+    len = src.length;
+  } else {
+    const fd = openSync3(src.file, "r");
+    const buf = Buffer.alloc(1 << 20);
+    try {
+      for (let n;(n = readSync3(fd, buf, 0, buf.length, null)) > 0; len += n)
+        for (let i = 0;i < n; i++)
+          step(buf[i]);
+    } finally {
+      closeSync3(fd);
+    }
+  }
+  for (let n = len;n > 0; n = Math.floor(n / 256))
     step(n & 255);
-  return `${~crc >>> 0}-${buf.length}`;
+  return `${~crc >>> 0}-${len}`;
+}
+function sameFile(a, b) {
+  if (statSync4(a).size !== statSync4(b).size)
+    return false;
+  const fa = openSync3(a, "r");
+  const fb = openSync3(b, "r");
+  const ba = Buffer.alloc(1 << 20);
+  const bb = Buffer.alloc(1 << 20);
+  try {
+    for (;; ) {
+      const na = readSync3(fa, ba, 0, ba.length, null);
+      const nb = readSync3(fb, bb, 0, bb.length, null);
+      if (na !== nb || !ba.subarray(0, na).equals(bb.subarray(0, nb)))
+        return false;
+      if (na === 0)
+        return true;
+    }
+  } finally {
+    closeSync3(fa);
+    closeSync3(fb);
+  }
 }
 var seenSession = (s) => s.replace(/[^A-Za-z0-9_-]/g, "_").slice(0, 64);
-var seenFile = (session, text) => join5(stateDir(), "seen", `${seenSession(session)}-${cksum(Buffer.from(text))}`);
+var seenFile = (session, output) => join5(stateDir(), "seen", `${seenSession(session)}-${cksum(output)}`);
 var seenCmdFile = (session, cmd) => join5(stateDir(), "seen", `${seenSession(session)}-cmd-${cksum(Buffer.from(cmd))}`);
 var cooldownFile = (model) => join5(stateDir(), "cooldowns", model.replace(/[^A-Za-z0-9._-]/g, "_"));
 function cooling(model) {
@@ -1520,7 +1564,8 @@ class OpencodeBackend {
         throw new WorkerError(E.MODEL, `${msg} (V1 reports unknown model ids this way — check \`opencode models\`)`);
       if (/Agent not found/.test(msg))
         throw new WorkerError(E.WORKER, `${msg} (opencode ignored offload's agent config — run \`offload doctor\`)`);
-      throw new WorkerError(classify(msg || `exit ${r.code}`), msg || `opencode exited with status ${r.code}`);
+      const status = r.signal ? `was killed by ${r.signal}` : `exited with status ${r.code}`;
+      throw new WorkerError(classify(msg || `exit ${r.code}`), msg || `opencode ${status}`);
     }
     const text = finalText(events);
     if (!text)
@@ -2009,6 +2054,8 @@ async function invoke(task, prompt, cwd, override, opts = {}) {
   const perModel = cfgInt("opencode.timeout_seconds", 180);
   const deadline = opts.budgetSec ? Date.now() + opts.budgetSec * 1000 : Infinity;
   const errors = [];
+  const skipped = [];
+  const why = (code) => ({ [E.QUOTA]: "quota", [E.AUTH]: "login", [E.MODEL]: "unknown model", [E.TIMEOUT]: "timeout", [E.TOO_LARGE]: "too large", [E.USAGE]: "not set up", [E.MISSING]: "not installed" })[code] ?? "error";
   let tried = 0;
   let lastCode = E.WORKER;
   for (const raw of modelChain(task, override, opts.primary)) {
@@ -2021,12 +2068,14 @@ async function invoke(task, prompt, cwd, override, opts = {}) {
     } catch (e) {
       errors.push(`  - ${raw}: ${e.message}`);
       lastCode = E.USAGE;
+      skipped.push(`${raw} (not set up)`);
       continue;
     }
     if (!override) {
       const c = cooling(ref);
       if (c) {
         errors.push(`  - ${ref}: skipped, cooling down (${c})`);
+        skipped.push(`${ref} (cooling down)`);
         continue;
       }
     }
@@ -2034,6 +2083,7 @@ async function invoke(task, prompt, cwd, override, opts = {}) {
     const b = backendFor(backend);
     if (!b) {
       errors.push(`  - ${ref}: unknown backend "${backend}"`);
+      skipped.push(`${ref} (not set up)`);
       lastCode = E.USAGE;
       continue;
     }
@@ -2060,11 +2110,12 @@ async function invoke(task, prompt, cwd, override, opts = {}) {
         allowGlobs: cfgList("privacy.secret_allow_globs")
       });
       const text = task === "write" ? r.text : redact(r.text);
-      return { ...r, text, model: ref === "@default" ? `${backend}-default-model` : ref, seconds: Math.round((Date.now() - t0) / 1000) };
+      return { ...r, text, model: ref === "@default" ? `${backend}-default-model` : ref, seconds: Math.round((Date.now() - t0) / 1000), fallback: skipped.length ? `fell back after ${skipped.join(", ")}` : undefined };
     } catch (e) {
       const err = e instanceof WorkerError ? e : new WorkerError(E.WORKER, String(e?.message ?? e));
       lastCode = err.code;
       errors.push(`  - ${ref}: ${err.message}`);
+      skipped.push(`${ref} (${why(err.code)})`);
       if (err.code === E.QUOTA)
         coolDown(ref, 300, "rate-limit/quota");
       else if (err.code === E.AUTH)
@@ -2099,25 +2150,115 @@ var splitLines = (text) => {
     l.pop();
   return l;
 };
+function* eachLine(text) {
+  for (let start = 0;start < text.length; ) {
+    let end = text.indexOf(`
+`, start);
+    if (end < 0)
+      end = text.length;
+    yield text.slice(start, end);
+    start = end + 1;
+  }
+}
+var BIG = 8 * 1024 * 1024;
+var textSrc = (t) => ({ bytes: Buffer.byteLength(t), lines: () => eachLine(t), count: () => countLines(t), last: (n) => lastLines(t, n), whole: () => t });
+function* fileLines2(path) {
+  const fd = openSync4(path, "r");
+  const buf = Buffer.alloc(1 << 20);
+  const dec = new StringDecoder("utf8");
+  let rest = "";
+  try {
+    for (;; ) {
+      const n = readSync4(fd, buf, 0, buf.length, null);
+      if (n <= 0)
+        break;
+      rest += dec.write(buf.subarray(0, n));
+      let start = 0;
+      for (let i = rest.indexOf(`
+`);i >= 0; i = rest.indexOf(`
+`, start)) {
+        yield rest.slice(start, i);
+        start = i + 1;
+      }
+      rest = rest.slice(start);
+    }
+    rest += dec.end();
+    if (rest !== "")
+      yield rest;
+  } finally {
+    closeSync4(fd);
+  }
+}
+function fileTail(path, size, max) {
+  const len = Math.min(size, max);
+  const buf = Buffer.alloc(len);
+  const fd = openSync4(path, "r");
+  try {
+    readSync4(fd, buf, 0, len, size - len);
+  } finally {
+    closeSync4(fd);
+  }
+  const t = buf.toString("utf8");
+  return len < size ? t.slice(t.indexOf(`
+`) + 1) : t;
+}
+function logSrc(path, given) {
+  if (given !== undefined)
+    return textSrc(given);
+  const size = statSync6(path).size;
+  if (size <= BIG)
+    return textSrc(readFileSync8(path, "utf8"));
+  return {
+    bytes: size,
+    lines: () => fileLines2(path),
+    count: () => {
+      let n = 0;
+      for (const _ of fileLines2(path))
+        n++;
+      return n;
+    },
+    last: (n) => lastLines(fileTail(path, size, 1 << 20), n),
+    whole: () => readFileSync8(path, "utf8")
+  };
+}
+var asSrc = (s) => typeof s === "string" ? textSrc(s) : s;
+function lastLines(text, n) {
+  if (!text || n <= 0)
+    return [];
+  const out = [];
+  let end = text.endsWith(`
+`) ? text.length - 1 : text.length;
+  while (out.length < n) {
+    const s = end > 0 ? text.lastIndexOf(`
+`, end - 1) : -1;
+    out.push(text.slice(s + 1, end));
+    if (s < 0)
+      break;
+    end = s;
+  }
+  return out.reverse();
+}
 var FRAME_RE = /^[ \t]*(at |File "|\/)/;
 var LIBFRAME_RE = /node_modules\/|site-packages\/|dist-packages\/|\/lib\/python[0-9.]*\/|<frozen |node:internal|\(node:|java\.base\/|jdk\.internal|at (java|javax|sun|jdk|kotlin|scala)\.|at org\.(junit|apache|gradle|springframework)\.|at junit\.|\/go\/src\/(runtime|testing)\/|\/rustc\//;
 var STRONG_RE = /●|error|fail|exception|traceback|panic|fatal|segmentation fault|segfault|assert|✗|✘|✖|err!|undefined reference|abort|killed|out of memory/;
-function keyLines(text, max) {
+function keyLines(src, max) {
   const kinds = new Map;
   const order = [];
   const seen = new Map;
   let libFrames = 0;
-  splitLines(text).forEach((raw, i) => {
+  let i = -1;
+  for (const raw of asSrc(src).lines()) {
+    i++;
     const l = raw.toLowerCase();
     if (!KEY_RE.test(l) || ZERO_RE.test(l))
-      return;
+      continue;
     if (FRAME_RE.test(raw) && LIBFRAME_RE.test(raw)) {
       libFrames++;
-      return;
+      continue;
     }
     const t = stripAnsi(raw).replace(/[ \t\r]+$/, "");
     if (!t)
-      return;
+      continue;
     const k = t.replace(/[0-9]+/g, "#");
     let kind = kinds.get(k);
     if (!kind) {
@@ -2127,12 +2268,12 @@ function keyLines(text, max) {
     }
     kind.count++;
     if (seen.has(t))
-      return;
+      continue;
     seen.set(t, i + 1);
     kind.distinct++;
     if (kind.distinct <= 3)
       kind.lines.push(t);
-  });
+  }
   let left = max;
   for (const strongPass of [true, false])
     for (const k of order) {
@@ -2165,9 +2306,9 @@ function keyLines(text, max) {
     out.push(`... ${libFrames} stack frames in libraries and the runtime left out`);
   return { lines: out, distinct: seen.size };
 }
-function keyTexts(text) {
+function keyTexts(src) {
   const seen = new Set;
-  for (const raw of splitLines(text)) {
+  for (const raw of asSrc(src).lines()) {
     const l = raw.toLowerCase();
     if (!KEY_RE.test(l) || ZERO_RE.test(l))
       continue;
@@ -2179,9 +2320,9 @@ function keyTexts(text) {
   }
   return [...seen];
 }
-function keyChanges(shown, text, prevText, at) {
-  const cur = new Set(keyTexts(text));
-  const prev = keyTexts(prevText);
+function keyChanges(shown, cur0, prev0, at) {
+  const cur = new Set(keyTexts(cur0));
+  const prev = keyTexts(prev0);
   const P = new Set(prev);
   const fresh = [];
   let same = 0;
@@ -2205,19 +2346,22 @@ function keyChanges(shown, text, prevText, at) {
   }
   return out;
 }
-function logExcerpt(text) {
-  const lines = splitLines(text);
-  const total = lines.length;
+function logExcerpt(src) {
+  const S = asSrc(src);
   const hit = new Set;
-  lines.forEach((l, i) => {
+  let total = 0;
+  for (const l of S.lines()) {
+    total++;
     const s = l.toLowerCase();
     if (KEY_RE.test(s) && !ZERO_RE.test(s))
-      hit.add(i + 1);
-  });
+      hit.add(total);
+  }
   const out = [];
   let gap = 0;
   let kept = 0;
-  for (let i = 1;i <= total; i++) {
+  let i = 0;
+  for (const line of S.lines()) {
+    i++;
     let keep = i <= 150 || i > total - 300;
     if (!keep) {
       for (let j = i - 2;j <= i + 2; j++)
@@ -2228,7 +2372,7 @@ function logExcerpt(text) {
       if (gap)
         out.push(`[... ${gap} lines omitted ...]`);
       gap = 0;
-      out.push(lines[i - 1]);
+      out.push(line);
       kept++;
     } else
       gap++;
@@ -2241,9 +2385,9 @@ function logExcerpt(text) {
 }
 async function digest(log, rawLabel, code, focus, source, modelOverride, opts = {}) {
   const label = redact(rawLabel);
-  const text = readFileSync8(log, "utf8");
-  const lines = countLines(text);
-  const bytes = Buffer.byteLength(text);
+  const S = logSrc(log, opts.text);
+  const lines = S.count();
+  const bytes = S.bytes;
   const kb = Math.ceil(bytes / 1024);
   const compact = opts.compact ?? process.env.OFFLOAD_DIGEST_COMPACT === "1";
   let keyMax = cfgInt("digest.key_lines", 30);
@@ -2258,7 +2402,7 @@ async function digest(log, rawLabel, code, focus, source, modelOverride, opts = 
   }
   const maxIn = cfgInt("digest.max_model_input_bytes", 400000);
   const t0 = Date.now();
-  const key = keyLines(text, keyMax);
+  const key = keyLines(S, keyMax);
   let summary = "";
   let note = "";
   let model = "";
@@ -2271,7 +2415,7 @@ async function digest(log, rawLabel, code, focus, source, modelOverride, opts = 
       code ? `<exit_code>${code}</exit_code>` : "",
       focus ? `<focus>${focus}</focus>` : "",
       `<output lines="${lines}" bytes="${bytes}">`,
-      redact(bytes <= maxIn ? text : logExcerpt(text)).replace(/\n$/, ""),
+      fence(redact(bytes <= maxIn ? S.whole() : logExcerpt(S))).replace(/\n$/, ""),
       "</output>"
     ].filter((s) => s !== "").join(`
 `);
@@ -2291,7 +2435,7 @@ async function digest(log, rawLabel, code, focus, source, modelOverride, opts = 
   const out = [];
   out.push(`[offload] \`${label.slice(0, 120)}\`${code ? ` → exit ${code}` : ""} · ${fmtInt(lines)} lines / ${kb} KB · full log: ${log}`);
   const sumSection = summary ? [`── summary by ${note} (cheap model; trust the verbatim lines over it) ──`, summary] : note ? [`── model summary ${note} ──`] : [];
-  const keySection = opts.prev && existsSync7(opts.prev.log) ? keyChanges(key.lines, text, readFileSync8(opts.prev.log, "utf8"), opts.prev.at).map((l) => l.slice(0, width)) : key.distinct > 0 ? [`── key lines, verbatim (${key.distinct} distinct) ──`, ...key.lines.map((l) => l.slice(0, width))] : ["── no error-like lines found ──"];
+  const keySection = opts.prev && existsSync7(opts.prev.log) ? keyChanges(key.lines, S, logSrc(opts.prev.log), opts.prev.at).map((l) => l.slice(0, width)) : key.distinct > 0 ? [`── key lines, verbatim (${key.distinct} distinct) ──`, ...key.lines.map((l) => l.slice(0, width))] : ["── no error-like lines found ──"];
   if (compact)
     out.push(...keySection, ...sumSection);
   else
@@ -2299,7 +2443,7 @@ async function digest(log, rawLabel, code, focus, source, modelOverride, opts = 
   if (!summary && !compact)
     tailN += 10;
   out.push(`── last ${tailN} lines ──`);
-  out.push(...splitLines(text).slice(-tailN).map((l) => stripAnsi(l).slice(0, width)));
+  out.push(...S.last(tailN).map((l) => stripAnsi(l).slice(0, width)));
   out.push(`── more: grep -n -iE "error|fail" ${shquote(log)} | head -50   ·   sed -n "START,ENDp" ${shquote(log)}`);
   const result = out.join(`
 `) + `
@@ -2323,11 +2467,11 @@ async function digest(log, rawLabel, code, focus, source, modelOverride, opts = 
   pruneLogs();
   return result;
 }
-function searchView(log, rawLabel) {
+function searchView(log, rawLabel, given) {
   const t0 = Date.now();
   const label = redact(rawLabel);
-  const text = readFileSync8(log, "utf8");
-  const bytes = Buffer.byteLength(text);
+  const S = logSrc(log, given);
+  const bytes = S.bytes;
   const kb = Math.ceil(bytes / 1024);
   const cut = (s) => s.length > 200 ? s.slice(0, 197) + "..." : s;
   const pathy = (p) => p !== "" && !/[ \t]/.test(p) && (p.includes("/") || /\.[A-Za-z0-9]+$/.test(p));
@@ -2344,14 +2488,21 @@ function searchView(log, rawLabel) {
   };
   const m = groups();
   const d = groups();
-  const all = [];
+  const first = [];
+  const tail = [];
+  let n = 0;
   let nm = 0;
   let np = 0;
-  for (const raw of splitLines(text)) {
+  for (const raw of S.lines()) {
     const t = raw.replace(/\x1b\[[0-9;]*[A-Za-z]/g, "").replace(/\r$/, "");
     if (t === "")
       continue;
-    all.push(t);
+    n++;
+    if (first.length < 40)
+      first.push(t);
+    tail.push(t);
+    if (tail.length > 10)
+      tail.shift();
     const c = t.indexOf(":");
     const p = c > 0 ? t.slice(0, c) : "";
     if (pathy(p)) {
@@ -2363,18 +2514,18 @@ function searchView(log, rawLabel) {
       add(d, slash >= 0 ? t.slice(0, slash) : ".", t);
     }
   }
-  const n = all.length;
   const mode = nm * 10 >= n * 6 ? "m" : np * 10 >= n * 6 ? "d" : "l";
   const out = [];
-  let head = `[offload] \`${label.slice(0, 120)}\` · ${fmtInt(countLines(text))} lines / ${kb} KB`;
+  let head = `[offload] \`${label.slice(0, 120)}\` · ${fmtInt(S.count())} lines / ${kb} KB`;
   if (mode === "m")
     head += ` · ${fmtInt(nm)} matches in ${fmtInt(m.order.length)} files`;
   if (mode === "d")
     head += ` · ${fmtInt(np)} paths in ${fmtInt(d.order.length)} folders`;
   out.push(`${head} · full log: ${log}`);
+  let topKeys = [];
   const list = (g, unit, what) => {
     const shown = Math.min(g.order.length, 20);
-    const top = g.order.map((k, i) => ({ k, i, c: g.cnt.get(k) })).sort((a, b) => b.c - a.c || a.i - b.i).slice(0, shown).map((x) => x.k);
+    const top = topKeys = g.order.map((k, i) => ({ k, i, c: g.cnt.get(k) })).sort((a, b) => b.c - a.c || a.i - b.i).slice(0, shown).map((x) => x.k);
     out.push(`── ${what} per ${unit} (${fmtInt(g.order.length)} ${unit}s) ──`);
     for (const k of top)
       out.push(`${String(g.cnt.get(k)).padStart(7)}  ${cut(k)}`);
@@ -2393,11 +2544,12 @@ function searchView(log, rawLabel) {
   else if (mode === "d")
     list(d, "folder", "paths");
   else {
-    out.push(`── first ${Math.min(n, 40)} lines ──`, ...all.slice(0, 40).map(cut));
+    out.push(`── first ${Math.min(n, 40)} lines ──`, ...first.map(cut));
     if (n > 40)
-      out.push(`── last ${Math.min(n - 40, 10)} lines ──`, ...all.slice(Math.max(n - 10, 40)).map(cut));
+      out.push(`── last ${Math.min(n - 40, 10)} lines ──`, ...tail.slice(-Math.min(n - 40, 10)).map(cut));
   }
-  out.push(`── narrow it: a path or a sharper pattern; counts: grep -c / rg -c; the rest: sed -n "START,ENDp" ${shquote(log)}; or ask: offload read -q "QUESTION" FILE ──`);
+  const asks = (mode !== "l" ? topKeys.slice(0, 3).map(shquote).join(" ") : "") || "FILE";
+  out.push(`── narrow it: a path or a sharper pattern; counts: grep -c / rg -c; the rest: sed -n "START,ENDp" ${shquote(log)}; or ask: offload read -q "QUESTION" ${asks} ──`);
   const result = out.join(`
 `) + `
 `;
@@ -2411,6 +2563,77 @@ function searchView(log, rawLabel) {
     bytes_in: bytes,
     bytes_out: bout,
     saved_tokens: Math.max(0, Math.floor((bytes - bout) / 4)),
+    seconds: Math.round((Date.now() - t0) / 1000),
+    model_ok: false,
+    model_tried: false,
+    worker_tokens_in: 0,
+    worker_tokens_out: 0
+  });
+  pruneLogs();
+  return result;
+}
+function diffView(log, rawLabel, given) {
+  const t0 = Date.now();
+  const label = redact(rawLabel);
+  const S = logSrc(log, given);
+  const cut = (s) => s.length > 200 ? s.slice(0, 197) + "..." : s;
+  const order = [];
+  const add = new Map;
+  const del = new Map;
+  const hunks = new Map;
+  let cur = "";
+  let ta = 0;
+  let td = 0;
+  for (const l of S.lines()) {
+    if (l.startsWith("diff --git ")) {
+      cur = l.replace(/^diff --git a\/.* b\//, "");
+      order.push(cur);
+      add.set(cur, 0);
+      del.set(cur, 0);
+      hunks.set(cur, []);
+      continue;
+    }
+    if (!cur || /^(\+\+\+|---) /.test(l))
+      continue;
+    if (l.startsWith("@@")) {
+      const h = hunks.get(cur);
+      if (h.length < 2)
+        h.push(l);
+    } else if (l.startsWith("+")) {
+      add.set(cur, add.get(cur) + 1);
+      ta++;
+    } else if (l.startsWith("-")) {
+      del.set(cur, del.get(cur) + 1);
+      td++;
+    }
+  }
+  const out = [];
+  out.push(`[offload] \`${label.slice(0, 120)}\` · ${fmtInt(S.count())} lines / ${Math.ceil(S.bytes / 1024)} KB · ${fmtInt(order.length)} files, +${fmtInt(ta)} −${fmtInt(td)} · full log: ${log}`);
+  const size = (f) => add.get(f) + del.get(f);
+  const top = order.map((f, i) => ({ f, i })).sort((a, b) => size(b.f) - size(a.f) || a.i - b.i).slice(0, 20).map((x) => x.f);
+  out.push("── files changed (busiest first) ──");
+  for (const f of top)
+    out.push(`${`+${add.get(f)}`.padStart(7)} ${`-${del.get(f)}`.padStart(7)}  ${cut(f)}`);
+  if (order.length > top.length)
+    out.push(`      … ${fmtInt(order.length - top.length)} more files`);
+  out.push("── first changes in the busiest files ──");
+  for (const f of top.slice(0, 8))
+    for (const h of hunks.get(f))
+      out.push(cut(`${f}: ${h}`));
+  out.push(`── one file: git diff -- PATH (or sed -n "START,ENDp" ${shquote(log)}); totals: git diff --stat ──`);
+  const result = out.join(`
+`) + `
+`;
+  const bout = Buffer.byteLength(result);
+  appendStats({
+    kind: "digest",
+    source: "diff",
+    label,
+    log,
+    model: "",
+    bytes_in: S.bytes,
+    bytes_out: bout,
+    saved_tokens: Math.max(0, Math.floor((S.bytes - bout) / 4)),
     seconds: Math.round((Date.now() - t0) / 1000),
     model_ok: false,
     model_tried: false,
@@ -2465,18 +2688,29 @@ function enabled() {
 async function available() {
   if (!enabled())
     return false;
+  const parse = (raw) => {
+    try {
+      return parseRef(raw);
+    } catch {
+      return;
+    }
+  };
+  let present = false;
+  for (const task of ["read", "summarize"]) {
+    const first = modelChain(task)[0];
+    const parsed = first ? parse(first) : undefined;
+    const b = parsed && backendFor(parsed.backend);
+    if (b && (await b.available()).ok) {
+      present = true;
+      break;
+    }
+  }
+  if (!present)
+    return false;
   for (const task of ["read", "summarize"]) {
     for (const raw of modelChain(task)) {
-      let parsed;
-      try {
-        parsed = parseRef(raw);
-      } catch {
-        continue;
-      }
-      if (cooling(parsed.ref))
-        continue;
-      const b = backendFor(parsed.backend);
-      if (b && (await b.available()).ok)
+      const parsed = parse(raw);
+      if (parsed && backendFor(parsed.backend) && !cooling(parsed.ref))
         return true;
     }
   }
@@ -2524,33 +2758,169 @@ function readCmd(host, file) {
 function exploreCmd(host) {
   return callStyle(host) === "mcp" ? "the offload_explore tool" : `Bash: ${cliCommand()} explore "<question>"`;
 }
+var LOCK_TOOLS = {
+  "package-lock.json": "npm ls NAME",
+  "npm-shrinkwrap.json": "npm ls NAME",
+  "yarn.lock": "yarn why NAME",
+  "pnpm-lock.yaml": "pnpm why NAME",
+  "bun.lock": "bun pm ls",
+  "Cargo.lock": "cargo tree -i NAME",
+  "poetry.lock": "poetry show NAME",
+  "uv.lock": "uv tree --package NAME",
+  "Pipfile.lock": "pipenv graph",
+  "Gemfile.lock": "bundle info NAME",
+  "composer.lock": "composer show NAME",
+  "go.sum": "go mod why -m NAME"
+};
+function lockTool(file) {
+  const b = file.slice(file.lastIndexOf("/") + 1);
+  return Object.hasOwn(LOCK_TOOLS, b) ? LOCK_TOOLS[b] : undefined;
+}
+var jsonType = (v) => v === null ? "null" : Array.isArray(v) ? "array" : typeof v;
+function jsonDesc(v) {
+  const t = jsonType(v);
+  if (t === "object") {
+    const n = Object.keys(v).length;
+    return { text: `object, ${fmtInt(n)} ${n === 1 ? "key" : "keys"}`, kind: "o", n };
+  }
+  if (t === "array") {
+    const a = v;
+    const n = a.length;
+    if (n === 0)
+      return { text: "array, empty", kind: "a", n };
+    const types = new Set(a.map(jsonType));
+    const one = types.size === 1 ? [...types][0] : "mixed";
+    const text = one === "mixed" ? `array, ${fmtInt(n)} ${n === 1 ? "item" : "items"} (mixed)` : `array, ${fmtInt(n)} ${one}${n === 1 ? "" : "s"}`;
+    return { text, kind: "a", n };
+  }
+  return { text: t, kind: t, n: 0 };
+}
+function jsonStructure(file, bytes, shown = file) {
+  if (bytes > 16777216)
+    return;
+  let v;
+  try {
+    v = JSON.parse(readFileSync10(file, "utf8"));
+  } catch {
+    return;
+  }
+  const q = shquote(shown);
+  const top = jsonDesc(v);
+  const lines = [`  ${top.text}`];
+  if (top.kind === "a")
+    return { lines, hint: `jq 'length' ${q} · jq '.[0]' ${q}` };
+  if (top.kind !== "o")
+    return { lines };
+  const entries = Object.entries(v);
+  let key = "", kt = "", best = 0, first = "";
+  for (const [k, val] of entries.slice(0, 30)) {
+    const kj = JSON.stringify(k);
+    const d = jsonDesc(val);
+    lines.push(`  ${kj}: ${d.text}`);
+    if ((d.kind === "a" || d.kind === "o") && (key === "" || d.n > best))
+      [key, kt, best] = [kj, d.kind, d.n];
+    if (first === "")
+      first = kj;
+  }
+  if (entries.length > 30)
+    lines.push(`  … ${fmtInt(entries.length - 30)} more keys`);
+  let h = `jq 'keys' ${q}`;
+  const k = key || first;
+  let p = "";
+  if (/^"[A-Za-z_][A-Za-z0-9_]*"$/.test(k))
+    p = "." + k.slice(1, -1);
+  else if (k && !k.includes("'") && !k.includes("\\"))
+    p = `.[${k}]`;
+  if (p && kt === "a")
+    h += ` · jq '${p} | length' ${q} · jq '${p}[0]' ${q}`;
+  else if (p && kt === "o")
+    h += ` · jq '${p} | keys[0:20]' ${q}`;
+  else if (p)
+    h += ` · jq '${p}' ${q}`;
+  return { lines, hint: h };
+}
+function jsonView(log, cmd, lines, bytes) {
+  const t0 = Date.now();
+  const js = jsonStructure(log, bytes);
+  if (!js?.hint)
+    return;
+  const label = redact(cmd);
+  const out = `[offload] \`${label.slice(0, 120)}\` · ${fmtInt(lines)} lines / ${Math.ceil(bytes / 1024)} KB of JSON · full log: ${log}
+── structure ──
+${js.lines.join(`
+`)}
+── query it instead of reading it ──
+${js.hint}`;
+  const bout = Buffer.byteLength(out);
+  appendStats({
+    kind: "digest",
+    source: "json",
+    label,
+    log,
+    model: "",
+    bytes_in: bytes,
+    bytes_out: bout,
+    saved_tokens: Math.max(0, Math.floor((bytes - bout) / 4)),
+    seconds: Math.round((Date.now() - t0) / 1000),
+    model_ok: false,
+    model_tried: false,
+    worker_tokens_in: 0,
+    worker_tokens_out: 0
+  });
+  return out;
+}
 function bigFileMessage(host, file, lines, tokens, how) {
   const chunk = cfgInt("hooks.read_max_chunk_lines", 600);
-  const out = outline(file, 40);
+  const bytes = fileBytes(file);
+  const avg = Math.floor(bytes / (lines > 0 ? lines : 1));
+  const long = avg > 4000;
+  const lock = lockTool(file);
+  const js = /\.json$/i.test(file) ? jsonStructure(file, bytes) : undefined;
   let m = `offload: ${how} would put all of ${file} into your context (${fmtInt(lines)} lines, ~${fmtInt(tokens)} tokens; limit ${cfgStr("hooks.read_threshold_lines")} lines / ${fmtInt(cfgInt("hooks.read_threshold_tokens", 6000))} tokens).
-Pick the cheapest option:
-- Need exact text (to edit/quote)? Read a slice (max ${chunk} lines per call) — outline below; \`grep -n PATTERN ${shquote(file)}\` finds more.
-- Need understanding/facts? Use ${readCmd(host, file)}
+`;
+  if (lock)
+    m += `It is a lockfile, written by the package manager: \`${lock}\` answers "which version, who needs it" without reading it.
+`;
+  if (long)
+    m += `Its lines average ${fmtInt(avg)} characters (minified or generated), so line slices do not help.
+`;
+  m += `Pick the cheapest option:
+`;
+  m += long ? `- Need exact text? Bash: grep -noE '.{0,80}PATTERN.{0,80}' ${shquote(file)} shows each match with 80 characters around it.
+` : `- Need exact text (to edit/quote)? Read a slice (max ${chunk} lines per call) — outline below; \`grep -n PATTERN ${shquote(file)}\` finds more.
+`;
+  if (js?.hint)
+    m += `- Need values? Bash: ${js.hint}
+`;
+  m += `- Need understanding/facts? Use ${readCmd(host, file)}
   A cheap model answers with ${file}:Lx-Ly citations whose quotes are checked; then read only those lines if you must edit.
 - Question spans many files? Use ${exploreCmd(host)}
 `;
-  if (out)
-    m += `Outline of ${file}:
+  if (js)
+    m += `Structure of ${file}:
+${js.lines.join(`
+`)}
+`;
+  if (!long) {
+    const out = outline(file, 40);
+    if (out)
+      m += `Outline of ${file}:
 ${out}`;
-  return m;
+  }
+  return m.replace(/\n+$/, "");
 }
 function contextUsed(transcript) {
   if (!transcript || !existsSync8(transcript))
     return;
   try {
-    const size = statSync6(transcript).size;
+    const size = statSync7(transcript).size;
     const len = Math.min(size, 400000);
     const buf = Buffer.alloc(len);
-    const fd = openSync3(transcript, "r");
+    const fd = openSync5(transcript, "r");
     try {
-      readSync3(fd, buf, 0, len, size - len);
+      readSync5(fd, buf, 0, len, size - len);
     } finally {
-      closeSync3(fd);
+      closeSync5(fd);
     }
     const line = buf.toString("utf8").split(`
 `).filter((l) => l.includes('"usage"')).pop();
@@ -2569,7 +2939,7 @@ function readGuard(host, cwd, file, offset, limit, transcript) {
   if (!enabled() || cfgStr("hooks.read_guard", "block") === "off" || !file)
     return;
   const p = isAbsolute3(file) ? file : resolve2(cwd, file);
-  if (!existsSync8(p) || !statSync6(p).isFile())
+  if (!existsSync8(p) || !statSync7(p).isFile())
     return;
   if (ignored(file) || notForOffload(p))
     return;
@@ -2582,6 +2952,12 @@ function readGuard(host, cwd, file, offset, limit, transcript) {
     let span = limit !== undefined ? limit : remaining;
     if (span > remaining)
       span = remaining;
+    const avg = Math.floor(fileBytes(p) / (lines > 0 ? lines : 1));
+    const sliceTokens = Math.floor((span * avg + 3) / 4);
+    if (avg > 4000 && sliceTokens > cfgInt("hooks.read_threshold_tokens", 6000)) {
+      appendStats({ kind: "hook", event: "read_slice_blocked", host, lines: span, file });
+      return guard(`offload: that read slice is ${fmtInt(span)} lines of ${file}, but its lines average ${fmtInt(avg)} characters (minified or generated): ~${fmtInt(sliceTokens)} tokens. Bash: grep -noE '.{0,80}PATTERN.{0,80}' ${shquote(file)} shows each match with 80 characters around it, or ask: ${callStyle(host) === "mcp" ? "offload_read" : `${cliCommand()} read`} -q "<question>" ${shquote(file)}`);
+    }
     if (span <= chunk)
       return;
     appendStats({ kind: "hook", event: "read_slice_blocked", host, lines: span, file });
@@ -2654,7 +3030,7 @@ function bashGuard(host, cwd, command) {
   const maxTokens = cfgInt("hooks.read_threshold_tokens", 6000);
   for (const f of files) {
     const p = isAbsolute3(f) ? f : resolve2(cwd, f);
-    if (!existsSync8(p) || !statSync6(p).isFile() || ignored(f) || notForOffload(p))
+    if (!existsSync8(p) || !statSync7(p).isFile() || ignored(f) || notForOffload(p))
       continue;
     const lines = fileLines(p);
     const tokens = estTokens(fileBytes(p));
@@ -2699,8 +3075,9 @@ async function postBash(opts) {
       search = false;
     }
   }
+  const diffv = !search && cfgBool("hooks.diff_view", true) && /^\s*git\s+(diff|show)(\s|$)/.test(last);
   const never = cfgStr("hooks.bash_never_summarize");
-  if (never && !search) {
+  if (never && !search && !diffv) {
     try {
       await Promise.resolve().then(() => init_outline());
       if (new RegExp(posixToJs(never)).test(last))
@@ -2710,22 +3087,50 @@ async function postBash(opts) {
     }
   }
   let text = opts.output;
+  let bytesBuf;
   let compact = false;
+  let bigFile;
   if (opts.persistedPath && existsSync8(opts.persistedPath)) {
-    text = readFileSync10(opts.persistedPath, "utf8");
     compact = true;
+    if (statSync7(opts.persistedPath).size > BIG) {
+      bigFile = opts.persistedPath;
+      text = undefined;
+    } else {
+      bytesBuf = readFileSync10(opts.persistedPath);
+      text = bytesBuf.toString("utf8");
+    }
   }
-  const lines = text.split(`
-`).length - (text.endsWith(`
-`) ? 1 : 0);
-  if (lines <= cfgInt("hooks.bash_output_threshold_lines", 250) && Buffer.byteLength(text) <= cfgInt("hooks.bash_output_threshold_bytes", 20000))
+  const src = bigFile ? logSrc(bigFile) : textSrc(text);
+  const lines = src.count();
+  if (lines <= cfgInt("hooks.bash_output_threshold_lines", 250) && src.bytes <= cfgInt("hooks.bash_output_threshold_bytes", 20000))
     return;
-  const seen = opts.session ? seenFile(opts.session, text) : "";
+  if (diffv) {
+    let isDiff = false;
+    for (const l of src.lines())
+      if (l.startsWith("diff --git ")) {
+        isDiff = true;
+        break;
+      }
+    if (!isDiff)
+      return;
+  }
+  let jsonv = false;
+  if (!search && !diffv && src.bytes <= 16777216 && cfgBool("hooks.json_view", true)) {
+    for (const l of src.lines()) {
+      const t = l.replace(/^[ \t]+/, "");
+      if (!t)
+        continue;
+      jsonv = t[0] === "{" || t[0] === "[";
+      break;
+    }
+  }
+  let raw = bigFile ? undefined : bytesBuf ??= Buffer.from(text);
+  const seen = opts.session ? seenFile(opts.session, raw ?? { file: bigFile }) : "";
   if (seen && existsSync8(seen)) {
     const m = /^(\d+) (\S+) (.*)$/.exec(readFileSync10(seen, "utf8").replace(/\n$/, ""));
-    if (m && Math.floor(Date.now() / 1000) - Number(m[1]) <= 3600 && existsSync8(m[3]) && readFileSync10(m[3]).equals(Buffer.from(text))) {
+    if (m && Math.floor(Date.now() / 1000) - Number(m[1]) <= 3600 && existsSync8(m[3]) && (raw ? readFileSync10(m[3]).equals(raw) : sameFile(m[3], bigFile))) {
       const label = redact(cmd);
-      const bytes = Buffer.byteLength(text);
+      const bytes = src.bytes;
       const note = `[offload] \`${label.slice(0, 120)}\` · ${fmtInt(lines)} lines / ${Math.ceil(bytes / 1024)} KB · same output as at ${m[2]}, shown then · full log: ${m[3]} · its digest again: offload summarize ${shquote(m[3])}`;
       appendStats({ kind: "digest", source: "repeat", label, log: m[3], model: "", bytes_in: bytes, bytes_out: Buffer.byteLength(note), saved_tokens: Math.max(0, Math.floor((bytes - Buffer.byteLength(note)) / 4)), seconds: 0, model_ok: false, model_tried: false, worker_tokens_in: 0, worker_tokens_out: 0 });
       return note;
@@ -2752,18 +3157,41 @@ async function postBash(opts) {
         writeFileSync6(cmdSeen, line);
     } catch {}
   };
-  if (search) {
+  if (search || diffv) {
     const log = newLogPath(cmd);
-    writeFileSync6(log, text);
-    const v = searchView(log, cmd).replace(/\n$/, "");
+    if (raw)
+      writeFileSync6(log, raw);
+    else
+      copyFileSync(bigFile, log);
+    raw = bytesBuf = undefined;
+    const v = (diffv ? diffView(log, cmd, text) : searchView(log, cmd, text)).replace(/\n$/, "");
     markSeen(log);
     return v;
   }
+  let log;
+  if (jsonv) {
+    log = newLogPath(cmd);
+    if (raw)
+      writeFileSync6(log, raw);
+    else
+      copyFileSync(bigFile, log);
+    const v = jsonView(log, cmd, lines, src.bytes);
+    if (v) {
+      markSeen(log);
+      return v;
+    }
+  }
   const budgetSec = cfgInt("hooks.digest_timeout_seconds", 20);
   const noModel = budgetSec === 0 || !await available();
-  const log = newLogPath(cmd);
-  writeFileSync6(log, text);
-  const d = (await digest(log, cmd, "0", opts.description ?? "", "hook", undefined, { noModel, compact, budgetSec, prev })).replace(/\n$/, "");
+  if (!log) {
+    log = newLogPath(cmd);
+    if (raw)
+      writeFileSync6(log, raw);
+    else
+      copyFileSync(bigFile, log);
+  }
+  raw = bytesBuf = undefined;
+  const d = (await digest(log, cmd, "0", opts.description ?? "", "hook", undefined, { noModel, compact, budgetSec, prev, text })).replace(/\n$/, "");
   if (d)
     markSeen(log);
   return d;

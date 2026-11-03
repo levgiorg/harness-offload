@@ -9,6 +9,8 @@ export interface RunResult {
   stderr: string;
   timedOut: boolean;
   killedBy?: string;
+  /** The signal that ended the process, when one did (SIGKILL, SIGSEGV…). */
+  signal?: string;
 }
 
 const isWin = process.platform === "win32";
@@ -142,6 +144,7 @@ export function runProcess(
     }
     track(child);
     let done = false;
+    let signal: string | undefined;
     const finish = (code: number | null) => {
       if (done) return;
       done = true;
@@ -151,7 +154,7 @@ export function runProcess(
       killTree(child, "SIGKILL");
       child.stdout?.destroy();
       child.stderr?.destroy();
-      resolve({ code, stdout, stderr, timedOut, killedBy });
+      resolve({ code, stdout, stderr, timedOut, killedBy, signal });
     };
     const kill = () => {
       killTree(child, "SIGTERM");
@@ -193,7 +196,10 @@ export function runProcess(
       stderr += String(e);
       finish(127);
     });
-    child.on("close", (code) => finish(code));
+    child.on("close", (code, sig) => {
+      if (sig) signal = sig;
+      finish(code);
+    });
     // the worker is done; give its last output a moment, then stop waiting
     child.on("exit", (code) => setTimeout(() => finish(code), 500).unref());
     child.stdin!.on("error", () => {

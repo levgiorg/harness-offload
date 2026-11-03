@@ -88,3 +88,11 @@ export function redact(text: string): string {
     // a key cut off by a line range or an excerpt has no END line: mask to the end
     .replace(/-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?(?:-----END [A-Z ]*PRIVATE KEY-----\n?|$)/g, "[REDACTED PRIVATE KEY]\n");
 }
+
+/** offload's own prompt tags neutralised inside material (a file, a log, piped text), so
+ *  content can't close a block or start a new question: the "<" of <file>, <question>,
+ *  <instructions>, <previous_answer>, <check> (open or close) and of </input>, </output>
+ *  becomes "&lt;". Opening <input>/<output> (HTML, JSX) stay. Twin: co_fence in common.sh. */
+export function fence(text: string): string {
+  return text.replace(/<(?=\/?(?:file|question|instructions|previous_answer|check)(?:[ \t>\/]|$)|\/(?:input|output)(?:[ \t>\/]|$))/gim, "&lt;");
+}

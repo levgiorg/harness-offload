@@ -96,7 +96,9 @@ export function verifyCitations(answer: string, root: string, slack = 3, sent: s
     isKnown.add(k);
     knownList.push(k);
     const base = k.slice(k.lastIndexOf("/") + 1);
-    byBase.set(base, [...(byBase.get(base) ?? []), k]);
+    const list = byBase.get(base);
+    if (list) list.push(k);
+    else byBase.set(base, [k]);
   };
   for (const s of sent) remember(s);
   for (const k of known) remember(k);
@@ -116,7 +118,8 @@ export function verifyCitations(answer: string, root: string, slack = 3, sent: s
     if (b < a) b = a;
     const lo = Math.max(1, a - slack);
     const hi = Math.min(lines.length, b + slack);
-    const nq = norm(q);
+    // the worker saw offload's own tags inside the material as "&lt;…" (fenced): read them back
+    const nq = norm(q.replace(/&lt;/g, "<"));
     if (!nq) return false;
     for (let i = lo; i <= hi; i++) if (norm(lines[i - 1]).includes(nq)) return true;
     const hay = norm(lines.slice(lo - 1, hi).join(" "));

@@ -420,7 +420,7 @@ co_opencode_attempt() {
   ) </dev/null >/dev/null 2>&1 &
   # (no inherited stdout: a hook's caller waits until every holder closes it)
   wd=$!
-  wait "$pid"; rc=$?
+  co_wait_worker "$pid" "$wd"; rc=$CO_WAIT_RC
   kill "$wd" 2>/dev/null; wait "$wd" 2>/dev/null
   case "$(cat "$why" 2>/dev/null)" in
     timeout)
@@ -450,6 +450,10 @@ co_opencode_attempt() {
         rm -f "$(co_state_dir)/opencode-version" 2>/dev/null; CO_OC_MAJOR=""
         msg="$msg (opencode version changed? cleared the cache — run again)" ;;
     esac
+    # a worker ended by a signal (crash, OOM kill) says which. Twin: opencode.ts.
+    if [ -z "$msg" ] && [ "$rc" -gt 128 ] && [ "$rc" -lt 160 ]; then
+      msg="opencode was killed by SIG$(kill -l $((rc - 128)) 2>/dev/null || echo $((rc - 128)))"
+    fi
     CO_OC_ERROR="${msg:-opencode exited with status $rc}"
     case "$CO_OC_ERROR" in
       *"Unexpected server error"*)
@@ -485,10 +489,19 @@ EOF
 # Walks the model chain, skipping models in cooldown and cooling down models
 # that fail for quota/auth/model reasons. Writes the answer to answer_file and
 # sets CO_OC_* (call it directly, not in $(...), or those are lost).
+# A failed or skipped model in a few words, for the footer of the answer that came after it.
+co_oc_why() {
+  case "$1" in
+    "$CO_E_QUOTA") echo quota ;; "$CO_E_AUTH") echo login ;; "$CO_E_MODEL") echo "unknown model" ;;
+    "$CO_E_TIMEOUT") echo timeout ;; "$CO_E_TOO_LARGE") echo "too large" ;; "$CO_E_USAGE") echo "not set up" ;;
+    "$CO_E_NOOC") echo "not installed" ;; *) echo error ;;
+  esac
+}
+
 co_oc_invoke() {
   local task="$1" prompt_file="$2" workdir="$3" answer_file="$4" override="${5:-}"
-  local agent="offload-$task" variant model rc=$CO_E_WORKER cool tried="" errors=""
-  CO_OC_MODEL="" CO_OC_ERROR=""
+  local agent="offload-$task" variant model rc=$CO_E_WORKER cool tried="" errors="" skipped=""
+  CO_OC_MODEL="" CO_OC_ERROR="" CO_OC_FALLBACK=""
   variant=$(co_cfg ".variants.$task")
 
   while IFS= read -r model; do
@@ -499,12 +512,14 @@ co_oc_invoke() {
       errors="${errors}  - $model: $CO_OC_ERROR
 "
       rc=$CO_E_USAGE
+      skipped="$skipped${skipped:+, }$model (not set up)"
       continue
     fi
     model="$CO_RT_REF"
     if [ -z "$override" ] && cool=$(co_model_cooling "$model"); then
       errors="${errors}  - $model: skipped, cooling down ($cool)
 "
+      skipped="$skipped${skipped:+, }$model (cooling down)"
       continue
     fi
     if [ -n "${CO_OC_DEADLINE:-}" ] && [ $(( CO_OC_DEADLINE - $(co_now) )) -lt 3 ]; then
@@ -522,10 +537,13 @@ co_oc_invoke() {
       if [ "$task" != write ]; then co_redact < "$answer_file" > "$answer_file.r" && mv "$answer_file.r" "$answer_file"; fi
       CO_OC_MODEL="$model"
       [ "$model" = "@default" ] && CO_OC_MODEL="opencode-default-model"
+      # the agent learns why it got a fallback model (footer)
+      [ -n "$skipped" ] && CO_OC_FALLBACK="fell back after $skipped"
       return 0
     fi
     errors="${errors}  - $model: $CO_OC_ERROR
 "
+    skipped="$skipped${skipped:+, }$model ($(co_oc_why "$rc"))"
     case "$rc" in
       "$CO_E_QUOTA") co_model_cooldown "$model" 300  "rate-limit/quota" ;;
       "$CO_E_AUTH")  co_model_cooldown "$model" 1800 "auth" ;;

@@ -201,21 +201,132 @@ hk_not_for_offload() {
   co_is_secret_target "$1"
 }
 
+# The package manager that answers questions about a lockfile (empty: not a lockfile). Twin: lockTool.
+hk_lock_tool() {
+  case "${1##*/}" in
+    package-lock.json|npm-shrinkwrap.json) printf 'npm ls NAME' ;;
+    yarn.lock) printf 'yarn why NAME' ;;
+    pnpm-lock.yaml) printf 'pnpm why NAME' ;;
+    bun.lock) printf 'bun pm ls' ;;
+    Cargo.lock) printf 'cargo tree -i NAME' ;;
+    poetry.lock) printf 'poetry show NAME' ;;
+    uv.lock) printf 'uv tree --package NAME' ;;
+    Pipfile.lock) printf 'pipenv graph' ;;
+    Gemfile.lock) printf 'bundle info NAME' ;;
+    composer.lock) printf 'composer show NAME' ;;
+    go.sum) printf 'go mod why -m NAME' ;;
+  esac
+}
+
+# Top-level structure of a JSON file of at most 16 MB: the value itself, then up to
+# 30 members (in JavaScript's order: integer keys first), then a line "@<jq commands>" (for its biggest member). Nothing when it is
+# not one JSON value.
+# Twin: jsonStructure.
+hk_json_structure() {
+  local file="$1" bytes="$2" q="$3"
+  [ "$bytes" -le 16777216 ] || return 0
+  jq -r -n '[inputs] | if length != 1 then empty else .[0] |
+    def d: type as $t |
+      if $t == "object" then "o\t\(length)"
+      elif $t == "array" then "a\t\(length)\t\(map(type) | unique | if length == 1 then .[0] else "mixed" end)"
+      else $t end;
+    def isidx: (try tonumber catch null) as $n | (startswith("-") | not) and
+      $n != null and $n >= 0 and $n < 4294967295 and ($n | floor | tostring) == .;
+    (d), (if type == "object" then
+      (((to_entries | map(select(.key | isidx)) | sort_by(.key | tonumber))
+        + (to_entries | map(select(.key | isidx | not))))[:30][] | "\(.key | tojson)\t\(.value | d)"),
+      (if length > 30 then "more\t\(length - 30)" else empty end)
+    else empty end) end' "$file" 2>/dev/null | LC_ALL=C awk -F '\t' -v q="$q" -v sq="'" '
+    function fmt(n,  s, o) { s = n ""; o = ""; while (length(s) > 3) { o = "," substr(s, length(s) - 2) o; s = substr(s, 1, length(s) - 3) }; return s o }
+    function desc(i,  n, t) {
+      if ($i == "o") { n = $(i + 1); return "object, " fmt(n) (n == 1 ? " key" : " keys") }
+      if ($i == "a") { n = $(i + 1); t = $(i + 2)
+        if (n == 0) return "array, empty"
+        if (t == "mixed") return "array, " fmt(n) (n == 1 ? " item" : " items") " (mixed)"
+        return "array, " fmt(n) " " t (n == 1 ? "" : "s") }
+      return $i }
+    NR == 1 { top = $1; print "  " desc(1); next }
+    $1 == "more" { print "  … " fmt($2) " more keys"; next }
+    { print "  " $1 ": " desc(2)
+      if (($2 == "a" || $2 == "o") && (key == "" || $3 + 0 > best)) { key = $1; kt = $2; best = $3 + 0 }
+      if (first == "") first = $1 }
+    END {
+      if (NR == 0) exit
+      if (top == "a") { print "@jq " sq "length" sq " " q " · jq " sq ".[0]" sq " " q; exit }
+      if (top != "o") exit
+      h = "jq " sq "keys" sq " " q
+      k = (key != "") ? key : first
+      p = ""
+      if (k ~ /^"[A-Za-z_][A-Za-z0-9_]*"$/) p = "." substr(k, 2, length(k) - 2)
+      else if (k != "" && index(k, sq) == 0 && index(k, "\\") == 0) p = ".[" k "]"
+      if (p != "" && kt == "a") h = h " · jq " sq p " | length" sq " " q " · jq " sq p "[0]" sq " " q
+      else if (p != "" && kt == "o") h = h " · jq " sq p " | keys[0:20]" sq " " q
+      else if (p != "") h = h " · jq " sq p sq " " q
+      print "@" h
+    }'
+}
+
 # The standard "too big for your context" message with options and outline.
+# Lockfiles, long-line (minified/generated) files and JSON get advice that fits them.
+# Twin: bigFileMessage.
 hk_big_file_message() {
-  local file="$1" lines="$2" tokens="$3" how="$4" chunk outline q
+  local file="$1" lines="$2" tokens="$3" how="$4" chunk outline q bytes avg lock structure="" jqhint=""
   chunk=$(co_cfg_int '.hooks.read_max_chunk_lines' 600)
   q=$(co_shquote "$file")
-  outline=$(co_outline "$file" 40)
+  bytes=$(wc -c < "$file" 2>/dev/null | tr -d ' '); bytes=${bytes:-0}
+  avg=$(( bytes / (lines > 0 ? lines : 1) ))
+  lock=$(hk_lock_tool "$file")
+  case "$file" in
+    *.json|*.JSON)
+      structure=$(hk_json_structure "$file" "$bytes" "$q")
+      jqhint=$(printf '%s\n' "$structure" | LC_ALL=C sed -n 's/^@//p')
+      structure=$(printf '%s\n' "$structure" | LC_ALL=C sed '/^@/d') ;;
+  esac
+  printf 'offload: %s would put all of %s into your context (%s lines, ~%s tokens; limit %s lines / %s tokens).\n' \
+    "$how" "$file" "$(co_fmt_int "$lines")" "$(co_fmt_int "$tokens")" "$(co_cfg '.hooks.read_threshold_lines')" "$(co_fmt_int "$(co_cfg '.hooks.read_threshold_tokens')")"
+  [ -n "$lock" ] && printf '%s\n' "It is a lockfile, written by the package manager: \`$lock\` answers \"which version, who needs it\" without reading it."
+  [ "$avg" -gt 4000 ] && printf '%s\n' "Its lines average $(co_fmt_int "$avg") characters (minified or generated), so line slices do not help."
+  printf 'Pick the cheapest option:\n'
+  if [ "$avg" -gt 4000 ]; then
+    printf '%s\n' "- Need exact text? Bash: grep -noE '.{0,80}PATTERN.{0,80}' $q shows each match with 80 characters around it."
+  else
+    printf '%s\n' "- Need exact text (to edit/quote)? Read with offset/limit (max $chunk lines per call) — outline below; \`grep -n PATTERN $q\` finds more."
+  fi
+  [ -n "$jqhint" ] && printf '%s\n' "- Need values? Bash: $jqhint"
   cat <<EOF
-offload: $how would put all of $file into your context ($(co_fmt_int "$lines") lines, ~$(co_fmt_int "$tokens") tokens; limit $(co_cfg '.hooks.read_threshold_lines') lines / $(co_fmt_int "$(co_cfg '.hooks.read_threshold_tokens')") tokens).
-Pick the cheapest option:
-- Need exact text (to edit/quote)? Read with offset/limit (max $chunk lines per call) — outline below; \`grep -n PATTERN $q\` finds more.
 - Need understanding/facts? Bash: $HK_CLI read -q "<specific question>" $q
   A cheap model answers with $file:Lx-Ly citations whose quotes are checked; then Read only those lines if you must edit.
 - Question spans many files? Bash: $HK_CLI explore "<question>"
 EOF
+  [ -n "$structure" ] && printf 'Structure of %s:\n%s\n' "$file" "$structure"
+  [ "$avg" -gt 4000 ] && return 0
+  outline=$(co_outline "$file" 40)
   if [ -n "$outline" ]; then
     printf 'Outline of %s:\n%s\n' "$file" "$outline"
   fi
+}
+
+# A huge JSON output (curl, kubectl -o json, gh api…): its structure and jq
+# commands on the log instead of a digest. Prints nothing when the log is not one
+# JSON object or array (the usual digest then runs). Twin: jsonView.
+hk_json_view() {
+  local log="$1" cmd="$2" lines="$3" bytes="$4" q s hint label out t0
+  t0=$(co_now)
+  q=$(co_shquote "$log")
+  s=$(hk_json_structure "$log" "$bytes" "$q")
+  hint=$(printf '%s\n' "$s" | LC_ALL=C sed -n 's/^@//p')
+  [ -n "$hint" ] || return 0
+  s=$(printf '%s\n' "$s" | LC_ALL=C sed '/^@/d')
+  label=$(printf '%s' "$cmd" | co_redact)
+  out="[offload] \`$(printf '%s' "$label" | LC_ALL=C cut -c1-120)\` · $(co_fmt_int "$lines") lines / $(( (bytes + 1023) / 1024 )) KB of JSON · full log: $log
+── structure ──
+$s
+── query it instead of reading it ──
+$hint"
+  printf '%s' "$out"
+  co_stats_append "$(jq -nc --arg lbl "$label" --arg log "$log" --argjson bin "$bytes" --argjson bout "$(printf '%s' "$out" | wc -c | tr -d ' ')" \
+    --argjson secs "$(co_elapsed "$t0")" \
+    '{ts: now | floor, kind: "digest", source: "json", label: $lbl, log: $log, model: "", bytes_in: $bin, bytes_out: $bout,
+      saved_tokens: ((($bin - $bout) / 4) | floor | if . < 0 then 0 else . end), seconds: $secs, model_ok: false, model_tried: false,
+      worker_tokens_in: 0, worker_tokens_out: 0}')"
 }

@@ -1,14 +1,14 @@
 // Host-neutral hook decisions — the TypeScript twin of the bash hooks in the
 // Claude Code plugin. Host adapters translate their JSON in and out.
-import { closeSync, existsSync, mkdirSync, openSync, readFileSync, readSync, statSync } from "node:fs";
+import { closeSync, copyFileSync, existsSync, mkdirSync, openSync, readFileSync, readSync, statSync } from "node:fs";
 import { basename, delimiter, dirname, isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { cfgBool, cfgInt, cfgList, cfgStr, loadConfig } from "../config.ts";
-import { digest, searchView } from "../digest.ts";
+import { BIG, diffView, digest, logSrc, searchView, textSrc } from "../digest.ts";
 import { parseRef, backendFor } from "../backends/registry.ts";
 import { modelChain } from "../engine.ts";
 import { isSecretTarget, matchesAny, redact } from "../secrets.ts";
-import { appendStats, cooling, newLogPath, seenCmdFile, seenFile } from "../state.ts";
+import { appendStats, cooling, newLogPath, sameFile, seenCmdFile, seenFile } from "../state.ts";
 import { outline, posixToJs } from "../outline.ts";
 import { taskSummary } from "../tasks.ts";
 import { estTokens, fileBytes, fileLines, fmtInt, isText, shquote } from "../text.ts";
@@ -70,20 +70,33 @@ export function enabled(): boolean {
   return cfgBool("enabled", true);
 }
 
-/** Fail-open check: is there a backend that could run a delegation? */
+/** Fail-open check: could a delegation run? The backend of the first read or summarize
+ *  model must be present (a missing primary means offload is not set up here, so hooks
+ *  step aside), and some model of those chains must not be cooling down. Twin: co_available. */
 export async function available(): Promise<boolean> {
   if (!enabled()) return false;
+  const parse = (raw: string) => {
+    try {
+      return parseRef(raw); // @host outside a known harness throws: skip it
+    } catch {
+      return undefined;
+    }
+  };
+  let present = false;
+  for (const task of ["read", "summarize"] as const) {
+    const first = modelChain(task)[0];
+    const parsed = first ? parse(first) : undefined;
+    const b = parsed && backendFor(parsed.backend);
+    if (b && (await b.available()).ok) {
+      present = true;
+      break;
+    }
+  }
+  if (!present) return false;
   for (const task of ["read", "summarize"] as const) {
     for (const raw of modelChain(task)) {
-      let parsed;
-      try {
-        parsed = parseRef(raw); // @host outside a known harness throws: skip it
-      } catch {
-        continue;
-      }
-      if (cooling(parsed.ref)) continue;
-      const b = backendFor(parsed.backend);
-      if (b && (await b.available()).ok) return true;
+      const parsed = parse(raw);
+      if (parsed && backendFor(parsed.backend) && !cooling(parsed.ref)) return true;
     }
   }
   return false;
@@ -136,18 +149,128 @@ function exploreCmd(host: Host): string {
   return callStyle(host) === "mcp" ? "the offload_explore tool" : `Bash: ${cliCommand()} explore "<question>"`;
 }
 
+const LOCK_TOOLS: Record<string, string> = {
+  "package-lock.json": "npm ls NAME",
+  "npm-shrinkwrap.json": "npm ls NAME",
+  "yarn.lock": "yarn why NAME",
+  "pnpm-lock.yaml": "pnpm why NAME",
+  "bun.lock": "bun pm ls",
+  "Cargo.lock": "cargo tree -i NAME",
+  "poetry.lock": "poetry show NAME",
+  "uv.lock": "uv tree --package NAME",
+  "Pipfile.lock": "pipenv graph",
+  "Gemfile.lock": "bundle info NAME",
+  "composer.lock": "composer show NAME",
+  "go.sum": "go mod why -m NAME",
+};
+/** The package manager that answers questions about a lockfile. Twin: hk_lock_tool. */
+export function lockTool(file: string): string | undefined {
+  const b = file.slice(file.lastIndexOf("/") + 1);
+  return Object.hasOwn(LOCK_TOOLS, b) ? LOCK_TOOLS[b] : undefined;
+}
+
+const jsonType = (v: unknown): string => (v === null ? "null" : Array.isArray(v) ? "array" : typeof v);
+function jsonDesc(v: unknown): { text: string; kind: string; n: number } {
+  const t = jsonType(v);
+  if (t === "object") {
+    const n = Object.keys(v as object).length;
+    return { text: `object, ${fmtInt(n)} ${n === 1 ? "key" : "keys"}`, kind: "o", n };
+  }
+  if (t === "array") {
+    const a = v as unknown[];
+    const n = a.length;
+    if (n === 0) return { text: "array, empty", kind: "a", n };
+    const types = new Set(a.map(jsonType));
+    const one = types.size === 1 ? [...types][0] : "mixed";
+    const text = one === "mixed" ? `array, ${fmtInt(n)} ${n === 1 ? "item" : "items"} (mixed)` : `array, ${fmtInt(n)} ${one}${n === 1 ? "" : "s"}`;
+    return { text, kind: "a", n };
+  }
+  return { text: t, kind: t, n: 0 };
+}
+
+/** Top-level structure of a JSON file of at most 16 MB and jq commands for its biggest
+ *  member; undefined when it is not one JSON value. Twin: hk_json_structure. */
+export function jsonStructure(file: string, bytes: number, shown = file): { lines: string[]; hint?: string } | undefined {
+  if (bytes > 16777216) return undefined;
+  let v: unknown;
+  try {
+    v = JSON.parse(readFileSync(file, "utf8"));
+  } catch {
+    return undefined;
+  }
+  const q = shquote(shown);
+  const top = jsonDesc(v);
+  const lines = [`  ${top.text}`];
+  if (top.kind === "a") return { lines, hint: `jq 'length' ${q} · jq '.[0]' ${q}` };
+  if (top.kind !== "o") return { lines };
+  const entries = Object.entries(v as Record<string, unknown>);
+  let key = "", kt = "", best = 0, first = "";
+  for (const [k, val] of entries.slice(0, 30)) {
+    const kj = JSON.stringify(k);
+    const d = jsonDesc(val);
+    lines.push(`  ${kj}: ${d.text}`);
+    if ((d.kind === "a" || d.kind === "o") && (key === "" || d.n > best)) [key, kt, best] = [kj, d.kind, d.n];
+    if (first === "") first = kj;
+  }
+  if (entries.length > 30) lines.push(`  … ${fmtInt(entries.length - 30)} more keys`);
+  let h = `jq 'keys' ${q}`;
+  const k = key || first;
+  let p = "";
+  if (/^"[A-Za-z_][A-Za-z0-9_]*"$/.test(k)) p = "." + k.slice(1, -1);
+  else if (k && !k.includes("'") && !k.includes("\\")) p = `.[${k}]`;
+  if (p && kt === "a") h += ` · jq '${p} | length' ${q} · jq '${p}[0]' ${q}`;
+  else if (p && kt === "o") h += ` · jq '${p} | keys[0:20]' ${q}`;
+  else if (p) h += ` · jq '${p}' ${q}`;
+  return { lines, hint: h };
+}
+
+/** A huge JSON output: its structure and jq commands on the log; undefined when the log is
+ *  not one JSON object or array (the usual digest then runs). Twin: hk_json_view. */
+export function jsonView(log: string, cmd: string, lines: number, bytes: number): string | undefined {
+  const t0 = Date.now();
+  const js = jsonStructure(log, bytes);
+  if (!js?.hint) return undefined;
+  const label = redact(cmd);
+  const out = `[offload] \`${label.slice(0, 120)}\` · ${fmtInt(lines)} lines / ${Math.ceil(bytes / 1024)} KB of JSON · full log: ${log}
+── structure ──
+${js.lines.join("\n")}
+── query it instead of reading it ──
+${js.hint}`;
+  const bout = Buffer.byteLength(out);
+  appendStats({
+    kind: "digest", source: "json", label, log, model: "", bytes_in: bytes, bytes_out: bout,
+    saved_tokens: Math.max(0, Math.floor((bytes - bout) / 4)), seconds: Math.round((Date.now() - t0) / 1000),
+    model_ok: false, model_tried: false, worker_tokens_in: 0, worker_tokens_out: 0,
+  });
+  return out;
+}
+
+/** Lockfiles, long-line (minified/generated) files and JSON get advice that fits them. Twin: hk_big_file_message. */
 export function bigFileMessage(host: Host, file: string, lines: number, tokens: number, how: string): string {
   const chunk = cfgInt("hooks.read_max_chunk_lines", 600);
-  const out = outline(file, 40);
-  let m = `offload: ${how} would put all of ${file} into your context (${fmtInt(lines)} lines, ~${fmtInt(tokens)} tokens; limit ${cfgStr("hooks.read_threshold_lines")} lines / ${fmtInt(cfgInt("hooks.read_threshold_tokens", 6000))} tokens).
-Pick the cheapest option:
-- Need exact text (to edit/quote)? Read a slice (max ${chunk} lines per call) — outline below; \`grep -n PATTERN ${shquote(file)}\` finds more.
-- Need understanding/facts? Use ${readCmd(host, file)}
+  const bytes = fileBytes(file);
+  const avg = Math.floor(bytes / (lines > 0 ? lines : 1));
+  const long = avg > 4000;
+  const lock = lockTool(file);
+  const js = /\.json$/i.test(file) ? jsonStructure(file, bytes) : undefined;
+  let m = `offload: ${how} would put all of ${file} into your context (${fmtInt(lines)} lines, ~${fmtInt(tokens)} tokens; limit ${cfgStr("hooks.read_threshold_lines")} lines / ${fmtInt(cfgInt("hooks.read_threshold_tokens", 6000))} tokens).\n`;
+  if (lock) m += `It is a lockfile, written by the package manager: \`${lock}\` answers "which version, who needs it" without reading it.\n`;
+  if (long) m += `Its lines average ${fmtInt(avg)} characters (minified or generated), so line slices do not help.\n`;
+  m += "Pick the cheapest option:\n";
+  m += long
+    ? `- Need exact text? Bash: grep -noE '.{0,80}PATTERN.{0,80}' ${shquote(file)} shows each match with 80 characters around it.\n`
+    : `- Need exact text (to edit/quote)? Read a slice (max ${chunk} lines per call) — outline below; \`grep -n PATTERN ${shquote(file)}\` finds more.\n`;
+  if (js?.hint) m += `- Need values? Bash: ${js.hint}\n`;
+  m += `- Need understanding/facts? Use ${readCmd(host, file)}
   A cheap model answers with ${file}:Lx-Ly citations whose quotes are checked; then read only those lines if you must edit.
 - Question spans many files? Use ${exploreCmd(host)}
 `;
-  if (out) m += `Outline of ${file}:\n${out}`;
-  return m;
+  if (js) m += `Structure of ${file}:\n${js.lines.join("\n")}\n`;
+  if (!long) {
+    const out = outline(file, 40);
+    if (out) m += `Outline of ${file}:\n${out}`;
+  }
+  return m.replace(/\n+$/, "");
 }
 
 /** Full-file read guard. offset/limit are 1-based lines; undefined = not given. */
@@ -189,6 +312,13 @@ export function readGuard(host: Host, cwd: string, file: string | undefined, off
     const remaining = lines - start + 1;
     let span = limit !== undefined ? limit : remaining;
     if (span > remaining) span = remaining;
+    // lines averaging over 4,000 characters (minified/generated): count the slice's size too
+    const avg = Math.floor(fileBytes(p) / (lines > 0 ? lines : 1));
+    const sliceTokens = Math.floor((span * avg + 3) / 4);
+    if (avg > 4000 && sliceTokens > cfgInt("hooks.read_threshold_tokens", 6000)) {
+      appendStats({ kind: "hook", event: "read_slice_blocked", host, lines: span, file });
+      return guard(`offload: that read slice is ${fmtInt(span)} lines of ${file}, but its lines average ${fmtInt(avg)} characters (minified or generated): ~${fmtInt(sliceTokens)} tokens. Bash: grep -noE '.{0,80}PATTERN.{0,80}' ${shquote(file)} shows each match with 80 characters around it, or ask: ${callStyle(host) === "mcp" ? "offload_read" : `${cliCommand()} read`} -q "<question>" ${shquote(file)}`);
+    }
     if (span <= chunk) return undefined;
     appendStats({ kind: "hook", event: "read_slice_blocked", host, lines: span, file });
     return guard(`offload: that read slice is ${fmtInt(span)} lines of ${file}; keep slices to at most ${chunk} lines, or ask: ${callStyle(host) === "mcp" ? "offload_read" : `${cliCommand()} read`} -q "<question>" ${shquote(file)}:${start}-${start + span - 1}`);
@@ -303,8 +433,10 @@ export async function postBash(opts: { command?: string; output: string; persist
       search = false;
     }
   }
+  // a huge diff (git diff/show) gets the diff view: files with +/- and the first hunks
+  const diffv = !search && cfgBool("hooks.diff_view", true) && /^\s*git\s+(diff|show)(\s|$)/.test(last);
   const never = cfgStr("hooks.bash_never_summarize");
-  if (never && !search) {
+  if (never && !search && !diffv) {
     try {
       const { posixToJs } = await import("../outline.ts");
       if (new RegExp(posixToJs(never)).test(last)) return undefined;
@@ -313,26 +445,57 @@ export async function postBash(opts: { command?: string; output: string; persist
       return undefined;
     }
   }
-  let text = opts.output;
+  // one copy of the output in memory (its bytes and its text) — or none: a persisted output over
+  // BIG is counted, checksummed, compared and copied as a file, and digested from it in chunks
+  let text: string | undefined = opts.output;
+  let bytesBuf: Buffer | undefined;
   let compact = false;
+  let bigFile: string | undefined;
   if (opts.persistedPath && existsSync(opts.persistedPath)) {
-    text = readFileSync(opts.persistedPath, "utf8");
     compact = true;
+    if (statSync(opts.persistedPath).size > BIG) {
+      bigFile = opts.persistedPath;
+      text = undefined;
+    } else {
+      bytesBuf = readFileSync(opts.persistedPath);
+      text = bytesBuf.toString("utf8");
+    }
   }
-  const lines = text.split("\n").length - (text.endsWith("\n") ? 1 : 0);
-  if (lines <= cfgInt("hooks.bash_output_threshold_lines", 250) && Buffer.byteLength(text) <= cfgInt("hooks.bash_output_threshold_bytes", 20000)) return undefined;
+  const src = bigFile ? logSrc(bigFile) : textSrc(text!);
+  const lines = src.count();
+  if (lines <= cfgInt("hooks.bash_output_threshold_lines", 250) && src.bytes <= cfgInt("hooks.bash_output_threshold_bytes", 20000)) return undefined;
+  // a diff view needs a real diff: anything else from git diff/show passes through, as before
+  if (diffv) {
+    let isDiff = false;
+    for (const l of src.lines()) if (l.startsWith("diff --git ")) {
+      isDiff = true;
+      break;
+    }
+    if (!isDiff) return undefined;
+  }
+  // a huge JSON output (curl, kubectl -o json…) gets its structure and jq commands
+  let jsonv = false;
+  if (!search && !diffv && src.bytes <= 16777216 && cfgBool("hooks.json_view", true)) {
+    for (const l of src.lines()) {
+      const t = l.replace(/^[ \t]+/, "");
+      if (!t) continue;
+      jsonv = t[0] === "{" || t[0] === "[";
+      break;
+    }
+  }
   // options, not process.env: in-process hosts (OpenCode, Pi) live on.
   // The agent waits for this hook: the model gets hooks.digest_timeout_seconds
   // in all; 0 = no model in hooks (the digest is then instant).
   // the same output again in this session (a re-run with nothing changed): one line
   // instead of a second digest and worker call. Twin: post-bash.
-  const seen = opts.session ? seenFile(opts.session, text) : "";
+  let raw: Buffer | undefined = bigFile ? undefined : (bytesBuf ??= Buffer.from(text!));
+  const seen = opts.session ? seenFile(opts.session, raw ?? { file: bigFile! }) : "";
   if (seen && existsSync(seen)) {
     const m = /^(\d+) (\S+) (.*)$/.exec(readFileSync(seen, "utf8").replace(/\n$/, ""));
     // byte for byte against the earlier run's log, so a checksum clash can't mislead
-    if (m && Math.floor(Date.now() / 1000) - Number(m[1]) <= 3600 && existsSync(m[3]) && readFileSync(m[3]).equals(Buffer.from(text))) {
+    if (m && Math.floor(Date.now() / 1000) - Number(m[1]) <= 3600 && existsSync(m[3]) && (raw ? readFileSync(m[3]).equals(raw) : sameFile(m[3], bigFile!))) {
       const label = redact(cmd);
-      const bytes = Buffer.byteLength(text);
+      const bytes = src.bytes;
       const note = `[offload] \`${label.slice(0, 120)}\` · ${fmtInt(lines)} lines / ${Math.ceil(bytes / 1024)} KB · same output as at ${m[2]}, shown then · full log: ${m[3]} · its digest again: offload summarize ${shquote(m[3])}`;
       appendStats({ kind: "digest", source: "repeat", label, log: m[3], model: "", bytes_in: bytes, bytes_out: Buffer.byteLength(note), saved_tokens: Math.max(0, Math.floor((bytes - Buffer.byteLength(note)) / 4)), seconds: 0, model_ok: false, model_tried: false, worker_tokens_in: 0, worker_tokens_out: 0 });
       return note;
@@ -358,19 +521,36 @@ export async function postBash(opts: { command?: string; output: string; persist
       /* best-effort */
     }
   };
-  if (search) {
+  if (search || diffv) {
     const log = newLogPath(cmd);
-    writeFileSync(log, text);
-    const v = searchView(log, cmd).replace(/\n$/, "");
+    if (raw) writeFileSync(log, raw);
+    else copyFileSync(bigFile!, log);
+    raw = bytesBuf = undefined; // the bytes are on disk now; the text is all the view needs
+    const v = (diffv ? diffView(log, cmd, text) : searchView(log, cmd, text)).replace(/\n$/, "");
     markSeen(log);
     return v;
   }
+  let log: string | undefined;
+  if (jsonv) {
+    log = newLogPath(cmd);
+    if (raw) writeFileSync(log, raw);
+    else copyFileSync(bigFile!, log);
+    const v = jsonView(log, cmd, lines, src.bytes);
+    if (v) {
+      markSeen(log);
+      return v;
+    }
+  }
   const budgetSec = cfgInt("hooks.digest_timeout_seconds", 20);
   const noModel = budgetSec === 0 || !(await available());
-  const log = newLogPath(cmd);
-  writeFileSync(log, text);
+  if (!log) {
+    log = newLogPath(cmd);
+    if (raw) writeFileSync(log, raw);
+    else copyFileSync(bigFile!, log);
+  }
+  raw = bytesBuf = undefined; // the bytes are on disk now; the text is all the digest needs
   // no final newline, as the bash hook returns it
-  const d = (await digest(log, cmd, "0", opts.description ?? "", "hook", undefined, { noModel, compact, budgetSec, prev })).replace(/\n$/, "");
+  const d = (await digest(log, cmd, "0", opts.description ?? "", "hook", undefined, { noModel, compact, budgetSec, prev, text })).replace(/\n$/, "");
   if (d) markSeen(log);
   return d;
 }

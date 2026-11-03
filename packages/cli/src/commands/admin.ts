@@ -350,7 +350,7 @@ export function cmdStatusline(): void {
 export function cmdExplain(argv: string[]): void {
   const n = /^\d+$/.test(argv[0] ?? "") ? Number(argv[0]) : 10;
   const f = join(stateDir(), "stats.jsonl");
-  const rows = readStats().filter((r) => r.kind === "hook" || (r.kind === "digest" && ["hook", "search", "repeat"].includes(r.source)));
+  const rows = readStats().filter((r) => r.kind === "hook" || (r.kind === "digest" && ["hook", "search", "diff", "json", "repeat"].includes(r.source)));
   if (!rows.length) {
     process.stdout.write(`Nothing yet: offload's hooks have not blocked or replaced anything (${f}).\n`);
     return;
@@ -383,6 +383,10 @@ export function cmdExplain(argv: string[]): void {
     else if (r.kind === "hook") t = `hook event ${r.event ?? "?"}`;
     else if (r.source === "search")
       t = `showed a search view of \`${r.label ?? "?"}\` (${kb(r.bytes_in)} → ${kb(r.bytes_out)})${I}why: a search ${out}${I}all of it: ${log(r)} · off: offload config set hooks.search_view false`;
+    else if (r.source === "diff")
+      t = `showed a diff view of \`${r.label ?? "?"}\` (${kb(r.bytes_in)} → ${kb(r.bytes_out)})${I}why: a diff ${out}${I}all of it: ${log(r)} · off: offload config set hooks.diff_view false`;
+    else if (r.source === "json")
+      t = `showed the JSON structure of \`${r.label ?? "?"}\` (${kb(r.bytes_in)} → ${kb(r.bytes_out)})${I}why: JSON output ${out}${I}all of it: ${log(r)} · off: offload config set hooks.json_view false`;
     else if (r.source === "repeat")
       t = `said \`${r.label ?? "?"}\` printed the same output as before (${kb(r.bytes_in)})${I}why: the same output again in this session${I}all of it: ${log(r)}`;
     else

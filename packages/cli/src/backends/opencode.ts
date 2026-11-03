@@ -214,7 +214,9 @@ export class OpencodeBackend implements Backend {
       }
       if (/Unexpected server error/.test(msg)) throw new WorkerError(E.MODEL, `${msg} (V1 reports unknown model ids this way — check \`opencode models\`)`);
       if (/Agent not found/.test(msg)) throw new WorkerError(E.WORKER, `${msg} (opencode ignored offload's agent config — run \`offload doctor\`)`);
-      throw new WorkerError(classify(msg || `exit ${r.code}`), msg || `opencode exited with status ${r.code}`);
+      // a worker ended by a signal (crash, OOM kill) says which, not "status null". Twin: co_oc_attempt.
+      const status = r.signal ? `was killed by ${r.signal}` : `exited with status ${r.code}`;
+      throw new WorkerError(classify(msg || `exit ${r.code}`), msg || `opencode ${status}`);
     }
     const text = finalText(events);
     if (!text) throw new WorkerError(E.WORKER, "worker returned an empty answer");

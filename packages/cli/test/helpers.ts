@@ -17,6 +17,7 @@ export function sandbox(): { dir: string; env: NodeJS.ProcessEnv } {
     OFFLOAD_MODEL: "stub/ok",
     STUB_VERSION: "1.19.5",
     NO_COLOR: "1",
+    OFFLOAD_NO_CACHE: "1",
   };
   delete env.OFFLOAD_DISABLE;
   delete env.OFFLOAD_READ_GUARD;

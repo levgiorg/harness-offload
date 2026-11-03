@@ -1,6 +1,6 @@
 // Property tests for the citation verifier: random answers, fixed seed, both engines compared.
 import { describe, expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
@@ -112,4 +112,40 @@ describe("redaction stays linear", () => {
       expect(performance.now() - t0).toBeLessThan(500);
     }
   });
+});
+
+describe("JSON structure of a big file (property test)", () => {
+  test("bash (jq + awk) and TypeScript describe 60 random JSON files the same way", async () => {
+    const { jsonStructure } = await import("../src/hooks/logic.ts");
+    const { sandbox } = await import("./helpers");
+    const s = sandbox();
+    const r = rng(11);
+    const pick = <T>(a: T[]) => a[Math.floor(r() * a.length)];
+    const keys = ["id", "name", "my-key", "it's", "a\"b", "back\\slash", "ü", "0", "2", "10", "01", "-0", "1.0", "1e2", "4294967294", "4294967295", "", " sp", "x".repeat(40)];
+    const scalar = () => pick<unknown>([1, -2.5, "s", true, false, null, 1e21]);
+    const value = (depth: number): unknown => {
+      const k = r();
+      if (depth > 1 || k < 0.4) return scalar();
+      if (k < 0.7) return Array.from({ length: Math.floor(r() * 1200) }, () => (r() < 0.8 ? { v: 1 } : scalar()));
+      return Object.fromEntries(Array.from({ length: Math.floor(r() * 5) }, () => [pick(keys), value(depth + 1)]));
+    };
+    const pad = "\n".repeat(700);
+    for (let i = 0; i < 60; i++) {
+      const top = i % 10 === 0 ? value(1) : Object.fromEntries(Array.from({ length: 1 + Math.floor(r() * 40) }, (_, j) => [r() < 0.5 ? pick(keys) : `k${j}`, value(1)]));
+      const f = `d${i}.json`;
+      writeFileSync(join(s.dir, f), JSON.stringify(top, null, r() < 0.5 ? 2 : 0) + pad);
+      const out = spawnSync(join(import.meta.dir, "../../../plugins/harness-offload/hooks/pre-read"), {
+        input: JSON.stringify({ cwd: s.dir, tool_name: "Read", tool_input: { file_path: f } }),
+        cwd: s.dir,
+        env: { ...s.env, OFFLOAD_HOST: "opencode" },
+        encoding: "utf8",
+      });
+      const reason: string = JSON.parse(out.stdout || "{}").hookSpecificOutput?.permissionDecisionReason ?? "";
+      const bashBlock = reason.match(/Structure of .*\n((?:  .*\n?)*)/)?.[1]?.trimEnd() ?? "";
+      const bashHint = reason.match(/- Need values\? Bash: (.*)/)?.[1] ?? "";
+      const ts = jsonStructure(join(s.dir, f), statSync(join(s.dir, f)).size, f);
+      expect(bashBlock.length).toBeGreaterThan(0);
+      expect(`${f}\n${bashBlock}\n${bashHint}`).toBe(`${f}\n${ts?.lines.join("\n") ?? ""}\n${ts?.hint ?? ""}`);
+    }
+  }, 120_000);
 });

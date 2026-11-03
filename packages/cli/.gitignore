@@ -6,3 +6,5 @@ assets/
 /README.md
 /LICENSE
 /LICENSE-FONTS
+coverage/
+coverage.txt

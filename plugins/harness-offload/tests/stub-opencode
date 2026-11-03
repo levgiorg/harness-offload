@@ -68,6 +68,9 @@ case "$mode" in
       fi
     done ;;
   hang) start; sleep 600 ;;
+  crash) start; kill -9 $$ ;;
+  partial) start; printf '{"type":"text","sessionID":"%s","part":{"type":"text","te' "$sid"; exit 0 ;;
+  garbage) printf 'not json at all\n\x00\xff binary\n'; exit 0 ;;
   empty) start; finish ;;
   *) err unknown "stub: unknown mode $mode" UnknownError; exit 1 ;;
 esac

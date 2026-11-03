@@ -9,8 +9,8 @@ import { digest, isSmall } from "../digest.ts";
 import { invoke, InvokeResult } from "../engine.ts";
 import { E, WorkerError } from "../backends/types.ts";
 import { outline } from "../outline.ts";
-import { isSecretPath, isSecretTarget, redact } from "../secrets.ts";
-import { appendStats as appendStatsRow, newLogPath, workDir } from "../state.ts";
+import { fence, isSecretPath, isSecretTarget, redact } from "../secrets.ts";
+import { appendStats as appendStatsRow, cksum, newLogPath, stateDir, workDir } from "../state.ts";
 import { setTaskContext, taskContext, taskDef, taskNames, taskSystem, TASK_NAME } from "../tasks.ts";
 import { estTokens, fileLines, fmtInt, isText, numberLines, shquote, stripWrappingFence } from "../text.ts";
 import { verifyCitations } from "../verify.ts";
@@ -23,7 +23,9 @@ const die = (m: string, code: number = E.USAGE): never => {
   err(m);
   throw new ExitError(code);
 };
-const footer = (s: string) => `\n[offload ${s}]\n`;
+// the last worker call's fallback note ("fell back after A (quota)"), added to the footer
+let lastFallback = "";
+const footer = (s: string) => `\n[offload ${s}${lastFallback ? ` · ${lastFallback}` : ""}]\n`;
 /** "read", "explore", "ask" — or "task NAME" while a custom task runs through that flow. */
 const label = (kind: string) => {
   const t = taskContext();
@@ -53,7 +55,9 @@ function reportFailure(what: string, e: unknown): never {
 async function run(task: Parameters<typeof invoke>[0], prompt: string, cwd: string, model: string, what: string): Promise<InvokeResult> {
   try {
     const t = taskContext();
-    return await invoke(task, prompt, cwd, model || undefined, t ? { system: t.system, primary: t.model } : {});
+    const r = await invoke(task, prompt, cwd, model || undefined, t ? { system: t.system, primary: t.model } : {});
+    lastFallback = r.fallback ?? "";
+    return r;
   } catch (e) {
     return reportFailure(what, e);
   }
@@ -61,34 +65,39 @@ async function run(task: Parameters<typeof invoke>[0], prompt: string, cwd: stri
 
 // ------------------------------------------------------------------ read
 
-function listDirFiles(d: string): string[] {
+/** The files under d, relative to d with "/" separators, sorted (git's list when it is a
+ *  repo: ignored files left out). */
+function listRelFiles(d: string): string[] {
   let files: string[] = [];
   try {
-    const out = execFileSync("git", ["-C", d, "ls-files", "--cached", "--others", "--exclude-standard"], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] });
-    files = out.split("\n").filter(Boolean).map((f) => join(d, f));
+    // big repos list more than the 1 MB default buffer, and a throw here meant a slow walk that ignores .gitignore
+    const out = execFileSync("git", ["-C", d, "ls-files", "--cached", "--others", "--exclude-standard"], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"], maxBuffer: 256 * 1024 * 1024 });
+    files = out.split("\n").filter(Boolean);
   } catch {
     const skip = new Set([".git", "node_modules", "dist", "build", ".venv", "venv", "target", "vendor"]);
-    const walk = (p: string) => {
+    const walk = (p: string, rel: string) => {
       for (const e of readdirSync(p)) {
         if (skip.has(e)) continue;
         const q = join(p, e);
         const st = lstatSync(q);
-        if (st.isDirectory()) walk(q);
-        else if (st.isFile()) files.push(q);
+        if (st.isDirectory()) walk(q, `${rel}${e}/`);
+        else if (st.isFile()) files.push(`${rel}${e}`);
       }
     };
-    walk(d);
+    walk(d, "");
   }
-  const rel = (f: string) => relative(process.cwd(), f).split(sep).join("/") || f;
-  return files
-    .map(rel)
-    .filter((f) => !/(^|\/)(package-lock\.json|yarn\.lock|pnpm-lock\.yaml|Cargo\.lock|poetry\.lock|go\.sum|.*\.min\.(js|css)|.*\.map)$/.test(f))
-    .sort();
+  return files.filter((f) => !/(^|\/)(package-lock\.json|yarn\.lock|pnpm-lock\.yaml|Cargo\.lock|poetry\.lock|go\.sum|.*\.min\.(js|css)|.*\.map)$/.test(f)).sort();
+}
+
+/** The files under d as paths from the current folder (one prefix, no path call per file). */
+function listDirFiles(d: string): string[] {
+  const pre = relative(process.cwd(), d).split(sep).join("/");
+  return listRelFiles(d).map((f) => (pre ? `${pre}/${f}` : f));
 }
 
 function fileBlock(path: string, from: number, to: number, total: number): string {
   const body = numberLines(readFileSync(path, "utf8"), from, to);
-  return `<file path="${path}" lines="${from}-${to}" total_lines="${total}">\n${redact(body)}</file>\n\n`;
+  return `<file path="${path}" lines="${from}-${to}" total_lines="${total}">\n${fence(redact(body))}</file>\n\n`;
 }
 
 export async function cmdRead(argv: string[]): Promise<void> {
@@ -96,6 +105,7 @@ export async function cmdRead(argv: string[]): Promise<void> {
     question: { alias: ["-q"], value: true },
     model: { alias: ["-m"], value: true },
     "no-verify": {},
+    "no-cache": {},
     "allow-secrets": {},
     paths: {},
   });
@@ -162,6 +172,31 @@ export async function cmdRead(argv: string[]): Promise<void> {
   if (bytes > maxBytes) die(`read: ${fmtInt(bytes)} bytes is over read.max_input_bytes (${fmtInt(maxBytes)}). Send fewer files, use file:START-END ranges, or try \`offload explore\`.`, E.REFUSED);
   prompt += `<question>${question}</question>\n`;
   const t0 = Date.now();
+  // The same question about the same file contents (the prompt holds them) with the same model
+  // and instructions: the checked answer from earlier, if it is recent. Twin: cmd_read (same files).
+  const verifyOn = !opts["no-verify"];
+  const cacheSec = cfgInt("read.cache_seconds", 3600);
+  let cacheFile = "";
+  if (!opts["no-cache"] && process.env.OFFLOAD_NO_CACHE !== "1" && cacheSec > 0) {
+    const t = taskContext();
+    const key = cksum(Buffer.from(`${prompt}\n${str(opts.model)}|${t?.name ?? ""}|${verifyOn}|${t?.system ?? ""}`));
+    cacheFile = join(stateDir(), "cache", "answers", key);
+    if (existsSync(cacheFile)) {
+      const all = readFileSync(cacheFile, "utf8");
+      const nl = all.indexOf("\n");
+      const [at, hms, cok, cbad, ...m] = all.slice(0, nl).split(" ");
+      if (Math.floor(Date.now() / 1000) - Number(at) <= cacheSec) {
+        const body = all.slice(nl + 1);
+        lastFallback = "";
+        let out = body + footer(`${label("read")} · ${m.join(" ")} · ${nfiles} file(s), ${fmtInt(nlines)} lines (~${fmtInt(estTokens(bytes))} tokens) kept out of your context · 0s${verifyOn ? ` · citations: ${cok} verified, ${cbad} unverified` : ""} · cached from ${hms} (--no-cache to ask again)`);
+        if (Number(cbad) > 0) out += "⚠unverified = quote not found near the cited lines; confirm with Read(offset/limit) before acting on it.\n";
+        process.stdout.write(out);
+        const bout = Buffer.byteLength(body);
+        appendStatsRow({ kind: "read", source: "cache", model: m.join(" "), files: nfiles, bytes_in: bytes, bytes_out: bout, saved_tokens: Math.max(0, Math.floor((bytes - bout) / 4)), seconds: 0, cites_ok: 0, cites_bad: 0, worker_tokens_in: 0, worker_tokens_out: 0 });
+        return;
+      }
+    }
+  }
   const r = await run("read", prompt, workDir(), str(opts.model), "read");
   let answer = r.text.replace(/\n?$/, "\n");
   let cite = "";
@@ -195,6 +230,16 @@ export async function cmdRead(argv: string[]): Promise<void> {
     }
     cite = ` · citations: ${ok} verified, ${bad} unverified${retried}`;
   }
+  if (cacheFile) {
+    try {
+      mkdirSync(dirname(cacheFile), { recursive: true });
+      const d = new Date();
+      const p2 = (n: number) => String(n).padStart(2, "0");
+      writeFileSync(cacheFile, `${Math.floor(d.getTime() / 1000)} ${p2(d.getHours())}:${p2(d.getMinutes())}:${p2(d.getSeconds())} ${ok} ${bad} ${r.model}\n${answer}`);
+    } catch {
+      /* a cache is best-effort */
+    }
+  }
   let out = answer + footer(`${label("read")} · ${r.model} · ${nfiles} file(s), ${fmtInt(nlines)} lines (~${fmtInt(estTokens(bytes))} tokens) kept out of your context · ${secs(t0)}s${cite}`);
   if (bad > 0) out += "⚠unverified = quote not found near the cited lines; confirm with Read(offset/limit) before acting on it.\n";
   if (skipped.length) out += `skipped: ${skipped.join(" ")}\n`;
@@ -225,7 +270,7 @@ export async function cmdExplore(argv: string[]): Promise<void> {
   let bad = 0;
   if (!opts["no-verify"]) {
     // the project's files, so a citation with a shortened path still finds its file
-    const known = listDirFiles(dir).map((f) => relative(dir, f));
+    const known = listRelFiles(dir);
     const v = verifyCitations(answer, dir, 3, [], known);
     answer = v.text;
     ok = v.ok;
@@ -377,13 +422,13 @@ export async function cmdAsk(argv: string[]): Promise<void> {
   if (opts.stdin) {
     const chunks: Buffer[] = [];
     for await (const c of process.stdin) chunks.push(c as Buffer);
-    prompt += `<input>\n${redact(Buffer.concat(chunks).toString("utf8"))}</input>\n\n`;
+    prompt += `<input>\n${fence(redact(Buffer.concat(chunks).toString("utf8")))}</input>\n\n`;
   }
   const file = str(opts.file);
   if (file) {
     if (!existsSync(file)) die(`ask: no such file: ${file}`);
     if (isSecretTarget(file)) die(`ask: refusing to send ${file} (matches privacy.secret_globs)`, E.REFUSED);
-    prompt += `<input path="${file}">\n${redact(readFileSync(file, "utf8"))}</input>\n\n`;
+    prompt += `<input path="${file}">\n${fence(redact(readFileSync(file, "utf8")))}</input>\n\n`;
   }
   prompt += `${question}\n`;
   const t0 = Date.now();

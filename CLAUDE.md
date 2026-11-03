@@ -24,6 +24,7 @@ delegating them to a cheap worker model on a plan the user already pays for. CLI
 cd packages/cli && bun install && bun run build && bun test      # build also refreshes plugins/harness-offload/dist
 bash plugins/harness-offload/tests/run.sh                         # conformance, bash engine (~250 checks)
 OFFLOAD_CLI=$PWD/packages/cli/dist/offload-node bash plugins/harness-offload/tests/run.sh   # same, TS engine
+TS=$PWD/packages/cli/dist/offload-node; OFFLOAD_ENGINE=ts OFFLOAD_TS_CLI=$TS OFFLOAD_CLI=$TS bash plugins/harness-offload/tests/run.sh   # … TS answering the hooks too
 bash evals/run.sh && bash evals/run.sh --ts                       # routing table
 bash plugins/harness-offload/tests/e2e-hosts.sh                   # real Copilot/Crush/Qwen (COPILOT_BIN, CRUSH_BIN, QWEN_CMD)
 bash plugins/harness-offload/tests/e2e-backends.sh [--live] [--agents]   # every backend one by one (mock; real URLs; real CLIs)

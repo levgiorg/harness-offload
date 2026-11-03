@@ -47,6 +47,16 @@ jobs:
       - name: Unit + adapter + MCP + installer tests (incl. the installer in a real terminal)
         if: runner.os != 'Windows'
         run: bun test
+      - name: Unit-test coverage (in-process only; the CLI and hooks are covered black-box by the conformance suite)
+        if: runner.os == 'Linux'
+        run: bun test --coverage --coverage-reporter=lcov --coverage-reporter=text > coverage.txt 2>&1 || true
+      - uses: actions/upload-artifact@v7
+        if: runner.os == 'Linux'
+        with:
+          name: coverage
+          path: |
+            packages/cli/coverage/lcov.info
+            packages/cli/coverage.txt
       - name: npm package — what ships, and a smoke install of the real tarball
         if: runner.os != 'Windows'
         run: node scripts/release-files.mjs && node scripts/pack-check.mjs && node scripts/pack-smoke.mjs
@@ -89,6 +99,10 @@ jobs:
         run: bash plugins/harness-offload/tests/run.sh
       - name: Conformance suite — TypeScript engine
         run: OFFLOAD_CLI="$PWD/packages/cli/dist/offload-node" bash plugins/harness-offload/tests/run.sh
+      - name: Conformance suite — TypeScript engine answering the hooks too
+        run: |
+          TS="$PWD/packages/cli/dist/offload-node"
+          OFFLOAD_ENGINE=ts OFFLOAD_TS_CLI="$TS" OFFLOAD_CLI="$TS" bash plugins/harness-offload/tests/run.sh
       - name: Routing table — bash hooks
         run: bash evals/run.sh
       - name: Routing table — TypeScript hooks

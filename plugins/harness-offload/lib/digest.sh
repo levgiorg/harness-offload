@@ -172,7 +172,7 @@ co_digest() {
       [ -n "$code" ] && printf '<exit_code>%s</exit_code>\n' "$code"
       [ -n "$focus" ] && printf '<focus>%s</focus>\n' "$focus"
       printf '<output lines="%s" bytes="%s">\n' "$lines" "$bytes"
-      if [ "$bytes" -le "$max_in" ]; then cat "$log"; else co_log_excerpt "$log"; fi | co_redact
+      if [ "$bytes" -le "$max_in" ]; then cat "$log"; else co_log_excerpt "$log"; fi | co_redact | co_fence
       printf '</output>\n'
     } > "$prompt"
     co_backends
@@ -257,6 +257,7 @@ co_search_view() {
   LC_ALL=C awk -v label="$(printf '%s' "$label" | LC_ALL=C cut -c1-120)" -v nlines="$(co_fmt_int "$lines")" \
     -v kb="$kb" -v logq="$(co_shquote "$log")" -v logp="$log" '
     function cut(s) { return length(s) > 200 ? substr(s, 1, 197) "..." : s }
+    function sq(s,    t) { if (s ~ /^[A-Za-z0-9_.\/:=@%+,-]+$/) return s; t = s; gsub(/'"'"'/, "'"'"'\\'"'"''"'"'", t); return "'"'"'" t "'"'"'" }
     function pathy(p) { return p != "" && p !~ /[ \t]/ && (p ~ /\// || p ~ /\.[A-Za-z0-9]+$/) }
     function fmt(n,    s) { s = n ""; while (s ~ /[0-9][0-9][0-9][0-9]/) sub(/[0-9][0-9][0-9]($|,)/, ",&", s); return s }
     function add(kind, key, line) {
@@ -276,7 +277,7 @@ co_search_view() {
     }
     function list(kind, unit, what,    k, i, j, best, key, shown, rest, restn) {
       for (k = 1; k <= ng[kind]; k++) used[kind, k] = 0
-      shown = (ng[kind] < 20 ? ng[kind] : 20)
+      shown = (ng[kind] < 20 ? ng[kind] : 20); nshown = shown
       printf "── %s per %s (%s %ss) ──\n", what, unit, fmt(ng[kind]), unit
       for (j = 1; j <= shown; j++) {
         best = 0
@@ -309,12 +310,59 @@ co_search_view() {
           for (i = (n - 9 > 41 ? n - 9 : 41); i <= n; i++) print cut(tail[i % 10])
         }
       }
-      print "── narrow it: a path or a sharper pattern; counts: grep -c / rg -c; the rest: sed -n \"START,ENDp\" " logq "; or ask: offload read -q \"QUESTION\" FILE ──"
+      # the busiest files (or folders) as a ready question; FILE when there are none
+      asks = ""
+      if (mode != "l") for (j = 1; j <= nshown && j <= 3; j++) asks = asks (asks == "" ? "" : " ") sq(top[j])
+      if (asks == "") asks = "FILE"
+      print "── narrow it: a path or a sharper pattern; counts: grep -c / rg -c; the rest: sed -n \"START,ENDp\" " logq "; or ask: offload read -q \"QUESTION\" " asks " ──"
     }' "$log" > "$out"
   cat "$out"
   co_stats_append "$(jq -nc --arg lbl "$label" --arg log "$log" --argjson bin "$bytes" --argjson bout "$(co_file_bytes "$out")" \
     --argjson secs "$(co_elapsed "$t0")" \
     '{ts: now | floor, kind: "digest", source: "search", label: $lbl, log: $log, model: "", bytes_in: $bin, bytes_out: $bout,
+      saved_tokens: ((($bin - $bout) / 4) | floor | if . < 0 then 0 else . end), seconds: $secs, model_ok: false, model_tried: false,
+      worker_tokens_in: 0, worker_tokens_out: 0}')"
+  co_prune_logs
+}
+
+# co_diff_view <log> <label> — what the agent sees instead of a huge diff (git diff/show):
+# files changed with +added −removed (busiest first), the first hunk headers of the busiest
+# files, and how to look at one file. Deterministic. Twin: diffView() in digest.ts.
+co_diff_view() {
+  local log="$1" label lines bytes kb out t0
+  label=$(printf '%s' "$2" | co_redact)
+  lines=$(co_file_lines "$log"); bytes=$(co_file_bytes "$log"); kb=$(( (bytes + 1023) / 1024 ))
+  t0=$(co_now)
+  co_tmp out
+  LC_ALL=C awk -v label="$(printf '%s' "$label" | LC_ALL=C cut -c1-120)" -v nlines="$(co_fmt_int "$lines")" \
+    -v kb="$kb" -v logq="$(co_shquote "$log")" -v logp="$log" '
+    function cut(s) { return length(s) > 200 ? substr(s, 1, 197) "..." : s }
+    function fmt(n,    s) { s = n ""; while (s ~ /[0-9][0-9][0-9][0-9]/) sub(/[0-9][0-9][0-9]($|,)/, ",&", s); return s }
+    /^diff --git / { f = $0; sub(/^diff --git a\/.* b\//, "", f); nf++; order[nf] = f; cur = f; add[f] = 0; del[f] = 0; nh[f] = 0; next }
+    cur == "" { next }
+    /^(\+\+\+|---) / { next }
+    /^@@/ { nh[cur]++; if (nh[cur] <= 2) hunk[cur, nh[cur]] = $0; next }
+    /^\+/ { add[cur]++; ta++; next }
+    /^-/ { del[cur]++; td++; next }
+    END {
+      print "[offload] `" label "` · " nlines " lines / " kb " KB · " fmt(nf + 0) " files, +" fmt(ta + 0) " −" fmt(td + 0) " · full log: " logp
+      shown = (nf < 20 ? nf : 20)
+      print "── files changed (busiest first) ──"
+      for (j = 1; j <= shown; j++) {
+        best = 0
+        for (k = 1; k <= nf; k++) if (!used[k] && (best == 0 || add[order[k]] + del[order[k]] > add[order[best]] + del[order[best]])) best = k
+        used[best] = 1; top[j] = order[best]
+        printf "%7s %7s  %s\n", "+" add[top[j]], "-" del[top[j]], cut(top[j])
+      }
+      if (nf > shown) printf "      … %s more files\n", fmt(nf - shown)
+      print "── first changes in the busiest files ──"
+      for (j = 1; j <= shown && j <= 8; j++) for (i = 1; i <= 2 && i <= nh[top[j]]; i++) print cut(top[j] ": " hunk[top[j], i])
+      print "── one file: git diff -- PATH (or sed -n \"START,ENDp\" " logq "); totals: git diff --stat ──"
+    }' "$log" > "$out"
+  cat "$out"
+  co_stats_append "$(jq -nc --arg lbl "$label" --arg log "$log" --argjson bin "$bytes" --argjson bout "$(co_file_bytes "$out")" \
+    --argjson secs "$(co_elapsed "$t0")" \
+    '{ts: now | floor, kind: "digest", source: "diff", label: $lbl, log: $log, model: "", bytes_in: $bin, bytes_out: $bout,
       saved_tokens: ((($bin - $bout) / 4) | floor | if . < 0 then 0 else . end), seconds: $secs, model_ok: false, model_tried: false,
       worker_tokens_in: 0, worker_tokens_out: 0}')"
   co_prune_logs

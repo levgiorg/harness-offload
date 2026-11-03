@@ -13,6 +13,10 @@ while [ -h "$src" ]; do
   case "$src" in /*) ;; *) src="$dir/$src" ;; esac
 done
 case "$src" in */*) root="${src%/*}/.." ;; *) root=.. ;; esac
+case "${OFFLOAD_TS_CLI:-}" in
+  # "no TypeScript CLI" (the bash engine's switch): hooks pass, anything else says so
+  false|0|off|no) [ "${1:-}" = "hook" ] && { cat >/dev/null 2>&1; exit 0; }; echo "offload: the TypeScript CLI is switched off (OFFLOAD_TS_CLI=$OFFLOAD_TS_CLI)" >&2; exit 15 ;;
+esac
 if [ -n "${OFFLOAD_TS_CLI:-}" ]; then
   # shellcheck disable=SC2086
   exec $OFFLOAD_TS_CLI "$@"

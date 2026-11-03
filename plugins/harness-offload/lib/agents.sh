@@ -212,7 +212,7 @@ co_spawn_wait() {
   ) </dev/null >/dev/null 2>&1 &
   # (no inherited stdout: a hook's caller waits until every holder closes it)
   wd=$!
-  wait "$pid"; CO_RUN_RC=$?
+  co_wait_worker "$pid" "$wd"; CO_RUN_RC=$CO_WAIT_RC
   kill "$wd" 2>/dev/null; wait "$wd" 2>/dev/null
   [ "$(cat "$why" 2>/dev/null)" = timeout ] && CO_RUN_RC=124
   return 0

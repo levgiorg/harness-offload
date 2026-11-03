@@ -27,6 +27,9 @@ binaries, endpoints, the backend, the state directory or privacy relaxations —
 | `hooks.digest_timeout_seconds` | `20` | how long the agent may wait for the worker's summary of a long output (fallbacks included); after that, or with `0`, the digest is the instant deterministic one (key lines + tail) |
 | `hooks.bash_never_summarize` | viewers regex | commands whose output is never digested (`grep`, `cat`, `git diff`, …) |
 | `hooks.search_view` / `hooks.search_commands` | `true` / `grep`, `rg`, `ag`, `ack`, `git grep`, `find`, `fd` | a huge search result becomes counts per file + first matches + the full log (instead of passing through) |
+| `read.cache_seconds` | `3600` | the same question about the same file contents (and model, task) is answered from the earlier, checked answer for this long; `0` = off; `offload read --no-cache` or `OFFLOAD_NO_CACHE=1` skip it |
+| `hooks.diff_view` | `true` | a huge `git diff` / `git show` becomes files changed with +/− and the first hunks, plus the full log |
+| `hooks.json_view` | `true` | a huge JSON output (`curl`, `kubectl … -o json`, `gh api`…) becomes its top-level structure (keys, array lengths and item types) and `jq` commands on the full log, with no worker call; JSON lines and invalid JSON get the usual digest |
 | `read.retry_unverified` | `true` | when most citations of a `read` answer fail (2 or more, more than verified), ask once more with the failures in view and keep the better answer (one extra worker call, only then) |
 | `hooks.autowrap` | `false` | rewrite noisy commands to `offload run -c '…'` (changes what permission rules see) |
 | `hooks.subagents` | `true` | also guard subagents' tool calls |
