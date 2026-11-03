@@ -30,6 +30,10 @@ Review which providers you use and whether they train on prompts.
   cancellation kills the work; worker process trees are killed on timeout and when offload exits.
 - API keys: stored owner-only (mode 600), passed to `curl` through a header file (never on the command
   line), masked in `offload config show`.
+- Installers: `install.sh` / `install.ps1` install a release binary only when its SHA-256 matches the
+  release's own `SHA256SUMS` (downloaded to a temporary file first, so a bad download never replaces a
+  working binary). `offload install --dry-run` shows the exact lines it would change in a settings file
+  of yours (Crush's `crush.json`); a second install changes nothing and keeps the first backup.
 - No shell on Windows: commands are started directly (npm shims resolved to their script), with
   `cmd.exe` only for other batch files and every argument escaped.
 

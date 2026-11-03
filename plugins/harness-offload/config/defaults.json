@@ -22,6 +22,20 @@
     "ask": ""
   },
 
+  "answers": {
+    "max_tokens": {
+      "read": 2000,
+      "explore": 2000,
+      "ask": 2000
+    }
+  },
+  "timeouts": {
+    "read": 0,
+    "explore": 0,
+    "summarize": 0,
+    "write": 0,
+    "ask": 90
+  },
   "opencode": {
     "bin": "opencode",
     "timeout_seconds": 180,

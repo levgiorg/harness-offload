@@ -1,0 +1,4 @@
+  L3-13: module Shop
+  L4-13: class Shipping
+  L5-8: def initialize(rates)
+  L9-13: def quote(weight)

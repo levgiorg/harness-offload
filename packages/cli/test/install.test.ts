@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { chmodSync, existsSync, mkdirSync, readFileSync, realpathSync, symlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, symlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { cli, sandbox } from "./helpers";
 
@@ -150,6 +150,87 @@ describe("offload install with no agent named: asks, or is told", () => {
     // run from this checkout, the agents point at it (edits apply live)
     expect(log).toMatch(/claude plugin marketplace add \/.+ --scope user\nclaude plugin install harness-offload@harness-offload --scope user/);
     expect(log).not.toMatch(/marketplace add levgiorg\/harness-offload/); // (the checkout's own path may contain the name)
+  });
+  test("--json: a machine receipt (D2), and --json alone asks for --yes", () => {
+    const s = withStubs();
+    const r = cli(["install", "--yes", "--json", "--agents", "claude,codex"], { env: plain(s.env) });
+    expect(r.code).toBe(0);
+    const j = JSON.parse(r.stdout);
+    expect(j).toMatchObject({ scope: "user", dry_run: false, ok: true });
+    expect(j.agents.map((a: any) => [a.agent, a.status])).toEqual([["claude", "installed"], ["codex", "installed"]]);
+    expect(j.agents[1].todo[0]).toContain("/hooks");
+    expect(j.agents[0].reads_with).toContain("Haiku");
+    const again = JSON.parse(cli(["install", "--yes", "--json", "--agents", "claude"], { env: plain(s.env) }).stdout);
+    expect(again.agents[0].status).toBe("reinstalled");
+    const dry = JSON.parse(cli(["install", "--dry-run", "--json", "--agents", "claude"], { env: plain(s.env) }).stdout);
+    expect(dry).toMatchObject({ dry_run: true, agents: [{ agent: "claude", status: "planned" }] });
+    const bare = cli(["install", "--json", "--agents", "claude"], { env: plain(s.env) });
+    expect(bare.code).toBe(2);
+    expect(bare.stderr).toContain("add --yes");
+  });
+  test("--json: a failed agent is in the receipt with its error, ok false, exit 1", () => {
+    const s = withStubs();
+    writeFileSync(join(s.dir, "bin", "codex"), "#!/bin/sh\necho 'codex: marketplace unreachable' >&2\nexit 1\n");
+    const r = cli(["install", "--yes", "--json", "--agents", "claude,codex"], { env: plain(s.env) });
+    expect(r.code).toBe(1);
+    const j = JSON.parse(r.stdout);
+    expect(j.ok).toBe(false);
+    expect(j.agents[1]).toMatchObject({ agent: "codex", status: "failed" });
+  });
+  test("--ping: one live call per agent's reader after installing (D4)", () => {
+    const s = withStubs();
+    writeFileSync(join(s.dir, "bin", "claude"), `#!/bin/sh\necho "claude $*" >> "${join(s.dir, "calls.log")}"\ncase "$*" in *-p*) echo '{"type":"result","is_error":false,"result":"pong","usage":{}}' ;; esac\n`);
+    const r = cli(["install", "--yes", "--ping", "--agents", "claude,codex"], { env: plain(s.env) });
+    expect(r.stdout).toMatch(/✓ Claude Code\s+reader answered "pong" in \d+s \(claude:haiku\)/);
+    expect(r.stdout).toMatch(/✗ OpenAI Codex CLI\s+reader did not answer: codex:gpt-6-luna: /);
+    expect(r.stdout).toContain("1 reader(s) did not answer");
+    expect(r.code).toBe(1);
+    const j = JSON.parse(cli(["install", "--yes", "--ping", "--json", "--agents", "claude"], { env: plain(s.env) }).stdout);
+    expect(j.agents[0].ping).toMatchObject({ ok: true, answer: "pong", model: "claude:haiku" });
+  });
+  test("--dry-run shows the lines that change in a file of yours (crush.json), as JSON, then nothing once set up (R14)", () => {
+    const s = withStubs();
+    const cfgDir = join(s.dir, "home", ".config", "crush");
+    mkdirSync(cfgDir, { recursive: true });
+    writeFileSync(join(cfgDir, "crush.json"), '{"options":{"tui":{"compact_mode":true}},"hooks":{"PreToolUse":[{"matcher":"bash","command":"my-own-hook"}]}}');
+    const env = { ...plain(s.env), NO_COLOR: "1" };
+    const dry = cli(["install", "--dry-run", "--agents", "crush"], { env });
+    expect(dry.stdout).toContain("the file is rewritten with 2-space indentation");
+    expect(dry.stdout).toMatch(/\+\s+"name": "harness-offload",/);
+    expect(dry.stdout).toMatch(/\s"command": "my-own-hook"/); // context, unchanged
+    expect(dry.stdout).not.toMatch(/[+-]\s+"command": "my-own-hook"/);
+    expect(JSON.parse(cli(["install", "--dry-run", "--json", "--agents", "crush"], { env }).stdout).agents[0].diff.some((l: string) => l.includes("crush-guide.md"))).toBe(true);
+    expect(cli(["install", "--yes", "--agents", "crush"], { env }).code).toBe(0);
+    expect(cli(["install", "--dry-run", "--agents", "crush"], { env }).stdout).toContain("already set up, nothing changes");
+  });
+  test("a second install changes nothing, and the first backup of your file is kept (R14)", () => {
+    const s = withStubs();
+    mkdirSync(join(s.dir, "home", ".cursor"), { recursive: true });
+    const cfgDir = join(s.dir, "home", ".config", "crush");
+    mkdirSync(cfgDir, { recursive: true });
+    writeFileSync(join(cfgDir, "crush.json"), '{"hooks":{"PreToolUse":[{"matcher":"bash","command":"my-own-hook"}]}}\n');
+    const snap = () => {
+      const out: Record<string, string> = {};
+      const walk = (d: string) => {
+        for (const e of readdirSync(d, { withFileTypes: true })) {
+          const p = join(d, e.name);
+          if (e.isDirectory()) walk(p);
+          else if (e.isFile() && !/stats\.jsonl$|calls\.log$/.test(p)) out[p] = readFileSync(p, "utf8");
+        }
+      };
+      walk(join(s.dir, "home"));
+      walk(String(s.env.OFFLOAD_STATE_DIR));
+      return out;
+    };
+    expect(cli(["install", "--yes"], { env: plain(s.env) }).code).toBe(0);
+    const first = snap();
+    expect(cli(["install", "--yes"], { env: plain(s.env) }).code).toBe(0);
+    expect(snap()).toEqual(first);
+    const backup = readFileSync(join(cfgDir, "crush.json.bak-harness-offload"), "utf8");
+    expect(backup).toContain("my-own-hook");
+    expect(backup).not.toContain("harness-offload");
+    const cfg = JSON.parse(readFileSync(join(cfgDir, "crush.json"), "utf8"));
+    expect(cfg.hooks.PreToolUse.filter((h: any) => h.name === "harness-offload")).toHaveLength(1);
   });
   test("one agent failing: the others still install, and the receipt says how to retry just that one", () => {
     const s = withStubs();

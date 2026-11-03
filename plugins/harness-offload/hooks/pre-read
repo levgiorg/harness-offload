@@ -27,12 +27,19 @@ $(wc -lc < "$file" 2>/dev/null)
 EOF
 case "$nl$bytes" in ''|*[!0-9]*) exit 0 ;; esac
 ctx_note=""
-if [ -z "$offset" ] && [ -z "$limit" ] && [ $((nl + 1)) -le "$max_lines" ] && [ $(((bytes + 3) / 4)) -le "$max_tokens" ]; then
+# The size settles most token counts too (co_tokens_max is the most a text that size can
+# count); only in between is the file read to count them.
+est=""
+if [ -z "$offset" ] && [ -z "$limit" ] && [ $((nl + 1)) -le "$max_lines" ]; then
+  est=$(co_tokens_max "$bytes")
+  [ "$est" -gt "$max_tokens" ] && est=$(co_tokens "$file" "$bytes")
+fi
+if [ -n "$est" ] && [ "$est" -le "$max_tokens" ]; then
   # opt-in (hooks.context_tight_tokens): when the agent's context is nearly full, a read
   # over half the limit could force a compaction, so the limit is halved. The transcript
   # is only looked at for files in that band.
   tight=0; co_cfgi tight '.hooks.context_tight_tokens' 0
-  if [ "$tight" -gt 0 ] && { [ $((nl + 1)) -gt $((max_lines / 2)) ] || [ $(((bytes + 3) / 4)) -gt $((max_tokens / 2)) ]; } &&
+  if [ "$tight" -gt 0 ] && { [ $((nl + 1)) -gt $((max_lines / 2)) ] || [ "$est" -gt $((max_tokens / 2)) ]; } &&
     used=$(hk_context_used) && [ "$used" -ge "$tight" ]; then
     max_lines=$((max_lines / 2)); max_tokens=$((max_tokens / 2))
     ctx_note="
@@ -59,10 +66,10 @@ if [ -n "$offset" ] || [ -n "$limit" ]; then
   [ "$span" -gt "$remaining" ] && span=$remaining
   # lines averaging over 4,000 characters (minified/generated): count the slice's size too
   avg=$(( bytes / (lines > 0 ? lines : 1) ))
-  if [ "$avg" -gt 4000 ] && [ $(( (span * avg + 3) / 4 )) -gt "$max_tokens" ]; then
+  if [ "$avg" -gt 4000 ] && [ "$(co_est_tokens $(( span * avg )))" -gt "$max_tokens" ]; then
     may_stop || exit 0
     hk_event read_slice_blocked "$(jq -nc --argjson l "$span" --arg f "$file" '{lines: $l, file: $f}')"
-    hk_guard "offload: that Read slice is $(co_fmt_int "$span") lines of $file, but its lines average $(co_fmt_int "$avg") characters (minified or generated): ~$(co_fmt_int $(( (span * avg + 3) / 4 ))) tokens. Bash: grep -noE '.{0,80}PATTERN.{0,80}' $(co_shquote "$file") shows each match with 80 characters around it, or ask: $HK_CLI read -q \"<question>\" $(co_shquote "$file")"
+    hk_guard "offload: that Read slice is $(co_fmt_int "$span") lines of $file, but its lines average $(co_fmt_int "$avg") characters (minified or generated): ~$(co_fmt_int "$(co_est_tokens $(( span * avg )))") tokens. Bash: grep -noE '.{0,80}PATTERN.{0,80}' $(co_shquote "$file") shows each match with 80 characters around it, or ask: $HK_CLI read -q \"<question>\" $(co_shquote "$file")"
   fi
   [ "$span" -le "$chunk" ] && exit 0
   may_stop || exit 0
@@ -70,7 +77,7 @@ if [ -n "$offset" ] || [ -n "$limit" ]; then
   hk_guard "offload: that Read slice is $(co_fmt_int "$span") lines of $file; keep slices to at most $chunk lines (use offset/limit), or ask: $HK_CLI read -q \"<question>\" $(co_shquote "$file"):$start-$(( start + span - 1 ))"
 fi
 
-tokens=$(co_est_tokens "$bytes")
+tokens=$(co_tokens "$file" "$bytes")
 [ "$lines" -le "$max_lines" ] && [ "$tokens" -le "$max_tokens" ] && exit 0
 may_stop || exit 0
 

@@ -302,7 +302,7 @@ footer { padding-block: 0 2.5rem; font-size: 0.76rem; color: var(--text-3); }
 
   document.getElementById("meta").textContent = `${DATA.sample ? "example data" : DATA.source || "stats"} · generated ${new Date(DATA.generated * 1000).toLocaleString()}`;
   document.getElementById("sample").hidden = !DATA.sample;
-  document.getElementById("foot").textContent = `Harness Offload ${DATA.version || ""} · estimates are bytes ÷ 4 of what stayed out of context (cache effects not counted); worker tokens are as the workers reported them; each blocked read costs your agent one more turn.`;
+  document.getElementById("foot").textContent = `Harness Offload ${DATA.version || ""} · token counts are estimates (from the text: bytes and runs of digits) of what stayed out of context (cache effects not counted); worker tokens are as the workers reported them; each blocked read costs your agent one more turn.`;
 
   const now = DATA.generated || Math.floor(Date.now() / 1000);
   const hasRecent = all.some((r) => r.ts >= now - 30 * 86400);

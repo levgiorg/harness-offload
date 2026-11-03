@@ -12,7 +12,7 @@ import { outline } from "../outline.ts";
 import { fence, isSecretPath, isSecretTarget, redact } from "../secrets.ts";
 import { appendStats as appendStatsRow, cksum, newLogPath, stateDir, workDir } from "../state.ts";
 import { setTaskContext, taskContext, taskDef, taskNames, taskSystem, TASK_NAME } from "../tasks.ts";
-import { estTokens, fileLines, fmtInt, isText, numberLines, shquote, stripWrappingFence } from "../text.ts";
+import { estTokens, estTokensText, fileLines, fmtInt, isText, numberLines, shquote, stripWrappingFence } from "../text.ts";
 import { verifyCitations } from "../verify.ts";
 
 export { ExitError } from "../errors.ts";
@@ -25,7 +25,8 @@ const die = (m: string, code: number = E.USAGE): never => {
 };
 // the last worker call's fallback note ("fell back after A (quota)"), added to the footer
 let lastFallback = "";
-const footer = (s: string) => `\n[offload ${s}${lastFallback ? ` · ${lastFallback}` : ""}]\n`;
+let lastCut = "";
+const footer = (s: string) => `\n[offload ${s}${lastFallback ? ` · ${lastFallback}` : ""}${lastCut ? ` · ${lastCut}` : ""}]\n`;
 /** "read", "explore", "ask" — or "task NAME" while a custom task runs through that flow. */
 const label = (kind: string) => {
   const t = taskContext();
@@ -45,7 +46,7 @@ function reportFailure(what: string, e: unknown): never {
     [E.QUOTA]: "hint: quota/rate limit — add models.fallback in the config, or do this step yourself.",
     [E.AUTH]: "hint: log the backend in (its own CLI login, or `opencode auth login`) or set its API key with `offload setup`; `offload doctor` shows which.",
     [E.MODEL]: "hint: check the model id (`offload models BACKEND` lists them) and switch with `offload model BACKEND:MODEL`; some providers also say \"model not found\" when the API key is wrong.",
-    [E.TIMEOUT]: "hint: raise opencode.timeout_seconds or send less input.",
+    [E.TIMEOUT]: "hint: raise opencode.timeout_seconds (or timeouts.<task> for one kind of work) or send less input.",
     [E.TOO_LARGE]: "hint: send less at once — fewer files, a range (path:START-END) — or pick a model with a bigger context window (`offload model …`).",
   };
   if (hints[w.code]) err(hints[w.code]);
@@ -57,6 +58,7 @@ async function run(task: Parameters<typeof invoke>[0], prompt: string, cwd: stri
     const t = taskContext();
     const r = await invoke(task, prompt, cwd, model || undefined, t ? { system: t.system, primary: t.model } : {});
     lastFallback = r.fallback ?? "";
+    lastCut = r.cut ?? "";
     return r;
   } catch (e) {
     return reportFailure(what, e);
@@ -125,10 +127,18 @@ export async function cmdRead(argv: string[]): Promise<void> {
     let from = 0;
     let to = 0;
     const m = item.match(/^(.*):(\d+)-(\d+)$/);
+    const hash = item.lastIndexOf("#");
     if (!existsSync(item) && m) {
       path = m[1];
       from = Number(m[2]);
       to = Number(m[3]);
+    } else if (!existsSync(item) && hash > 0 && existsSync(item.slice(0, hash)) && statSync(item.slice(0, hash)).isFile()) {
+      // path#Name (or #Class.method): the symbol's lines, from its outline range
+      path = item.slice(0, hash);
+      const sym = item.slice(hash + 1);
+      const r = (await import("../outline.ts")).symbolRange(path, sym);
+      if (!r) die(`read: no symbol "${sym}" in ${path} (offload outline ${shquote(path)} lists them)`);
+      [from, to] = r!;
     }
     path = path.replace(/^\.\//, "");
     if (existsSync(path) && statSync(path).isDirectory()) {
@@ -171,6 +181,8 @@ export async function cmdRead(argv: string[]): Promise<void> {
   const bytes = Buffer.byteLength(prompt);
   if (bytes > maxBytes) die(`read: ${fmtInt(bytes)} bytes is over read.max_input_bytes (${fmtInt(maxBytes)}). Send fewer files, use file:START-END ranges, or try \`offload explore\`.`, E.REFUSED);
   prompt += `<question>${question}</question>\n`;
+  // the content's tokens: the prompt's, less its line numbers ("%6d<TAB>": 7 bytes and a number a line)
+  const ein = Math.max(0, estTokensText(prompt) - Math.floor((nlines * 3066) / 1000)) || estTokens(bytes);
   const t0 = Date.now();
   // The same question about the same file contents (the prompt holds them) with the same model
   // and instructions: the checked answer from earlier, if it is recent. Twin: cmd_read (same files).
@@ -188,11 +200,12 @@ export async function cmdRead(argv: string[]): Promise<void> {
       if (Math.floor(Date.now() / 1000) - Number(at) <= cacheSec) {
         const body = all.slice(nl + 1);
         lastFallback = "";
-        let out = body + footer(`${label("read")} · ${m.join(" ")} · ${nfiles} file(s), ${fmtInt(nlines)} lines (~${fmtInt(estTokens(bytes))} tokens) kept out of your context · 0s${verifyOn ? ` · citations: ${cok} verified, ${cbad} unverified` : ""} · cached from ${hms} (--no-cache to ask again)`);
+        lastCut = "";
+        let out = body + footer(`${label("read")} · ${m.join(" ")} · ${nfiles} file(s), ${fmtInt(nlines)} lines (~${fmtInt(ein)} tokens) kept out of your context · 0s${verifyOn ? ` · citations: ${cok} verified, ${cbad} unverified` : ""} · cached from ${hms} (--no-cache to ask again)`);
         if (Number(cbad) > 0) out += "⚠unverified = quote not found near the cited lines; confirm with Read(offset/limit) before acting on it.\n";
         process.stdout.write(out);
         const bout = Buffer.byteLength(body);
-        appendStatsRow({ kind: "read", source: "cache", model: m.join(" "), files: nfiles, bytes_in: bytes, bytes_out: bout, saved_tokens: Math.max(0, Math.floor((bytes - bout) / 4)), seconds: 0, cites_ok: 0, cites_bad: 0, worker_tokens_in: 0, worker_tokens_out: 0 });
+        appendStatsRow({ kind: "read", source: "cache", model: m.join(" "), files: nfiles, bytes_in: bytes, bytes_out: bout, saved_tokens: Math.max(0, ein - estTokensText(body)), seconds: 0, cites_ok: 0, cites_bad: 0, worker_tokens_in: 0, worker_tokens_out: 0 });
         return;
       }
     }
@@ -240,12 +253,12 @@ export async function cmdRead(argv: string[]): Promise<void> {
       /* a cache is best-effort */
     }
   }
-  let out = answer + footer(`${label("read")} · ${r.model} · ${nfiles} file(s), ${fmtInt(nlines)} lines (~${fmtInt(estTokens(bytes))} tokens) kept out of your context · ${secs(t0)}s${cite}`);
+  let out = answer + footer(`${label("read")} · ${r.model} · ${nfiles} file(s), ${fmtInt(nlines)} lines (~${fmtInt(ein)} tokens) kept out of your context · ${secs(t0)}s${cite}`);
   if (bad > 0) out += "⚠unverified = quote not found near the cited lines; confirm with Read(offset/limit) before acting on it.\n";
   if (skipped.length) out += `skipped: ${skipped.join(" ")}\n`;
   process.stdout.write(out);
   const bout = Buffer.byteLength(answer);
-  appendStats({ kind: "read", model: r.model, files: nfiles, bytes_in: bytes, bytes_out: bout, saved_tokens: Math.max(0, Math.floor((bytes - bout) / 4)), seconds: secs(t0), cites_ok: ok, cites_bad: bad, worker_tokens_in: r.tokensIn, worker_tokens_out: r.tokensOut });
+  appendStats({ kind: "read", model: r.model, files: nfiles, bytes_in: bytes, bytes_out: bout, saved_tokens: Math.max(0, ein - estTokensText(answer)), seconds: secs(t0), cites_ok: ok, cites_bad: bad, worker_tokens_in: r.tokensIn, worker_tokens_out: r.tokensOut });
 }
 
 // --------------------------------------------------------------- explore
@@ -281,7 +294,7 @@ export async function cmdExplore(argv: string[]): Promise<void> {
   if (bad > 0) out += "⚠unverified = quote not found near the cited lines; confirm with Read(offset/limit) before acting on it.\n";
   process.stdout.write(out);
   const bout = Buffer.byteLength(answer);
-  appendStats({ kind: "explore", model: r.model, bytes_out: bout, saved_tokens: Math.max(0, Math.floor(r.ctxIn - bout / 4)), seconds: secs(t0), cites_ok: ok, cites_bad: bad, worker_tokens_in: r.tokensIn, worker_tokens_out: r.tokensOut });
+  appendStats({ kind: "explore", model: r.model, bytes_out: bout, saved_tokens: Math.max(0, r.ctxIn - estTokensText(answer)), seconds: secs(t0), cites_ok: ok, cites_bad: bad, worker_tokens_in: r.tokensIn, worker_tokens_out: r.tokensOut });
 }
 
 // ------------------------------------------------------------------- run
@@ -308,7 +321,7 @@ function execToFile(cmd: string[] | string, log: string): Promise<number> {
 }
 
 export async function cmdRun(argv: string[]): Promise<number> {
-  const { opts, rest } = parseFlags(argv, { focus: { alias: ["-q", "--question"], value: true }, model: { alias: ["-m"], value: true }, c: { alias: ["-c"], value: true }, "no-model": {} }, true);
+  const { opts, rest } = parseFlags(argv, { focus: { alias: ["-q", "--question", "--intent"], value: true }, model: { alias: ["-m"], value: true }, c: { alias: ["-c"], value: true }, "no-model": {} }, true);
   const sh = str(opts.c);
   if (!sh && !rest.length) die("run: nothing to run. Usage: offload run [-q FOCUS] -- CMD ARGS...  or  offload run -c 'CMD'");
   const label = sh || rest.map(shquote).join(" ");
@@ -325,7 +338,7 @@ export async function cmdRun(argv: string[]): Promise<number> {
 }
 
 export async function cmdSummarize(argv: string[]): Promise<void> {
-  const { opts, rest } = parseFlags(argv, { focus: { alias: ["-q", "--question"], value: true }, model: { alias: ["-m"], value: true }, label: { value: true }, "no-model": {} });
+  const { opts, rest } = parseFlags(argv, { focus: { alias: ["-q", "--question", "--intent"], value: true }, model: { alias: ["-m"], value: true }, label: { value: true }, "no-model": {} });
   const file = rest[0] ?? "";
   const label = str(opts.label) || file || "stdin";
   const log = newLogPath(label);
@@ -408,7 +421,7 @@ export async function cmdWrite(argv: string[]): Promise<number> {
       }
     }
   }
-  appendStats({ kind: "write", model: r.model, lines: n, seconds: secs(t0), saved_tokens: out ? Math.floor(Buffer.byteLength(code) / 4) : 0, worker_tokens_in: r.tokensIn, worker_tokens_out: r.tokensOut });
+  appendStats({ kind: "write", model: r.model, lines: n, seconds: secs(t0), saved_tokens: out ? estTokensText(code) : 0, worker_tokens_in: r.tokensIn, worker_tokens_out: r.tokensOut });
   return failed ? 1 : 0;
 }
 

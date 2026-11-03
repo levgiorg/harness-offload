@@ -1,3 +1,5 @@
+# keep:   left: 26
+# keep:  right: 25
 # keep: test ledger::tests::late_fee_rounds ... FAILED
 # keep: assertion `left == right` failed
 # keep: test result: FAILED. 211 passed; 1 failed

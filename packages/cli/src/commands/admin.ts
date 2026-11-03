@@ -1,4 +1,5 @@
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
+import { homedir } from "node:os";
 import { join } from "node:path";
 import { parseFlags, str } from "../args.ts";
 import { TASKS } from "../assets.ts";
@@ -14,6 +15,36 @@ import { banner, color, section, sym, table } from "../ui.ts";
 import { VERSION } from "../assets.ts";
 import { ExitError } from "./core.ts";
 import { taskDef, taskNames, taskSystem } from "../tasks.ts";
+
+/** One line per piece of offload on a different version: the Claude Code plugin (Claude Code's
+ *  own record) and every integration `offload install` set up (installs.json). Twin: co_version_notes. */
+export function versionNotes(): string[] {
+  const num = (v: string, i: number) => Number(v.replace(/-.*/, "").split(".")[i] ?? 0) || 0;
+  const cmp = (a: string, b: string) => {
+    for (let i = 0; i < 3; i++) if (num(a, i) !== num(b, i)) return num(a, i) < num(b, i) ? -1 : 1;
+    return 0;
+  };
+  const read = (f: string): any => {
+    try {
+      return JSON.parse(readFileSync(f, "utf8"));
+    } catch {
+      return undefined;
+    }
+  };
+  const out: string[] = [];
+  const reg = read(join(process.env.CLAUDE_CONFIG_DIR || join(process.env.OFFLOAD_HOME || homedir(), ".claude"), "plugins", "installed_plugins.json"));
+  const [id, entry] = Object.entries((reg?.plugins ?? {}) as Record<string, unknown>).find(([k]) => k.startsWith("harness-offload@")) ?? [];
+  const pv = String(((Array.isArray(entry) ? entry[0] : entry) as { version?: unknown } | undefined)?.version ?? "");
+  if (pv && pv !== VERSION)
+    out.push(cmp(pv, VERSION) < 0 ? `Claude Code plugin ${pv} is older than this offload ${VERSION} — update it: claude plugin update ${id}` : `this offload ${VERSION} is older than the Claude Code plugin ${pv} — update it: npm i -g harness-offload@latest`);
+  const inst = read(join(stateDir(), "installs.json"));
+  for (const [h, v] of Object.entries((inst ?? {}) as Record<string, unknown>)) {
+    if (!v || typeof v !== "object" || Array.isArray(v)) continue;
+    const iv = String((v as { version?: unknown }).version ?? "");
+    if (iv && iv !== VERSION) out.push(`${h} integration was set up by offload ${iv} (this is ${VERSION}) — offload sync refreshes it`);
+  }
+  return out;
+}
 
 export async function cmdDoctor(argv: string[]): Promise<number> {
   const { opts } = parseFlags(argv, { ping: {}, reset: {}, json: {} });
@@ -40,6 +71,8 @@ export async function cmdDoctor(argv: string[]): Promise<number> {
   const ign = ignoredProjectKeys();
   if (ign.length) check("warn", `project config keys ignored (untrusted repo): ${ign.join(", ")} — \`offload config trust\` if this repo is yours`);
   if (cfgStr("enabled") === "false") check("warn", "offload is disabled (enabled=false or OFFLOAD_DISABLE=1)");
+  // a plugin or integration left on another version (after an upgrade)
+  for (const v of versionNotes()) check("warn", v);
   if (opts.reset) {
     clearCooldowns();
     check(true, "cooldowns cleared");
@@ -331,18 +364,56 @@ export async function which_(cmd: string) {
 }
 
 /** One short line for status bars (Claude Code statusLine, tmux, starship…). */
-export function cmdStatusline(): void {
+/** Claude Code passes the session (transcript_path) on stdin: the line then also shows what was
+ *  kept out since the session began (its transcript's first timestamp; other sessions running at
+ *  the same time count too). Twin: cmd_statusline. */
+export async function cmdStatusline(): Promise<void> {
   const now = Math.floor(Date.now() / 1000);
   const since = now - (now % 86400); // UTC day, same as the bash engine
-  let rows: Record<string, any>[] = [];
+  let all: Record<string, any>[] = [];
   try {
-    rows = readStats().filter((r) => r.kind !== "hook" && r.ts >= since);
+    all = readStats().filter((r) => r.kind !== "hook");
   } catch {
     /* no state yet */
   }
-  const saved = rows.reduce((s, r) => s + (Number(r.saved_tokens) || 0), 0);
-  const k = saved >= 1000 ? `${Math.floor(saved / 100) / 10}k` : String(saved);
-  process.stdout.write(`${color.cyan("▌")}offload ${rows.length} · ~${k} saved today\n`);
+  const rows = all.filter((r) => r.ts >= since);
+  const k = (n: number) => (n >= 1000 ? `${Math.floor(n / 100) / 10}k` : String(n));
+  const sum = (rs: Record<string, any>[]) => rs.reduce((s, r) => s + (Number(r.saved_tokens) || 0), 0);
+  let session = "";
+  const input = process.stdin.isTTY ? "" : await readStdin(1000);
+  try {
+    const tp = input.includes("transcript_path") ? JSON.parse(input).transcript_path : undefined;
+    if (typeof tp === "string" && existsSync(tp)) {
+      const head = readFileSync(tp, "utf8").split("\n", 50).join("\n");
+      const iso = /"timestamp":"([^"]*)"/.exec(head)?.[1] ?? "";
+      const start = iso.length >= 19 ? Date.parse(iso.slice(0, 19) + "Z") / 1000 : NaN;
+      if (!Number.isNaN(start) && all.length) session = ` · ~${k(sum(all.filter((r) => r.ts >= start)))} this session`;
+    }
+  } catch {
+    /* not JSON: no session part */
+  }
+  process.stdout.write(`${color.cyan("▌")}offload ${rows.length} · ~${k(sum(rows))} saved today${session}\n`);
+}
+
+/** All of stdin, or what came within MS (a pipe that never closes must not hang a status bar). */
+function readStdin(ms: number): Promise<string> {
+  return new Promise((done) => {
+    let buf = "";
+    const t = setTimeout(() => {
+      process.stdin.pause();
+      done(buf);
+    }, ms);
+    process.stdin.setEncoding("utf8");
+    process.stdin.on("data", (d) => (buf += d));
+    process.stdin.on("end", () => {
+      clearTimeout(t);
+      done(buf);
+    });
+    process.stdin.on("error", () => {
+      clearTimeout(t);
+      done(buf);
+    });
+  });
 }
 
 /** offload explain [N] — what the hooks did lately, each with the rule, its current value

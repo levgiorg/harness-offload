@@ -2,16 +2,16 @@
 
 | | |
 |---|---|
-| **`offload read`** | Answers questions about big files, directories or `file:START-END` ranges. Files go to the worker line-numbered; answers must cite `path:Lx-Ly` with a verbatim quote, and every quote is verified locally (`⚠unverified` otherwise). A path the worker shortened (`fx/ledger.ts`, a bare file name) is matched to the one sent file it means and rewritten, so the agent can open it; a quote shortened with `...` is checked piece by piece. |
+| **`offload read`** | Answers questions about big files, directories, `file:START-END` ranges or one symbol, `file#Name` / `file#Class.method` (its lines come from the outline). Files go to the worker line-numbered; answers must cite `path:Lx-Ly` with a verbatim quote, and every quote is verified locally (`⚠unverified` otherwise). A path the worker shortened (`fx/ledger.ts`, a bare file name) is matched to the one sent file it means and rewritten, so the agent can open it; a quote shortened with `...` is checked piece by piece. |
 | **`offload explore`** | A read-only cheap agent (read/grep/glob, never secrets) searches the repo itself: "where/how is X done?" |
-| **`offload run -- CMD`** | Runs noisy commands. Short output passes through; long output becomes a digest — model summary + **verbatim error lines picked by a script** + tail + full-log path. Exit code preserved. |
-| **`offload summarize`** | The same digest for stdin or a file: `git log -p \| offload summarize -q "what changed in auth?"` |
+| **`offload run -- CMD`** | Runs noisy commands. Short output passes through; long output becomes a digest — model summary + **each failing test's own block, verbatim** (jest, vitest, pytest, go test, cargo) + **verbatim error lines picked by a script** + tail + full-log path. Exit code preserved. |
+| **`offload summarize`** | The same digest for stdin or a file: `git log -p \| offload summarize -q "what changed in auth?"` With a question (`-q`, or `--intent`, for `run` too) the digest also shows the 3 windows of the log that best match it, picked without a model (rare words count most). |
 | **`offload write`** | Generates pattern-following code (tests, configs, stubs) from a reference file, optional `--check 'npm test …'`. |
 | **`offload task NAME`** | Runs **your own task**: your instructions for the cheap worker (plus offload's citation rules), on files, piped input or the whole repo. See [Your own tasks](#your-own-tasks). |
 | **`offload model`** | Shows which model does each kind of work and changes it in one step: `offload model groq:llama-3.3-70b`, `offload model read claude:haiku`, `offload model --reset`. Typos are caught before anything is saved (`opnerouter` → "did you mean openrouter?"), and you are told when a key or CLI is missing. |
 | **`offload key NAME`** | Stores an API key (hidden prompt or stdin; file mode 600) and lists which backends have one. With `offload model fallback @host-api @default` it becomes the backup if your agent's own route stops working. |
 | **Read guard** (hooks) | Blocks a *full* read of a file over 600 lines / ~6K tokens — Read tool and `cat`/`head`/`sed -n` dumps alike — and answers with a **symbol outline** plus ready-to-run options, so the agent jumps straight to a targeted slice. A lockfile names the package-manager command that answers it (`npm ls NAME`, `cargo tree -i NAME`…); a JSON file gets its top-level structure (keys, array lengths and item types) and `jq` commands; a minified or generated file (lines averaging over 4,000 characters) gets `grep -o` with context instead of slices, and even a one-line slice of it is counted by size. |
-| **Output digest** (hooks) | When a successful command prints more than 250 lines, the agent gets the digest instead (full output kept in a log). A huge JSON output (`curl`, `kubectl -o json`…) gets its **structure** and `jq` commands on the full log. A huge search (`grep`, `rg`, `find`…) gets a **search view** instead: matches per file or folder, the first matches of the busiest ones, how to narrow it. The same output again in one session (a re-run with nothing changed) is one line pointing at the first run's log, until a compaction or `/clear`. |
+| **Output digest** (hooks) | When a successful command prints more than 250 lines, the agent gets the digest instead (full output kept in a log). A huge JSON output (`curl`, `kubectl -o json`…) gets its **structure** and `jq` commands on the full log. A huge search (`grep`, `rg`, `find`…) gets a **search view** instead: matches per file or folder, the first matches of the busiest ones, how to narrow it. The same output again in one session (a re-run with nothing changed) is one line pointing at the first run's log, until a compaction or `/clear`. After a compaction the agent is told which outputs it had digested and where their full logs are (at most 600 bytes). |
 | **MCP server** | `offload mcp` exposes `offload_read`, `offload_explore`, `offload_run`, `offload_summarize`, `offload_write`, `offload_ask`, `offload_outline` — and `offload_task` when you have tasks — to any MCP client. |
 | **`offload explain`** | What the hooks did lately, newest first: which Read or `cat` was blocked (file, size), which output was digested or shown as a search view (with its full log), the rule and its current value, and the exact command to change it or turn it off. `offload explain 30` shows more. |
 | **Report** | `offload dashboard --open` writes an offline HTML report: tokens kept out of context per day, by kind and model, failures, and every delegation with its citation check. |
@@ -19,7 +19,7 @@
 ## Reference
 
 ```text
-offload install [--yes] [--agents a,b] [--scope user|project] [--dry-run]   (no agent named: asks first)
+offload install [--yes] [--agents a,b] [--scope user|project] [--dry-run] [--ping] [--json]   (no agent named: asks first)
 offload uninstall [--yes] [--agents a,b] [--all] [--dry-run]              offload install|uninstall <host...>
 offload read -q QUESTION PATH...        offload setup               offload doctor [--ping]
 offload run [-q FOCUS] -- CMD...        offload models [BACKEND]    offload stats [--days N]
@@ -60,7 +60,8 @@ automatically: the session guide lists them (`offload task NAME …`), and MCP c
 `offload_task` tool. `offload doctor` checks every task (prompt file, tools, model).
 
 Status line: add `"statusLine": {"type": "command", "command": "offload statusline"}` to your Claude Code
-settings to see `▌offload 12 · ~48.2k saved today`.
+settings to see `▌offload 12 · ~48.2k saved today · ~6.1k this session` (the session part counts from the
+session's first message, so other sessions running at the same time are included).
 
 Changing models: `offload model` lists the model per kind of work (`default`, `read`, `summarize`,
 `explore`, `write`, `ask`, `fallback`, and each of your tasks) and where it runs; `offload model REF`

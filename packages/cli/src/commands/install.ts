@@ -34,6 +34,10 @@ const KIND: Partial<Record<HostName, string>> = {
 interface Flags {
   yes: boolean;
   dry: boolean;
+  /** install: a JSON receipt on stdout instead of the text one (needs --yes or --dry-run) */
+  json?: boolean;
+  /** install: one live call per agent's reader after installing */
+  ping?: boolean;
   all: boolean;
   help: boolean;
   scope?: Scope;
@@ -50,6 +54,8 @@ function parse(argv: string[]): Flags {
     const value = () => inline ?? argv[++i] ?? "";
     if (k === "--yes" || k === "-y") f.yes = true;
     else if (k === "--dry-run") f.dry = true;
+    else if (k === "--json") f.json = true;
+    else if (k === "--ping") f.ping = true;
     else if (k === "--all") f.all = true;
     else if (k === "--help" || k === "-h") f.help = true;
     else if (k === "--scope") {
@@ -133,12 +139,14 @@ function usage(cmd: string, self: string, code: number): number {
   --dry-run        show what would be removed
 `);
   } else {
-    w.write(`usage: ${self} install [--yes] [--agents a,b] [--scope user|project] [--dry-run]
+    w.write(`usage: ${self} install [--yes] [--agents a,b] [--scope user|project] [--dry-run] [--ping] [--json]
   Asks which agents and where, shows what will change, then installs after you say yes.
   --yes            don't ask: the agents found here (or --agents), for all your projects
   --agents a,b     only these agents (${AUTO.join(", ")})
   --scope project  this project only (Claude Code; the others always go in your home folder)
   --dry-run        show what would change, change nothing
+  --ping           then one live call per agent's reader: does the hand-off answer?
+  --json           the receipt (or the --dry-run plan) as JSON, for scripts (with --yes)
   ${self} install <agent>   one agent, no questions (also: mcp, aider, amp)
 `);
   }
@@ -176,6 +184,7 @@ async function planLines(items: PlanItem[], readers: Record<string, string>): Pr
     lines.push(`${" ".repeat(w)}${color.dim(i.where)}`);
     lines.push(`${" ".repeat(w)}${color.dim(`reads with ${readers[i.host]}`)}`);
     if (i.note) lines.push(`${" ".repeat(w)}${color.yellow(i.note)}`);
+    for (const d of i.diff ?? []) lines.push(`${" ".repeat(w)}${d.startsWith("+") ? color.green(d) : d.startsWith("-") ? color.red(d) : color.dim(d)}`);
   }
   if (!checkoutRoot() && !process.env.OFFLOAD_MARKETPLACE_DIR) {
     lines.push(`${pad("Offload", w)}+ ${tilde(ownCopyDir())}/`);
@@ -188,6 +197,10 @@ async function installFlow(f: Flags, self: string): Promise<number> {
   const found = await detectHosts();
   const here = AUTO.filter((h) => found[h]);
   const missing = AUTO.filter((h) => !found[h]);
+  if (f.json && !f.yes && !f.dry) {
+    process.stderr.write("offload: install --json is for scripts: add --yes (or --dry-run)\n");
+    return 2;
+  }
   const why = cannotAsk();
   const ask = !f.yes && !f.dry && !why;
 
@@ -280,6 +293,12 @@ Or run it in a terminal to choose step by step.
       p.cancel("Nothing was changed.");
       return 1;
     }
+  } else if (f.json) {
+    if (f.dry) {
+      const agents = items.map((it) => ({ agent: it.host, label: HOST_LABELS[it.host], status: "planned", what: it.what, where: it.where, reads_with: readers[it.host], ...(it.diff ? { diff: it.diff } : {}) }));
+      process.stdout.write(JSON.stringify({ version: VERSION, scope, dry_run: true, ok: true, agents }, null, 2) + "\n");
+      return 0;
+    }
   } else {
     out(`\nHarness Offload ${VERSION} · ${f.dry ? "dry run, nothing will be written" : "installing without questions (--yes)"}\n`);
     out(f.dry ? "Would change:" : "This will change:");
@@ -294,8 +313,10 @@ Or run it in a terminal to choose step by step.
   // install, then the receipt: one line per agent, words next to every symbol
   const before = previousVersions();
   let failed = 0;
+  let pingFailed = 0;
   const failedHosts: HostName[] = [];
   const receipt: string[] = [];
+  const rows: Record<string, unknown>[] = [];
   const w = Math.max(...targets.map((h) => HOST_LABELS[h].length)) + 2;
   for (const h of targets) {
     // one agent failing (even by throwing) never stops the others
@@ -310,13 +331,27 @@ Or run it in a terminal to choose step by step.
       failed++;
       failedHosts.push(h);
       receipt.push(`${sym.bad} ${pad(HOST_LABELS[h], w)}${color.red("not installed:")} ${bad.map((s) => s.text).join("; ")}`);
+      rows.push({ agent: h, label: HOST_LABELS[h], status: "failed", errors: bad.map((s) => s.text) });
       continue;
     }
     const was = before[h];
     const verb = was && was !== VERSION ? `updated ${was} → ${VERSION}` : was ? "reinstalled" : "installed";
     receipt.push(`${sym.ok} ${pad(HOST_LABELS[h], w)}${verb}   ${color.dim(`reads with ${readers[h]}`)}`);
     // "restart" notes are covered by the closing line; the rest is the one step left for the person
-    for (const n of steps.filter((s) => s.note && !/^restart |^start a new /.test(s.text))) receipt.push(`${sym.warn} ${pad(HOST_LABELS[h], w)}${color.yellow("to do:")} ${n.text}`);
+    const todo = steps.filter((s) => s.note && !/^restart |^start a new /.test(s.text)).map((s) => s.text);
+    for (const n of todo) receipt.push(`${sym.warn} ${pad(HOST_LABELS[h], w)}${color.yellow("to do:")} ${n}`);
+    const row: Record<string, unknown> = { agent: h, label: HOST_LABELS[h], status: was && was !== VERSION ? "updated" : was ? "reinstalled" : "installed", ...(was && was !== VERSION ? { from: was } : {}), reads_with: readers[h], todo };
+    // --ping: one live call to the model that reads for this agent
+    if (f.ping) {
+      const p = await pingReader(h);
+      row.ping = p;
+      if (p.ok) receipt.push(`${sym.ok} ${pad(HOST_LABELS[h], w)}reader answered "${p.answer}" in ${p.seconds}s (${p.model})`);
+      else {
+        pingFailed++;
+        receipt.push(`${sym.bad} ${pad(HOST_LABELS[h], w)}${color.red("reader did not answer:")} ${p.error}`);
+      }
+    }
+    rows.push(row);
   }
   const end = [
     ...(failed
@@ -328,7 +363,10 @@ Or run it in a terminal to choose step by step.
     `Check: ${self} doctor`,
     `Undo:  ${undo}`,
   ];
-  if (ask) {
+  if (pingFailed) end.splice(failed ? 2 : 1, 0, `${pingFailed} reader(s) did not answer: installed, but hand-offs to them will fail until it does (${self} doctor --ping shows why).`);
+  if (f.json) {
+    process.stdout.write(JSON.stringify({ version: VERSION, scope, dry_run: false, ok: !failed && !pingFailed, agents: rows }, null, 2) + "\n");
+  } else if (ask) {
     const p = await import("@clack/prompts");
     p.log.message(receipt.join("\n"), { symbol: color.dim("│") });
     p.outro(end.join("\n   "));
@@ -338,7 +376,27 @@ Or run it in a terminal to choose step by step.
     for (const l of end) out(l);
     out();
   }
-  return failed ? 1 : 0;
+  return failed || pingFailed ? 1 : 0;
+}
+
+/** One live call to the model that reads for agent H (its first read model, @host resolved
+ *  for H): "pong" back means the hand-off works. */
+async function pingReader(h: HostName): Promise<{ ok: boolean; model: string; answer?: string; seconds: number; error?: string }> {
+  const { invoke, modelChain } = await import("../engine.ts");
+  const { workDir } = await import("../state.ts");
+  const prev = process.env.OFFLOAD_HOST;
+  process.env.OFFLOAD_HOST = h;
+  const ref = modelChain("read")[0] ?? "@host";
+  const t0 = Date.now();
+  try {
+    const r = await invoke("ask", "Reply with exactly the word: pong\n", workDir(), ref);
+    return { ok: true, model: r.model, answer: r.text.trim().split("\n")[0].slice(0, 40), seconds: Math.round((Date.now() - t0) / 1000) };
+  } catch (e) {
+    return { ok: false, model: ref, seconds: Math.round((Date.now() - t0) / 1000), error: (String((e as Error)?.message ?? e).split("\n").filter(Boolean).slice(-1)[0] ?? "error").trim().replace(/^- /, "").slice(0, 200) };
+  } finally {
+    if (prev === undefined) delete process.env.OFFLOAD_HOST;
+    else process.env.OFFLOAD_HOST = prev;
+  }
 }
 
 /** Versions recorded by earlier installs, to say "updated 0.2.0 → 0.3.0". */

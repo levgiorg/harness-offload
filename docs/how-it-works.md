@@ -26,7 +26,9 @@ More in [docs/DESIGN.md](docs/DESIGN.md).
 - **Measure the bill, not the tool result.** A blocked read can cost your agent an extra turn, and
   each turn re-reads its context (cheaply, from cache). Savings grow with file size, session length
   and model price. Compare `/usage` with and without; tune `hooks.read_threshold_*`. `offload stats`
-  shows bytes/4 estimates.
+  shows estimates: 0.277 tokens per byte plus 1.127 per run of digits, fit on 25 kinds of text against two
+  real tokenizers (within 15% on 19 of them; CJK, inline-SVG HTML and pretty-printed JSON are off by up to
+  37%). Bytes ÷ 4, used before, undercounted by up to 59%.
 - Failing commands' output can't be replaced by hooks on most hosts; use `offload run`.
 - Each delegation costs ~1.5–3 s of start-up plus model time.
 - Cheap models are wrong more often. Citations are verified — still read the cited lines before

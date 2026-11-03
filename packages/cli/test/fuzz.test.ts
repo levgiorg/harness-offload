@@ -149,3 +149,80 @@ describe("JSON structure of a big file (property test)", () => {
     }
   }, 120_000);
 });
+
+describe("failure blocks (property test)", () => {
+  test("bash (awk) and TypeScript cut the same blocks from 80 random test logs", async () => {
+    const { failBlocks, textSrc } = await import("../src/digest.ts");
+    const r = rng(23);
+    const pick = <T>(a: T[]) => a[Math.floor(r() * a.length)];
+    const frag = (i: number): string[] => {
+      const long = "x".repeat(Math.floor(r() * 400));
+      return pick([
+        () => [`FAIL src/a${i}.test.ts`, `  ● suite › case ${i}`, "", "    Expected: 1", `    Received: ${i}`, "", `      at Object.<anonymous> (src/a${i}.test.ts:${i}:3)`, ""],
+        () => [` FAIL  src/v${i}.test.ts > s > t${i}`, `AssertionError: expected ${i} to be 1`, ` ❯ src/v${i}.test.ts:${i}:9`, pick(["", " Test Files  1 failed | 3 passed (4)"])],
+        () => [`${"_".repeat(10)} test_${i} ${"_".repeat(10)}`, "    def test():", ">       assert 1 == 2", "E       assert 1 == 2", "", `tests/t${i}.py:${i}: AssertionError`, pick(["=".repeat(20) + " short test summary " + "=".repeat(20), "_".repeat(5) + " test_next " + "_".repeat(5)])],
+        () => ["--- FAIL: TestA (0.00s)", `    --- FAIL: TestA/sub${i} (0.00s)`, `        a_test.go:${i}: got ${i}`, "FAIL"],
+        () => [`---- m::t${i} stdout ----`, `thread 'm::t${i}' panicked at src/m.rs:${i}:1:`, "  left: 1", " right: 2", "", "failures:"],
+        () => [`PASS src/p${i}.test.ts`, `ok  	pkg/${i}	0.01s`, `\x1b[31mFAIL\x1b[0m  src/c${i}.test.ts > colour > red\r`, `boom ${long}`, ""],
+        () => Array.from({ length: Math.floor(r() * 30) }, (_, j) => `    detail ${j} ${pick(["", long, "\t tabbed"])}`),
+        () => [`  ● same block`, "    again", ""],
+      ])();
+    };
+    const dir = mkdtempSync(join(tmpdir(), "offload-fail-"));
+    const lib = join(import.meta.dir, "..", "..", "..", "plugins", "harness-offload", "lib");
+    let found = 0;
+    for (let i = 0; i < 80; i++) {
+      const lines = Array.from({ length: 1 + Math.floor(r() * 25) }, (_, j) => frag(i * 100 + j)).flat();
+      const text = lines.join("\n") + (r() < 0.5 ? "\n" : "");
+      const f = join(dir, `t${i}.log`);
+      writeFileSync(f, text);
+      const [mb, ml, w] = r() < 0.5 ? [5, 12, 300] : [3, 6, 150];
+      const sh = spawnSync("bash", ["-c", `. "$1/common.sh" && . "$1/digest.sh" && co_fail_blocks "$2" ${mb} ${ml} ${w}`, "_", lib, f], { encoding: "utf8" });
+      const ts = failBlocks(textSrc(text), f, mb, ml, w);
+      if (ts.length) found++;
+      expect(`t${i}\n${sh.stdout}`).toBe(`t${i}\n${ts.length ? ts.join("\n") + "\n" : ""}`);
+    }
+    expect(found).toBeGreaterThan(60);
+  }, 120_000);
+});
+
+describe("intent windows (property test)", () => {
+  test("bash (awk) and TypeScript pick the same windows for 80 random logs and questions", async () => {
+    const { intentWindows, textSrc } = await import("../src/digest.ts");
+    const r = rng(31);
+    const pick = <T>(a: T[]) => a[Math.floor(r() * a.length)];
+    const words = ["cache", "lodash", "Failed", "failing", "build", "Step", "layer", "42", "6", "16", "0.6s", "ERROR", "error:", "warn", "the", "Case", "case_6", "über", "naïve", "\t", "\\n42", "x"];
+    const dir = mkdtempSync(join(tmpdir(), "offload-intent-"));
+    const lib = join(import.meta.dir, "..", "..", "..", "plugins", "harness-offload", "lib");
+    let found = 0;
+    for (let i = 0; i < 80; i++) {
+      const lines = Array.from({ length: 1 + Math.floor(r() * 120) }, () => Array.from({ length: 1 + Math.floor(r() * 8) }, () => pick(words)).join(pick([" ", "/", "(", ": ", "-"])) + (r() < 0.05 ? "\r" : ""));
+      const text = lines.join("\n") + (r() < 0.5 ? "\n" : "");
+      const q = Array.from({ length: 1 + Math.floor(r() * 5) }, () => pick(words)).join(" ");
+      const f = join(dir, `i${i}.log`);
+      writeFileSync(f, text);
+      const sh = spawnSync("bash", ["-c", `. "$1/common.sh" && . "$1/digest.sh" && co_intent_windows "$2" "$3" 120`, "_", lib, f, q], { encoding: "utf8" });
+      const ts = intentWindows(textSrc(text), q, 120);
+      if (ts.length) found++;
+      expect(`i${i} [${q}]\n${sh.stdout}`).toBe(`i${i} [${q}]\n${ts.length ? ts.join("\n") + "\n" : ""}`);
+    }
+    expect(found).toBeGreaterThan(50);
+  }, 120_000);
+});
+
+describe("token estimate (property test)", () => {
+  test("bash (awk) and TypeScript estimate the same tokens for 60 random texts", async () => {
+    const { estTokensText } = await import("../src/text.ts");
+    const r = rng(41);
+    const parts = ["abc", "12", "3.14", "2026-01-02", "über", "日本語", " ", "\n", "\t", "{}", "x9y", "007", "\r\n", "--", ""];
+    const dir = mkdtempSync(join(tmpdir(), "offload-tok-"));
+    const lib = join(import.meta.dir, "..", "..", "..", "plugins", "harness-offload", "lib");
+    for (let i = 0; i < 60; i++) {
+      const text = Array.from({ length: Math.floor(r() * 400) }, () => parts[Math.floor(r() * parts.length)]).join("");
+      const f = join(dir, `t${i}.txt`);
+      writeFileSync(f, text);
+      const sh = spawnSync("bash", ["-c", `. "$1/common.sh" && co_tokens "$2" "$(wc -c < "$2" | tr -d ' ')"`, "_", lib, f], { encoding: "utf8" });
+      expect(`t${i} ${sh.stdout.trim()}`).toBe(`t${i} ${estTokensText(text)}`);
+    }
+  }, 60_000);
+});

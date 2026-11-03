@@ -45,7 +45,7 @@ export function resetConfig(): void {
  * switch privacy guards off; it can only tighten secret_globs. Listing the
  * project in the user config's trusted_projects lifts this. (Twin:
  * CO_PROJECT_FILTER in lib/common.sh.) */
-export const SAFE_PROJECT_KEYS = ["models", "variants", "read", "explore", "digest", "hooks", "enabled", "log_retention_days", "tasks"];
+export const SAFE_PROJECT_KEYS = ["models", "variants", "read", "explore", "digest", "hooks", "enabled", "log_retention_days", "tasks", "timeouts"];
 const SAFE_OPENCODE_KEYS = ["timeout_seconds", "max_stream_errors"];
 
 function isTrustedProject(base: Obj): boolean {

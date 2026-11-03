@@ -300,7 +300,10 @@ hk_big_file_message() {
 EOF
   [ -n "$structure" ] && printf 'Structure of %s:\n%s\n' "$file" "$structure"
   [ "$avg" -gt 4000 ] && return 0
-  outline=$(co_outline "$file" 40)
+  # 3 symbols per 100 lines (16…40): about 2 KB per 1,000 lines of file
+  local entries=$(( lines * 3 / 100 ))
+  [ "$entries" -lt 16 ] && entries=16; [ "$entries" -gt 40 ] && entries=40
+  outline=$(co_outline "$file" "$entries")
   if [ -n "$outline" ]; then
     printf 'Outline of %s:\n%s\n' "$file" "$outline"
   fi
@@ -325,8 +328,9 @@ $s
 $hint"
   printf '%s' "$out"
   co_stats_append "$(jq -nc --arg lbl "$label" --arg log "$log" --argjson bin "$bytes" --argjson bout "$(printf '%s' "$out" | wc -c | tr -d ' ')" \
-    --argjson secs "$(co_elapsed "$t0")" \
+    --argjson secs "$(co_elapsed "$t0")" --argjson ein "$(co_tokens "$log" "$bytes")" \
+    --argjson eout "$(printf '%s' "$out" | co_tokens - "$(printf '%s' "$out" | wc -c | tr -d ' ')")" \
     '{ts: now | floor, kind: "digest", source: "json", label: $lbl, log: $log, model: "", bytes_in: $bin, bytes_out: $bout,
-      saved_tokens: ((($bin - $bout) / 4) | floor | if . < 0 then 0 else . end), seconds: $secs, model_ok: false, model_tried: false,
+      saved_tokens: (($ein - $eout) | if . < 0 then 0 else . end), seconds: $secs, model_ok: false, model_tried: false,
       worker_tokens_in: 0, worker_tokens_out: 0}')"
 }

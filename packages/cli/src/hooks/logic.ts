@@ -11,7 +11,7 @@ import { isSecretTarget, matchesAny, redact } from "../secrets.ts";
 import { appendStats, cooling, newLogPath, sameFile, seenCmdFile, seenFile } from "../state.ts";
 import { outline, posixToJs } from "../outline.ts";
 import { taskSummary } from "../tasks.ts";
-import { estTokens, fileBytes, fileLines, fmtInt, isText, shquote } from "../text.ts";
+import { digitRuns, estTokens, estTokensFile, estTokensText, fileBytes, fileLines, fmtInt, isText, shquote, tokensMax, tokensOf } from "../text.ts";
 import { writeFileSync } from "node:fs";
 import { CONNECTORS } from "../assets.ts";
 import { CLI_AGENTS } from "../backends/agents.ts";
@@ -239,7 +239,7 @@ ${js.hint}`;
   const bout = Buffer.byteLength(out);
   appendStats({
     kind: "digest", source: "json", label, log, model: "", bytes_in: bytes, bytes_out: bout,
-    saved_tokens: Math.max(0, Math.floor((bytes - bout) / 4)), seconds: Math.round((Date.now() - t0) / 1000),
+    saved_tokens: Math.max(0, estTokensFile(log, bytes) - estTokensText(out)), seconds: Math.round((Date.now() - t0) / 1000),
     model_ok: false, model_tried: false, worker_tokens_in: 0, worker_tokens_out: 0,
   });
   return out;
@@ -267,7 +267,8 @@ export function bigFileMessage(host: Host, file: string, lines: number, tokens: 
 `;
   if (js) m += `Structure of ${file}:\n${js.lines.join("\n")}\n`;
   if (!long) {
-    const out = outline(file, 40);
+    // 3 symbols per 100 lines (16…40): about 2 KB per 1,000 lines of file
+    const out = outline(file, Math.min(40, Math.max(16, Math.floor((lines * 3) / 100))));
     if (out) m += `Outline of ${file}:\n${out}`;
   }
   return m.replace(/\n+$/, "");
@@ -305,7 +306,8 @@ export function readGuard(host: Host, cwd: string, file: string | undefined, off
   if (!existsSync(p) || !statSync(p).isFile()) return undefined;
   if (ignored(file) || notForOffload(p)) return undefined;
   const lines = fileLines(p);
-  const tokens = estTokens(fileBytes(p));
+  const bytes = fileBytes(p);
+  const tokens = estTokensFile(p, bytes);
   const chunk = cfgInt("hooks.read_max_chunk_lines", 600);
   if (offset !== undefined || limit !== undefined) {
     const start = Math.max(1, offset ?? 1);
@@ -314,7 +316,7 @@ export function readGuard(host: Host, cwd: string, file: string | undefined, off
     if (span > remaining) span = remaining;
     // lines averaging over 4,000 characters (minified/generated): count the slice's size too
     const avg = Math.floor(fileBytes(p) / (lines > 0 ? lines : 1));
-    const sliceTokens = Math.floor((span * avg + 3) / 4);
+    const sliceTokens = estTokens(span * avg);
     if (avg > 4000 && sliceTokens > cfgInt("hooks.read_threshold_tokens", 6000)) {
       appendStats({ kind: "hook", event: "read_slice_blocked", host, lines: span, file });
       return guard(`offload: that read slice is ${fmtInt(span)} lines of ${file}, but its lines average ${fmtInt(avg)} characters (minified or generated): ~${fmtInt(sliceTokens)} tokens. Bash: grep -noE '.{0,80}PATTERN.{0,80}' ${shquote(file)} shows each match with 80 characters around it, or ask: ${callStyle(host) === "mcp" ? "offload_read" : `${cliCommand()} read`} -q "<question>" ${shquote(file)}`);
@@ -331,7 +333,9 @@ export function readGuard(host: Host, cwd: string, file: string | undefined, off
     // opt-in (hooks.context_tight_tokens): when the agent's context is nearly full, a read over
     // half the limit could force a compaction, so the limit is halved. Twin: hooks/pre-read.
     const tight = cfgInt("hooks.context_tight_tokens", 0);
-    if (!(tight > 0 && (lines > maxLines / 2 || tokens > maxTokens / 2))) return undefined;
+    // what the bash hook knows here: the most a file this size can count, or its count (Twin: pre-read)
+    const est = tokensMax(bytes) <= maxTokens ? tokensMax(bytes) : tokens;
+    if (!(tight > 0 && (lines > maxLines / 2 || est > maxTokens / 2))) return undefined;
     used = contextUsed(transcript);
     if (used === undefined || used < tight) return undefined;
     maxLines = Math.floor(maxLines / 2);
@@ -396,7 +400,7 @@ export function bashGuard(host: Host, cwd: string, command: string | undefined):
     const p = isAbsolute(f) ? f : resolve(cwd, f);
     if (!existsSync(p) || !statSync(p).isFile() || ignored(f) || notForOffload(p)) continue;
     const lines = fileLines(p);
-    const tokens = estTokens(fileBytes(p));
+    const tokens = estTokensFile(p);
     let span = lines;
     if (prog === "head" || prog === "tail") {
       span = Math.min(Number(n.replace(/\D/g, "")) || 10, lines);
@@ -497,7 +501,7 @@ export async function postBash(opts: { command?: string; output: string; persist
       const label = redact(cmd);
       const bytes = src.bytes;
       const note = `[offload] \`${label.slice(0, 120)}\` · ${fmtInt(lines)} lines / ${Math.ceil(bytes / 1024)} KB · same output as at ${m[2]}, shown then · full log: ${m[3]} · its digest again: offload summarize ${shquote(m[3])}`;
-      appendStats({ kind: "digest", source: "repeat", label, log: m[3], model: "", bytes_in: bytes, bytes_out: Buffer.byteLength(note), saved_tokens: Math.max(0, Math.floor((bytes - Buffer.byteLength(note)) / 4)), seconds: 0, model_ok: false, model_tried: false, worker_tokens_in: 0, worker_tokens_out: 0 });
+      appendStats({ kind: "digest", source: "repeat", label, log: m[3], model: "", bytes_in: bytes, bytes_out: Buffer.byteLength(note), saved_tokens: Math.max(0, (raw ? tokensOf(raw.length, digitRuns(raw.toString("latin1"))) : estTokensFile(bigFile!, bytes)) - estTokensText(note)), seconds: 0, model_ok: false, model_tried: false, worker_tokens_in: 0, worker_tokens_out: 0 });
       return note;
     }
   }
@@ -568,7 +572,7 @@ export function sessionGuide(host: Host, cliPath = cliCommand()): string {
 ${tasks ? `- offload_task(name, paths?, question?) — the user's own tasks: ${tasks}.\n` : ""}Keep for yourself: debugging reasoning, design decisions, edits (read slices for exact text), small files. Full reads of files over ~${lines} lines may be blocked with an outline and these options.`;
   }
   return `offload is installed: cheap worker models do bulk reading/digesting so it stays out of your context. Use these shell commands:
-- ${cliPath} read -q "QUESTION" PATH... — questions about big files or dirs (PATH may be file:START-END). Answers cite path:Lx-Ly with machine-checked quotes; read just those lines before editing.
+- ${cliPath} read -q "QUESTION" PATH... — questions about big files or dirs (PATH may be file:START-END or file#Symbol). Answers cite path:Lx-Ly with machine-checked quotes; read just those lines before editing.
 - ${cliPath} explore "QUESTION" — read-only cheap agent searches the repo itself ("where/how is X done?" across many files).
 - ${cliPath} run -- CMD... — for noisy commands (tests, builds, installs, linters, long logs): prints a digest + verbatim error lines + full-log path, keeps the exit code.
 - ${cliPath} write --spec "..." --ref EXAMPLE_FILE --out NEW_FILE — boilerplate that follows an existing file's patterns (tests, configs, stubs); review the result.

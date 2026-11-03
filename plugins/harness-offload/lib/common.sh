@@ -71,8 +71,19 @@ co_file_bytes() {
 # wc -l misses a final line without a trailing newline; awk counts it.
 co_file_lines() { awk 'END { print NR }' "$1" 2>/dev/null || echo 0; }
 
-# Rough token estimate: ~4 bytes per token for code and logs.
-co_est_tokens() { echo $(( ($1 + 3) / 4 )); }
+# Token estimates. Bytes ÷ 4 undercounts real tokenizers by up to 59% (dense logs,
+# CSV, pretty JSON); 0.277 per byte + 1.127 per run of digits was fit on 25 files
+# (code, logs, JSON, CSV, Markdown, minified JS, CJK) against two real tokenizers
+# (docs/autopilot/EXPERIMENTS.md, A8). co_tokens FILE BYTES counts the digit runs;
+# co_est_tokens BYTES is the bytes-only fallback (the same 0.3 per byte the TS engine
+# uses without the text). Twins: estTokensText, estTokens.
+co_est_tokens() { echo $(( ($1 * 3 + 9) / 10 )); }
+co_tokens() {
+  LC_ALL=C awk -v b="$2" '{ d += gsub(/[0-9]+/, "") } END { printf "%d\n", (b * 277 + d * 1127 + 999) / 1000 }' "$1" 2>/dev/null || co_est_tokens "$2"
+}
+# the most a text of BYTES can count (every other byte a digit run): above the limit
+# only then is the file worth reading to count
+co_tokens_max() { echo $(( ($1 * 840 + 999) / 1000 )); }
 
 # True when the file looks like text (no NUL byte in the first 8 KB).
 co_is_text() {
@@ -172,7 +183,8 @@ CO_PROJECT_FILTER='
   | if (($base.trusted_projects // []) | map(select(. == $dir)) | length) > 0 then $base * $proj
     else
       ($proj | with_entries(select(.key == "models" or .key == "variants" or .key == "read" or .key == "explore"
-        or .key == "digest" or .key == "hooks" or .key == "enabled" or .key == "log_retention_days" or .key == "tasks"))) as $safe
+        or .key == "digest" or .key == "hooks" or .key == "enabled" or .key == "log_retention_days" or .key == "tasks"
+        or .key == "timeouts"))) as $safe
     | (($proj.opencode // {}) | if type == "object" then with_entries(select(.key == "timeout_seconds" or .key == "max_stream_errors")) else {} end) as $oc
     | (($proj.privacy // {}) | if type == "object" then (.secret_globs // []) else [] end | if type == "array" then map(select(type == "string")) else [] end) as $globs
     | ($base * $safe * {opencode: $oc}) | .privacy.secret_globs = ((.privacy.secret_globs // []) + $globs)
@@ -187,7 +199,7 @@ co_project_config_ignored() {
   if printf '%s' "$CO_CONFIG" | jq -e --arg d "$(co_project_dir)" '(.trusted_projects // []) | map(select(. == $d)) | length > 0' >/dev/null 2>&1; then return 0; fi
   jq -r 'if type != "object" then empty else
       ([keys[] | select(. != "models" and . != "variants" and . != "read" and . != "explore" and . != "digest"
-        and . != "hooks" and . != "enabled" and . != "log_retention_days" and . != "tasks" and . != "opencode" and . != "privacy")]
+        and . != "hooks" and . != "enabled" and . != "log_retention_days" and . != "tasks" and . != "timeouts" and . != "opencode" and . != "privacy")]
       + ((.opencode // {}) | if type == "object" then [keys[] | select(. != "timeout_seconds" and . != "max_stream_errors") | "opencode." + .] else [] end)
       + ((.privacy // {}) | if type == "object" then [keys[] | select(. != "secret_globs") | "privacy." + .] else [] end))
       | join(", ") end' "$proj" 2>/dev/null
@@ -511,6 +523,30 @@ co_seen_file() {
   printf '%s/seen/%s-%s' "$(co_state_dir)" "$(co_seen_session "$HK_SESSION")" "$sum"
 }
 # Forget what this session saw (after a compaction or /clear the agent no longer has it).
+# After a compaction: the session's digested outputs, newest first (at most 600 bytes),
+# so the agent still finds the full logs. Read from the per-command markers before
+# co_seen_forget drops them. Twin: compactIndex.
+co_compact_index() {
+  [ -n "${HK_SESSION:-}" ] || return 0
+  local d head out="" line at hms log name n LC_ALL=C   # lengths in bytes
+  d="$(co_state_dir)/seen"
+  set -- "$d/$(co_seen_session "$HK_SESSION")"-cmd-*
+  [ -e "$1" ] || return 0
+  head="Before the compaction, offload digested these outputs (full logs kept; offload summarize LOG digests one again):"
+  n=${#head}
+  while IFS=' ' read -r at hms log; do
+    [ -n "$log" ] && [ -f "$log" ] || continue
+    name=${log##*/}; name=${name#????????-??????-}; name=${name%-*.log}
+    line="  $hms $name → $log"
+    [ $(( n + 1 + ${#line} )) -le 600 ] || break
+    out="$out"$'\n'"$line"; n=$(( n + 1 + ${#line} ))
+  done <<EOF
+$(cat "$@" 2>/dev/null | LC_ALL=C sort -k1,1nr -k3)
+EOF
+  [ -n "$out" ] && printf '%s%s' "$head" "$out"
+  return 0
+}
+
 co_seen_forget() {
   [ -n "${HK_SESSION:-}" ] || return 0
   rm -f "$(co_state_dir)/seen/$(co_seen_session "$HK_SESSION")"-* 2>/dev/null || true
@@ -642,6 +678,29 @@ co_backend_present() {
     co_route_ready && return 0
   done
   return 1
+}
+
+# ------------------------------------------------------------------ versions
+
+# co_version_notes — one line per piece of offload that is a different version
+# from this one: the Claude Code plugin (Claude Code's own record of it) and every
+# integration `offload install` set up (installs.json). Twin: versionNotes.
+co_version_notes() {
+  local reg="${CLAUDE_CONFIG_DIR:-${OFFLOAD_HOME:-$HOME}/.claude}/plugins/installed_plugins.json" inst
+  inst="$(co_state_dir)/installs.json"
+  {
+    [ -f "$reg" ] && jq -r '(.plugins // {}) | to_entries[] | select(.key | startswith("harness-offload@"))
+      | .key as $k | .value | (if type == "array" then .[] else . end) | "plugin\t" + (.version // "" | tostring) + "\t" + $k' "$reg" 2>/dev/null | head -n 1
+    [ -f "$inst" ] && jq -r 'to_entries[] | select(.value | type == "object") | .key + "\t" + (.value.version // "" | tostring)' "$inst" 2>/dev/null
+  } | LC_ALL=C awk -F '\t' -v me="$CO_VERSION" '
+    function num(v, i,   a, n) { sub(/-.*/, "", v); n = split(v, a, "."); return (i <= n ? a[i] + 0 : 0) }
+    function cmp(a, b,   i) { for (i = 1; i <= 3; i++) { if (num(a, i) < num(b, i)) return -1; if (num(a, i) > num(b, i)) return 1 }; return 0 }
+    $2 == "" || $2 == me { next }
+    $1 == "plugin" {
+      if (cmp($2, me) < 0) print "Claude Code plugin " $2 " is older than this offload " me " — update it: claude plugin update " $3
+      else print "this offload " me " is older than the Claude Code plugin " $2 " — update it: npm i -g harness-offload@latest"
+      next }
+    { print $1 " integration was set up by offload " $2 " (this is " me ") — offload sync refreshes it" }'
 }
 
 # ------------------------------------------------------------------ config check

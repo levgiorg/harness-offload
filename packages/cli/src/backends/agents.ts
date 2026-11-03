@@ -21,6 +21,8 @@ interface AgentSpec {
   env?(req: WorkerRequest, dir: string): Record<string, string>;
   /** Maps a CLI's own exit codes to offload's. */
   exitCode?(code: number | null): number | undefined;
+  /** Why this CLI is never used for explore (read-only tool use), when it isn't. */
+  noExplore?: string;
 }
 
 const jsonLines = (s: string): any[] =>
@@ -285,12 +287,13 @@ export const CLI_AGENTS: Record<string, AgentSpec> = {
   },
   crush: {
     label: "Crush (crush run) — your Crush providers",
+    noExplore: "`crush run` approves every tool call, so it is not used as a read-only explorer",
     bin: "crush",
     install: "brew install charmbracelet/tap/crush  or  npm i -g @charmland/crush",
     args: (req) => {
       // `crush run` approves every tool call, so it only gets plain questions,
       // in offload's own work dir, with every tool switched off (see env)
-      if (req.task === "explore") throw new WorkerError(E.USAGE, "crush: `crush run` approves every tool call, so it is not used as a read-only explorer; the next model in the chain takes over");
+      if (req.task === "explore") throw new WorkerError(E.USAGE, `crush: ${CLI_AGENTS.crush.noExplore}; the next model in the chain takes over`);
       const a = ["run", "-q"];
       if (req.model) a.push("-m", req.model);
       if (req.variant) a.push("--reasoning-effort", req.variant);

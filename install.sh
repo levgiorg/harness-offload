@@ -26,12 +26,24 @@ arch=$(uname -m)
 case "$os" in darwin|linux) ;; *) fail "unsupported OS: $os (use install.ps1 on Windows)" ;; esac
 case "$arch" in x86_64|amd64) arch=x64 ;; arm64|aarch64) arch=arm64 ;; *) fail "unsupported CPU: $arch" ;; esac
 asset="offload-$os-$arch"
-url="https://github.com/$REPO/releases/latest/download/$asset"
+base="${OFFLOAD_RELEASE_BASE:-https://github.com/$REPO/releases/latest/download}"
+fetch() { if command -v curl >/dev/null 2>&1; then curl -fsSL "$1" -o "$2"; else wget -qO "$2" "$1"; fi; }
+sha256() { if command -v sha256sum >/dev/null 2>&1; then sha256sum "$1"; else shasum -a 256 "$1"; fi | awk '{ print $1 }'; }
+command -v sha256sum >/dev/null 2>&1 || command -v shasum >/dev/null 2>&1 || fail "need sha256sum or shasum to check the download"
 mkdir -p "$BIN_DIR"
+tmp=$(mktemp "$BIN_DIR/.offload-download.XXXXXX")
+trap 'rm -f "$tmp" "$tmp.sums"' EXIT
 say "downloading $asset"
-if command -v curl >/dev/null 2>&1; then curl -fsSL "$url" -o "$BIN_DIR/offload"
-else wget -qO "$BIN_DIR/offload" "$url"; fi
-chmod +x "$BIN_DIR/offload"
+fetch "$base/$asset" "$tmp" || fail "download failed: $base/$asset"
+fetch "$base/SHA256SUMS" "$tmp.sums" || fail "download failed: $base/SHA256SUMS"
+# the release's own checksum list: a changed or broken download is never installed
+want=$(awk -v a="$asset" '$2 == a || $2 == "*" a { print $1 }' "$tmp.sums")
+[ -n "$want" ] || fail "$asset is not in the release's SHA256SUMS"
+got=$(sha256 "$tmp")
+[ "$got" = "$want" ] || fail "checksum mismatch for $asset (expected $want, got $got) — nothing was installed"
+say "checksum ok (sha256 $got)"
+chmod +x "$tmp"
+mv -f "$tmp" "$BIN_DIR/offload"
 ln -sf "$BIN_DIR/offload" "$BIN_DIR/harness-offload"
 case ":$PATH:" in *":$BIN_DIR:"*) ;; *) say "add $BIN_DIR to your PATH" ;; esac
 command -v jq >/dev/null 2>&1 || say "tip: install jq too — the Claude Code plugin's fast bash hooks use it"

@@ -35,6 +35,8 @@ binaries, endpoints, the backend, the state directory or privacy relaxations —
 | `hooks.subagents` | `true` | also guard subagents' tool calls |
 | `hosts.<codex\|cursor>.call` | `mcp` | how the agent should call offload there (`mcp` or `shell`) |
 | `opencode.timeout_seconds` | `180` | per-call ceiling (all backends) |
+| `answers.max_tokens.<task>` | `read`, `explore`, `ask`: 2000 | the prompt asks the worker to keep its answer under this; an answer over twice it (a runaway) is cut after the last whole line that fits, the footer says so and names a log with the full answer; `0` = no rule, no cut |
+| `timeouts.<task>` | `ask` 90, others `0` | per-call ceiling for one kind of work (`read`, `explore`, `summarize`, `write`, `ask`); `0` = `opencode.timeout_seconds`. A repo's own config may set it; `OFFLOAD_TIMEOUT` (one run) beats both |
 | `explore.max_steps` | `40` | tool budget of the explorer |
 | `digest.use_model` | `true` | `false` = deterministic digests only |
 | `privacy.secret_globs` / `redact` | `.env*`, keys, … / `true` | never sent; credential shapes masked |

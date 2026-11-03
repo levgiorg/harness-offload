@@ -1,3 +1,4 @@
+# keep: >       assert quote(lines).discount == Decimal("5.00")
 # keep: FAILED tests/test_orders.py::test_bulk_discount - assert Decimal('25.00') == Decimal('5.00')
 # keep: E       assert Decimal('25.00') == Decimal('5.00')
 # keep: 1 failed, 640 passed

@@ -238,7 +238,6 @@ export async function install(host: HostName, opts: { dryRun?: boolean; scope?: 
       const dir = crushDir();
       const file = join(dir, "crush.json");
       const guide = join(stateDir(), "crush-guide.md");
-      const cmd = isWin ? winCommand() : JSON.stringify(launcher);
       if (opts.dryRun) return [{ ok: true, text: `add hooks + context path to ${file}` }];
       let cfg: Record<string, any> = {};
       if (existsSync(file)) {
@@ -247,18 +246,12 @@ export async function install(host: HostName, opts: { dryRun?: boolean; scope?: 
         } catch {
           return [{ ok: false, text: `${file} is not plain JSON; add the hooks by hand (see docs/hosts.md#crush)` }];
         }
-        writeFileSync(`${file}.bak-harness-offload`, readFileSync(file));
+        // the first backup is the person's own file: a later run must not replace it with ours
+        if (!existsSync(`${file}.bak-harness-offload`)) writeFileSync(`${file}.bak-harness-offload`, readFileSync(file));
       }
       const { sessionGuide } = await import("../hooks/logic.ts");
       writeFileSync(guide, sessionGuide("crush", isWin ? winCommand() : JSON.stringify(join(pluginDir(), "bin", "offload"))) + "\n");
-      const ours = (h: any) => h?.name === "harness-offload";
-      cfg.hooks ??= {};
-      cfg.hooks.PreToolUse = [...(cfg.hooks.PreToolUse ?? []).filter((h: any) => !ours(h)), { name: "harness-offload", matcher: "^(view|bash)$", command: `${cmd} hook crush pre-tool`, timeout: 20 }];
-      cfg.hooks.PostToolUse = [...(cfg.hooks.PostToolUse ?? []).filter((h: any) => !ours(h)), { name: "harness-offload", matcher: "^bash$", command: `${cmd} hook crush post-tool`, timeout: 120 }];
-      cfg.options ??= {};
-      const ctx: string[] = cfg.options.global_context_paths ?? [...CRUSH_DEFAULT_CONTEXT]; // setting it replaces the defaults
-      if (!ctx.includes(guide)) ctx.push(guide);
-      cfg.options.global_context_paths = ctx;
+      cfg = crushMerged(cfg, guide);
       mkdirSync(dir, { recursive: true });
       writeFileSync(file, JSON.stringify(cfg, null, 2) + "\n");
       steps.push({ ok: true, text: `added hooks and the guide (${guide}) to ${file}` });
@@ -441,6 +434,50 @@ export function installedHosts(): HostName[] {
 }
 
 /** What installing into an agent does, in the words the plan shows people. */
+/** crush.json with offload's hooks and guide merged in (ours replaced, never duplicated). */
+function crushMerged(cfg: Record<string, any>, guide: string): Record<string, any> {
+  const cmd = isWin ? winCommand() : JSON.stringify(join(pluginDir(), "bin", "offload-ts"));
+  const ours = (h: any) => h?.name === "harness-offload";
+  const c = structuredClone(cfg);
+  c.hooks ??= {};
+  c.hooks.PreToolUse = [...(c.hooks.PreToolUse ?? []).filter((h: any) => !ours(h)), { name: "harness-offload", matcher: "^(view|bash)$", command: `${cmd} hook crush pre-tool`, timeout: 20 }];
+  c.hooks.PostToolUse = [...(c.hooks.PostToolUse ?? []).filter((h: any) => !ours(h)), { name: "harness-offload", matcher: "^bash$", command: `${cmd} hook crush post-tool`, timeout: 120 }];
+  c.options ??= {};
+  const ctx: string[] = c.options.global_context_paths ?? [...CRUSH_DEFAULT_CONTEXT]; // setting it replaces the defaults
+  if (!ctx.includes(guide)) ctx.push(guide);
+  c.options.global_context_paths = ctx;
+  return c;
+}
+
+/** The lines that change between two texts ("- old", "+ new", one line of context, "…" between
+ *  hunks), at most MAX lines. A plain LCS: these are small settings files. */
+export function lineDiff(a: string, b: string, max = 40): string[] {
+  const x = a ? a.replace(/\n$/, "").split("\n") : [];
+  const y = b.replace(/\n$/, "").split("\n");
+  if (x.length * y.length > 4_000_000) return [`(${x.length} → ${y.length} lines; too long to diff here)`];
+  const L = Array.from({ length: x.length + 1 }, () => new Array<number>(y.length + 1).fill(0));
+  for (let i = x.length - 1; i >= 0; i--) for (let j = y.length - 1; j >= 0; j--) L[i][j] = x[i] === y[j] ? L[i + 1][j + 1] + 1 : Math.max(L[i + 1][j], L[i][j + 1]);
+  const ops: [string, string][] = [];
+  let i = 0, j = 0;
+  while (i < x.length || j < y.length) {
+    if (i < x.length && j < y.length && x[i] === y[j]) (ops.push([" ", x[i]]), i++, j++);
+    else if (j < y.length && (i >= x.length || L[i][j + 1] >= L[i + 1][j])) (ops.push(["+", y[j]]), j++);
+    else (ops.push(["-", x[i]]), i++);
+  }
+  const changed = (k: number) => k >= 0 && k < ops.length && ops[k][0] !== " ";
+  const keep = ops.map((_, k) => changed(k) || changed(k - 1) || changed(k + 1));
+  const out: string[] = [];
+  ops.forEach((o, k) => {
+    if (!keep[k]) {
+      if (out[out.length - 1] !== "…" && out.length) out.push("…");
+      return;
+    }
+    out.push(`${o[0]} ${o[1]}`);
+  });
+  while (out[out.length - 1] === "…") out.pop();
+  return out.length > max ? [...out.slice(0, max), `… ${out.length - max} more lines`] : out;
+}
+
 export interface PlanItem {
   host: HostName;
   /** what happens: a command we run (the agent's own), or + a new file/folder, or ~ an edit of a file of yours */
@@ -449,6 +486,8 @@ export interface PlanItem {
   where: string;
   /** what is left for the person to do, if anything */
   note?: string;
+  /** for an edit of a file of yours: the lines that change */
+  diff?: string[];
 }
 
 export async function describe(host: HostName, scope: Scope = "user"): Promise<PlanItem> {
@@ -467,7 +506,23 @@ export async function describe(host: HostName, scope: Scope = "user"): Promise<P
     case "qwen":
       return { host, what: "runs qwen extensions install harness-offload", where: "Qwen Code keeps it in ~/.qwen/extensions", note: "Qwen Code can't replace command output, so long outputs are not digested there" };
     case "crush":
-      return { host, what: `~ ${tilde(join(crushDir(), "crush.json"))}`, where: "your Crush settings: adds 2 hooks and a guide (backup: crush.json.bak-harness-offload)" };
+    {
+      const file = join(crushDir(), "crush.json");
+      const raw = existsSync(file) ? readFileSync(file, "utf8") : "";
+      let diff: string[] | undefined;
+      let reformat = "";
+      try {
+        // compared as JSON (2-space indented, as it will be written), so the change shows, not the layout
+        const cfg = raw ? JSON.parse(raw) : {};
+        const before = raw ? JSON.stringify(cfg, null, 2) + "\n" : "";
+        if (raw && raw !== before) reformat = "; the file is rewritten with 2-space indentation";
+        diff = lineDiff(before, JSON.stringify(crushMerged(cfg, join(stateDir(), "crush-guide.md")), null, 2) + "\n");
+      } catch {
+        diff = undefined; // not plain JSON: the install says so
+      }
+      const backup = existsSync(`${file}.bak-harness-offload`) ? "your first backup is kept" : "backup: crush.json.bak-harness-offload";
+      return { host, what: `~ ${tilde(file)}`, where: diff && !diff.length ? "your Crush settings: already set up, nothing changes" : `your Crush settings: adds 2 hooks and a guide (${backup}${reformat})`, diff };
+    }
     case "pi":
       return { host, what: "runs pi install harness-offload", where: "Pi keeps it in its package list" };
     case "opencode": {

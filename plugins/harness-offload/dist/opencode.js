@@ -13,7 +13,7 @@ var __esm = (fn, res, err) => () => {
 // src/generated/assets.ts
 var DEFAULTS_JSON, OUTLINE_JSON, CONNECTORS_JSON, PROMPT_TEXT;
 var init_assets = __esm(() => {
-  DEFAULTS_JSON = { enabled: true, backend: "opencode", endpoints: {}, agents: {}, hosts: { codex: { call: "mcp" }, cursor: { call: "mcp" } }, models: { default: "@host", read: "", explore: "", summarize: "", write: "", ask: "", fallback: ["@default"] }, variants: { read: "", explore: "", summarize: "", write: "", ask: "" }, opencode: { bin: "opencode", timeout_seconds: 180, max_stream_errors: 2, keep_sessions: false, disable_claude_code_compat: true }, read: { max_input_bytes: 1500000, max_files: 60, verify_citations: true, retry_unverified: true, cache_seconds: 3600 }, explore: { max_steps: 40 }, digest: { threshold_lines: 150, threshold_bytes: 12000, use_model: true, max_model_input_bytes: 400000, key_lines: 30, tail_lines: 15 }, hooks: { read_guard: "block", read_threshold_lines: 600, read_threshold_tokens: 6000, read_max_chunk_lines: 600, context_tight_tokens: 0, bash_read_guard: true, summarize_bash_output: true, bash_output_threshold_lines: 250, bash_output_threshold_bytes: 20000, digest_timeout_seconds: 20, search_view: true, diff_view: true, json_view: true, search_commands: "^[[:space:]]*(sudo[[:space:]]+)?(grep|egrep|fgrep|rg|ag|ack|git[[:space:]]+grep|find|fd)([[:space:]]|$)", bash_never_summarize: "^[[:space:]]*(sudo[[:space:]]+)?(cat|bat|nl|head|tail|less|more|sed|awk|grep|egrep|fgrep|rg|ag|ack|jq|yq|diff|wc|ls|tree|find|fd|stat|file|echo|printf|offload|git[[:space:]]+(diff|show|blame|status|log))([[:space:]]|$)", autowrap: false, autowrap_pattern: "^[[:space:]]*((npm|pnpm|yarn|bun)[[:space:]]+(run[[:space:]]+)?(test|build|lint|install|ci|typecheck)|npx[[:space:]]+(jest|vitest|tsc|eslint|playwright)|(jest|vitest|pytest|tox|tsc|eslint|ruff|mypy)([[:space:]]|$)|go[[:space:]]+(test|build|vet)|cargo[[:space:]]+(test|build|check|clippy)|(mvn|mvnw|\\./mvnw|gradle|\\./gradlew)([[:space:]]|$)|make([[:space:]]|$)|pip[[:space:]]+install|docker[[:space:]]+(build|compose[[:space:]]+build)|terraform[[:space:]]+plan)", subagents: true, ignore_globs: [] }, privacy: { secret_globs: [".env", ".env.*", "*.pem", "*.key", "*.p12", "*.pfx", "*.jks", "*.keystore", "id_rsa*", "id_ecdsa*", "id_ed25519*", ".npmrc", ".pypirc", ".netrc", "credentials", "credentials.*", "secrets.*", "*.tfvars", "*.tfstate"], secret_allow_globs: ["*.example", "*.sample", "*.template", "*.dist"], redact: true }, state_dir: "", log_retention_days: 7 };
+  DEFAULTS_JSON = { enabled: true, backend: "opencode", endpoints: {}, agents: {}, hosts: { codex: { call: "mcp" }, cursor: { call: "mcp" } }, models: { default: "@host", read: "", explore: "", summarize: "", write: "", ask: "", fallback: ["@default"] }, variants: { read: "", explore: "", summarize: "", write: "", ask: "" }, answers: { max_tokens: { read: 2000, explore: 2000, ask: 2000 } }, timeouts: { read: 0, explore: 0, summarize: 0, write: 0, ask: 90 }, opencode: { bin: "opencode", timeout_seconds: 180, max_stream_errors: 2, keep_sessions: false, disable_claude_code_compat: true }, read: { max_input_bytes: 1500000, max_files: 60, verify_citations: true, retry_unverified: true, cache_seconds: 3600 }, explore: { max_steps: 40 }, digest: { threshold_lines: 150, threshold_bytes: 12000, use_model: true, max_model_input_bytes: 400000, key_lines: 30, tail_lines: 15 }, hooks: { read_guard: "block", read_threshold_lines: 600, read_threshold_tokens: 6000, read_max_chunk_lines: 600, context_tight_tokens: 0, bash_read_guard: true, summarize_bash_output: true, bash_output_threshold_lines: 250, bash_output_threshold_bytes: 20000, digest_timeout_seconds: 20, search_view: true, diff_view: true, json_view: true, search_commands: "^[[:space:]]*(sudo[[:space:]]+)?(grep|egrep|fgrep|rg|ag|ack|git[[:space:]]+grep|find|fd)([[:space:]]|$)", bash_never_summarize: "^[[:space:]]*(sudo[[:space:]]+)?(cat|bat|nl|head|tail|less|more|sed|awk|grep|egrep|fgrep|rg|ag|ack|jq|yq|diff|wc|ls|tree|find|fd|stat|file|echo|printf|offload|git[[:space:]]+(diff|show|blame|status|log))([[:space:]]|$)", autowrap: false, autowrap_pattern: "^[[:space:]]*((npm|pnpm|yarn|bun)[[:space:]]+(run[[:space:]]+)?(test|build|lint|install|ci|typecheck)|npx[[:space:]]+(jest|vitest|tsc|eslint|playwright)|(jest|vitest|pytest|tox|tsc|eslint|ruff|mypy)([[:space:]]|$)|go[[:space:]]+(test|build|vet)|cargo[[:space:]]+(test|build|check|clippy)|(mvn|mvnw|\\./mvnw|gradle|\\./gradlew)([[:space:]]|$)|make([[:space:]]|$)|pip[[:space:]]+install|docker[[:space:]]+(build|compose[[:space:]]+build)|terraform[[:space:]]+plan)", subagents: true, ignore_globs: [] }, privacy: { secret_globs: [".env", ".env.*", "*.pem", "*.key", "*.p12", "*.pfx", "*.jks", "*.keystore", "id_rsa*", "id_ecdsa*", "id_ed25519*", ".npmrc", ".pypirc", ".netrc", "credentials", "credentials.*", "secrets.*", "*.tfvars", "*.tfstate"], secret_allow_globs: ["*.example", "*.sample", "*.template", "*.dist"], redact: true }, state_dir: "", log_retention_days: 7 };
   OUTLINE_JSON = { _comment: "Symbol-outline regexes (POSIX ERE), shared by the bash and TypeScript engines. Matched with grep -E / converted to JS RegExp.", languages: [{ exts: ["ts", "tsx", "js", "jsx", "mjs", "cjs", "mts", "cts", "vue", "svelte"], regex: "^[[:space:]]*(export[[:space:]]+)?(default[[:space:]]+)?(declare[[:space:]]+)?(abstract[[:space:]]+)?(async[[:space:]]+)?(function\\*?|class|interface|type|enum|namespace|module)[[:space:]]+[A-Za-z_$]|^[[:space:]]*(export[[:space:]]+)?(const|let|var)[[:space:]]+[A-Za-z_$][A-Za-z0-9_$]*[[:space:]]*(:[^=]*)?=[[:space:]]*(async[[:space:]]+)?(\\(|function|[A-Za-z_$][A-Za-z0-9_$]*[[:space:]]*=>)|^[[:space:]]{2,4}((public|private|protected|static|async|readonly|override|get|set)[[:space:]]+)*[A-Za-z_$#][A-Za-z0-9_$]*[[:space:]]*(<[^>]*>)?\\([^;]*\\)[[:space:]]*(:[^=;{]*)?\\{|^[[:space:]]*(describe|it|test)(\\.[a-z]+)?\\(" }, { exts: ["py", "pyi"], regex: "^[[:space:]]*(async[[:space:]]+)?def[[:space:]]+[A-Za-z_]|^[[:space:]]*class[[:space:]]+[A-Za-z_]" }, { exts: ["go"], regex: "^func[[:space:]]|^type[[:space:]]+[A-Za-z_][A-Za-z0-9_]*[[:space:]]|^(var|const)[[:space:]]+\\(" }, { exts: ["rs"], regex: "^[[:space:]]*(pub(\\([^)]*\\))?[[:space:]]+)?(async[[:space:]]+)?(unsafe[[:space:]]+)?(fn|struct|enum|trait|impl|mod|macro_rules!|type)[[:space:]<]" }, { exts: ["java", "kt", "kts", "scala", "cs", "groovy", "swift", "dart"], regex: "^[[:space:]]*(@[A-Za-z]+[[:space:]]+)*((public|private|protected|internal|open|override|abstract|final|static|sealed|data|suspend|async|virtual|partial)[[:space:]]+)*(class|interface|enum|record|struct|object|fun|func|extension|protocol)[[:space:]]+[A-Za-z_]|^[[:space:]]*((public|private|protected|internal|static|final|abstract|synchronized|override|async|virtual)[[:space:]]+)+[][A-Za-z_<>,.?[:space:]]+[[:space:]]+[A-Za-z_][A-Za-z0-9_]*[[:space:]]*\\(" }, { exts: ["rb", "rake"], regex: "^[[:space:]]*(def|class|module)[[:space:]]" }, { exts: ["php"], regex: "^[[:space:]]*((public|private|protected|static|abstract|final)[[:space:]]+)*(function|class|interface|trait|enum)[[:space:]]+[A-Za-z_]" }, { exts: ["c", "h", "cc", "cpp", "cxx", "hpp", "hh", "m", "mm"], regex: "^[A-Za-z_][A-Za-z0-9_:<>,*&[:space:]]*[[:space:]*&]+[A-Za-z_~][A-Za-z0-9_:~]*[[:space:]]*\\([^;]*$|^(typedef[[:space:]]+)?(struct|class|enum|union|namespace)[[:space:]]+[A-Za-z_]|^#define[[:space:]]+[A-Z_]" }, { exts: ["sh", "bash", "zsh"], regex: "^[[:space:]]*(function[[:space:]]+)?[A-Za-z_][A-Za-z0-9_:-]*[[:space:]]*\\(\\)[[:space:]]*\\{?|^[[:space:]]*function[[:space:]]+[A-Za-z_]" }, { exts: ["md", "mdx", "markdown", "rst", "adoc"], regex: "^#{1,4}[[:space:]]" }, { exts: ["yml", "yaml"], regex: "^[A-Za-z_][A-Za-z0-9_.-]*:|^  [A-Za-z_][A-Za-z0-9_.-]*:[[:space:]]*$" }, { exts: ["toml", "ini", "cfg"], regex: "^\\[" }, { exts: ["sql"], regex: "^[[:space:]]*(create|alter|CREATE|ALTER)[[:space:]]+" }, { exts: ["json"], regex: '^  "[^"]+"[[:space:]]*:' }], default: "^[[:space:]]*(export[[:space:]]+)?(pub[[:space:]]+)?(async[[:space:]]+)?(def|fn|func|function|class|interface|struct|enum|trait|impl|module|type)[[:space:]]+[A-Za-z_]|^#{1,3}[[:space:]]" };
   CONNECTORS_JSON = { _comment: "HTTP endpoint presets, the default cheap model per harness for the @host model ref, and the API-key backup per harness for @host-api. Shared by the bash and TypeScript engines; override with `endpoints` / `host_models` / `host_api_models` in your config.", endpoints: { openai: { type: "openai", base_url: "https://api.openai.com/v1", api_key_env: "OPENAI_API_KEY", label: "OpenAI API" }, openrouter: { type: "openai", base_url: "https://openrouter.ai/api/v1", api_key_env: "OPENROUTER_API_KEY", label: "OpenRouter" }, anthropic: { type: "anthropic", base_url: "https://api.anthropic.com", api_key_env: "ANTHROPIC_API_KEY", label: "Anthropic API" }, google: { type: "openai", base_url: "https://generativelanguage.googleapis.com/v1beta/openai", api_key_env: "GEMINI_API_KEY", label: "Google AI Studio (Gemini API)" }, groq: { type: "openai", base_url: "https://api.groq.com/openai/v1", api_key_env: "GROQ_API_KEY", label: "Groq" }, deepseek: { type: "openai", base_url: "https://api.deepseek.com/v1", api_key_env: "DEEPSEEK_API_KEY", label: "DeepSeek" }, mistral: { type: "openai", base_url: "https://api.mistral.ai/v1", api_key_env: "MISTRAL_API_KEY", label: "Mistral" }, together: { type: "openai", base_url: "https://api.together.xyz/v1", api_key_env: "TOGETHER_API_KEY", label: "Together AI" }, fireworks: { type: "openai", base_url: "https://api.fireworks.ai/inference/v1", api_key_env: "FIREWORKS_API_KEY", label: "Fireworks" }, cerebras: { type: "openai", base_url: "https://api.cerebras.ai/v1", api_key_env: "CEREBRAS_API_KEY", label: "Cerebras" }, xai: { type: "openai", base_url: "https://api.x.ai/v1", api_key_env: "XAI_API_KEY", label: "xAI" }, zai: { type: "openai", base_url: "https://api.z.ai/api/paas/v4", api_key_env: "ZAI_API_KEY", label: "Z.ai (GLM)" }, moonshot: { type: "openai", base_url: "https://api.moonshot.ai/v1", api_key_env: "MOONSHOT_API_KEY", label: "Moonshot (Kimi)" }, ollama: { type: "openai", base_url: "http://127.0.0.1:11434/v1", label: "Ollama (local)" }, lmstudio: { type: "openai", base_url: "http://127.0.0.1:1234/v1", label: "LM Studio (local)" }, vllm: { type: "openai", base_url: "http://127.0.0.1:8000/v1", label: "vLLM (local)" }, dashscope: { type: "openai", base_url: "https://dashscope-intl.aliyuncs.com/compatible-mode/v1", api_key_env: "DASHSCOPE_API_KEY", label: "Alibaba Model Studio (Qwen)" }, github: { type: "openai", base_url: "https://models.github.ai/inference", api_key_env: "GITHUB_TOKEN", label: "GitHub Models" } }, host_models: { claude: "claude:haiku", codex: "codex:gpt-6-luna", gemini: "gemini:flash-lite", cursor: "cursor:", pi: "pi:", opencode: "@default", kilo: "@default", devin: "claude:haiku", copilot: "copilot:", qwen: "qwen:", crush: "crush:", amp: "@default" }, host_api_models: { claude: "anthropic:claude-haiku-5-5", devin: "anthropic:claude-haiku-5-5", codex: "openai:gpt-6-luna", gemini: "google:gemini-flash-lite-latest", qwen: "dashscope:qwen-flash", copilot: "github:openai/gpt-4.1-mini" }, worker_names: { _comment: 'How offload names a worker for the user, e.g. "Haiku on your Claude plan".', plans: { claude: "your Claude plan", codex: "your ChatGPT plan", gemini: "your Google account", cursor: "your Cursor plan", copilot: "your Copilot plan", qwen: "your Qwen Code login", pi: "Pi's own login", crush: "Crush's own setup" }, models: { haiku: "Haiku", sonnet: "Sonnet", opus: "Opus", "flash-lite": "Gemini Flash-Lite", flash: "Gemini Flash" } } };
   PROMPT_TEXT = {
@@ -75,7 +75,7 @@ var init_assets2 = __esm(() => {
 
 // src/outline.ts
 import { readFileSync as readFileSync9 } from "node:fs";
-import { basename as basename2 } from "node:path";
+import { basename as basename3 } from "node:path";
 function posixToJs(ere) {
   let out = "";
   for (let i = 0;i < ere.length; i++) {
@@ -122,7 +122,7 @@ function posixToJs(ere) {
   return out;
 }
 function outlineRegex(path, firstLine = "") {
-  const base = basename2(path).toLowerCase();
+  const base = basename3(path).toLowerCase();
   let ext = base.includes(".") ? base.slice(base.lastIndexOf(".") + 1) : "";
   if (!ext && firstLine.startsWith("#!")) {
     if (/python/.test(firstLine))
@@ -158,13 +158,21 @@ function outline(path, max = 50) {
     if (CONTROL.test(line))
       return;
     line = line.replace(/[ \t]*\{?[ \t\r]*$/, "");
-    if (line.length > 110)
-      line = line.slice(0, 107) + "...";
+    if (line.length > 90)
+      line = line.slice(0, 87) + "...";
     rows.push({ n: idx + 1, txt: line, dep });
   });
   if (rows.length === 0)
     return "";
   const n = rows.length;
+  const total = lines.length - (text.endsWith(`
+`) ? 1 : 0);
+  const to = rows.map((r, i) => {
+    for (let j = i + 1;j < n; j++)
+      if (rows[j].dep <= r.dep)
+        return rows[j].n - 1;
+    return total;
+  });
   let lim = Math.max(...rows.map((r) => r.dep));
   while (lim > 0) {
     const lower = rows.filter((r) => r.dep < lim).map((r) => r.dep);
@@ -184,7 +192,7 @@ function outline(path, max = 50) {
   const out = [];
   let k = 0;
   let nextPick = 0;
-  for (const r of rows) {
+  for (const [i, r] of rows.entries()) {
     if (r.dep > lim)
       continue;
     if (r.dep === lim) {
@@ -195,7 +203,7 @@ function outline(path, max = 50) {
     }
     if (out.length >= max)
       break;
-    out.push(`  L${r.n}: ${r.txt}`);
+    out.push(to[i] > r.n ? `  L${r.n}-${to[i]}: ${r.txt}` : `  L${r.n}: ${r.txt}`);
   }
   if (out.length < n)
     out.push(`  ... ${n - out.length} more symbols not shown (grep -n to find them)`);
@@ -222,8 +230,8 @@ var init_outline = __esm(() => {
 });
 
 // src/hooks/logic.ts
-import { closeSync as closeSync5, copyFileSync, existsSync as existsSync8, mkdirSync as mkdirSync3, openSync as openSync5, readFileSync as readFileSync10, readSync as readSync5, statSync as statSync7 } from "node:fs";
-import { basename as basename3, delimiter as delimiter2, dirname as dirname2, isAbsolute as isAbsolute3, join as join8, resolve as resolve2 } from "node:path";
+import { closeSync as closeSync5, copyFileSync, existsSync as existsSync8, mkdirSync as mkdirSync4, openSync as openSync5, readFileSync as readFileSync10, readSync as readSync5, statSync as statSync7 } from "node:fs";
+import { basename as basename4, delimiter as delimiter2, dirname as dirname3, isAbsolute as isAbsolute3, join as join8, resolve as resolve2 } from "node:path";
 import { fileURLToPath } from "node:url";
 
 // src/config.ts
@@ -308,7 +316,7 @@ function readJsonFile(path) {
   return;
 }
 var cache;
-var SAFE_PROJECT_KEYS = ["models", "variants", "read", "explore", "digest", "hooks", "enabled", "log_retention_days", "tasks"];
+var SAFE_PROJECT_KEYS = ["models", "variants", "read", "explore", "digest", "hooks", "enabled", "log_retention_days", "tasks", "timeouts"];
 var SAFE_OPENCODE_KEYS = ["timeout_seconds", "max_stream_errors"];
 function isTrustedProject(base) {
   const t = base.trusted_projects;
@@ -416,7 +424,7 @@ function cfgList(path) {
 }
 
 // src/digest.ts
-import { closeSync as closeSync4, existsSync as existsSync7, openSync as openSync4, readFileSync as readFileSync8, readSync as readSync4, statSync as statSync6, writeFileSync as writeFileSync5 } from "node:fs";
+import { closeSync as closeSync4, existsSync as existsSync7, openSync as openSync4, readFileSync as readFileSync8, readSync as readSync4, statSync as statSync6, writeFileSync as writeFileSync6 } from "node:fs";
 import { StringDecoder } from "node:string_decoder";
 
 // src/secrets.ts
@@ -524,7 +532,18 @@ function fileLines(path) {
     return 0;
   }
 }
-var estTokens = (bytes) => Math.floor((bytes + 3) / 4);
+var estTokens = (bytes) => Math.floor((bytes * 3 + 9) / 10);
+var digitRuns = (s) => (s.match(/[0-9]+/g) ?? []).length;
+var tokensOf = (bytes, runs) => Math.floor((bytes * 277 + runs * 1127 + 999) / 1000);
+var estTokensText = (s) => tokensOf(Buffer.byteLength(s), digitRuns(s));
+var tokensMax = (bytes) => Math.floor((bytes * 840 + 999) / 1000);
+function estTokensFile(path, bytes = fileBytes(path)) {
+  try {
+    return tokensOf(bytes, digitRuns(readFileSync2(path, "latin1")));
+  } catch {
+    return estTokens(bytes);
+  }
+}
 function isText(path) {
   try {
     const fd = openSync(path, "r");
@@ -1224,7 +1243,7 @@ async function which(cmd) {
 
 // src/state.ts
 import { appendFileSync, chmodSync as chmodSync2, closeSync as closeSync3, existsSync as existsSync5, openSync as openSync3, readSync as readSync3, mkdirSync as mkdirSync2, readFileSync as readFileSync5, readdirSync as readdirSync2, rmSync, statSync as statSync4, writeFileSync as writeFileSync2 } from "node:fs";
-import { join as join5 } from "node:path";
+import { basename as basename2, join as join5 } from "node:path";
 function stateDir() {
   const d = cfgStr("state_dir") || join5(stateHome(), "harness-offload");
   for (const sub of ["logs", "cooldowns", "work"])
@@ -1857,11 +1876,12 @@ Answer as instructed above.`);
   },
   crush: {
     label: "Crush (crush run) — your Crush providers",
+    noExplore: "`crush run` approves every tool call, so it is not used as a read-only explorer",
     bin: "crush",
     install: "brew install charmbracelet/tap/crush  or  npm i -g @charmland/crush",
     args: (req) => {
       if (req.task === "explore")
-        throw new WorkerError(E.USAGE, "crush: `crush run` approves every tool call, so it is not used as a read-only explorer; the next model in the chain takes over");
+        throw new WorkerError(E.USAGE, `crush: ${CLI_AGENTS.crush.noExplore}; the next model in the chain takes over`);
       const a = ["run", "-q"];
       if (req.model)
         a.push("-m", req.model);
@@ -2037,6 +2057,39 @@ function backendFor(name) {
 }
 
 // src/engine.ts
+import { mkdirSync as mkdirSync3, writeFileSync as writeFileSync5 } from "node:fs";
+import { dirname as dirname2 } from "node:path";
+var lengthRule = (budget) => `<length>Keep the answer under about ${fmtInt(budget)} tokens (roughly ${fmtInt(Math.floor(budget * 3 / 4))} words): the findings and their citations, no preamble or recap.</length>
+`;
+function cutAnswer(text, task, budget) {
+  const limit = budget * 2 * 4;
+  if (Buffer.byteLength(text) <= limit)
+    return { text };
+  const lines = text.split(`
+`);
+  if (lines[lines.length - 1] === "")
+    lines.pop();
+  let n = 0;
+  const kept = [];
+  for (const l of lines) {
+    n += Buffer.byteLength(l) + 1;
+    if (n > limit)
+      break;
+    kept.push(l);
+  }
+  if (!kept.length)
+    return { text };
+  const log = newLogPath(`answer ${task}`);
+  try {
+    mkdirSync3(dirname2(log), { recursive: true });
+    writeFileSync5(log, text);
+  } catch {
+    return { text };
+  }
+  return { text: kept.join(`
+`) + `
+`, cut: `answer cut at ~${fmtInt(budget * 2)} tokens (asked for ${fmtInt(budget)}) · full answer: ${log}` };
+}
 function modelFor(task) {
   return cfgStr(`models.${task}`) || cfgStr("models.default");
 }
@@ -2046,9 +2099,31 @@ function modelChain(task, override, primary) {
   const first = primary || modelFor(task) || "@default";
   return [...new Set([first, ...cfgList("models.fallback")].filter(Boolean))];
 }
+function attemptTimeout(task) {
+  const t = !process.env.OFFLOAD_TIMEOUT && /^[a-z][a-z_-]*$/.test(task) ? cfgInt(`timeouts.${task}`, 0) : 0;
+  return t > 0 ? t : cfgInt("opencode.timeout_seconds", 180);
+}
 async function invoke(task, prompt, cwd, override, opts = {}) {
   const variant = cfgStr(`variants.${task}`);
-  const perModel = cfgInt("opencode.timeout_seconds", 180);
+  const budget = task === "read" || task === "explore" || task === "ask" ? cfgInt(`answers.max_tokens.${task}`, 0) : 0;
+  if (budget > 0) {
+    const lines = prompt.replace(/\n$/, "").split(`
+`);
+    let q = -1;
+    lines.forEach((l, i) => {
+      if (l.startsWith("<question>"))
+        q = i;
+    });
+    const rule = lengthRule(budget).replace(/\n$/, "");
+    if (q >= 0)
+      lines.splice(q, 0, rule);
+    else
+      lines.push(rule);
+    prompt = lines.join(`
+`) + `
+`;
+  }
+  const perModel = attemptTimeout(task);
   const deadline = opts.budgetSec ? Date.now() + opts.budgetSec * 1000 : Infinity;
   const errors = [];
   const skipped = [];
@@ -2106,8 +2181,9 @@ async function invoke(task, prompt, cwd, override, opts = {}) {
         secretGlobs: cfgList("privacy.secret_globs"),
         allowGlobs: cfgList("privacy.secret_allow_globs")
       });
-      const text = task === "write" ? r.text : redact(r.text);
-      return { ...r, text, model: ref === "@default" ? `${backend}-default-model` : ref, seconds: Math.round((Date.now() - t0) / 1000), fallback: skipped.length ? `fell back after ${skipped.join(", ")}` : undefined };
+      const c = budget > 0 ? cutAnswer(task === "write" ? r.text : redact(r.text), task, budget) : { text: task === "write" ? r.text : redact(r.text) };
+      const text = c.text;
+      return { ...r, text, cut: c.cut, model: ref === "@default" ? `${backend}-default-model` : ref, seconds: Math.round((Date.now() - t0) / 1000), fallback: skipped.length ? `fell back after ${skipped.join(", ")}` : undefined };
     } catch (e) {
       const err = e instanceof WorkerError ? e : new WorkerError(E.WORKER, String(e?.message ?? e));
       lastCode = err.code;
@@ -2380,6 +2456,143 @@ function logExcerpt(src) {
 `) + `
 `;
 }
+function failBlocks(S, log, maxb, maxl, w) {
+  const ind = (s) => /^[ \t]*/.exec(s)[0].length;
+  const startKind = (s) => /^[ \t]*● /.test(s) ? "j" : /^[ \t]*FAIL[ \t]+[^ \t][^]* > /.test(s) ? "v" : /^___+ [^]* ___+[ \t]*$/.test(s) ? "p" : /^[ \t]*--- FAIL: /.test(s) ? "g" : /^---- [^]* stdout ----[ \t]*$/.test(s) ? "c" : "";
+  const blank = (s) => /^[ \t]*$/.test(s);
+  let kind = "", base = 0, first = 0, n = 0, last = 0, nb = 0, nr = 0;
+  let b = [];
+  const seen = new Set;
+  const out = [];
+  const cont = (s) => kind === "j" ? blank(s) || /^[ \t]/.test(s) : kind === "v" ? !blank(s) && !/^[ \t]*(Test Files|Tests|Duration|Start at|Snapshots) /.test(s) : kind === "p" ? !/^(___+ |===+)/.test(s) : kind === "g" ? !blank(s) && ind(s) > base : !blank(s);
+  const flush = () => {
+    if (!kind)
+      return;
+    n = last;
+    if (!seen.has(b[0])) {
+      seen.add(b[0]);
+      nb++;
+      if (nb <= maxb) {
+        out.push(`L${first}: ${b[0].slice(0, w)}`);
+        for (let k = 2;k <= n && k <= maxl; k++)
+          out.push(b[k - 1].slice(0, w));
+        if (n > maxl)
+          out.push(`  … ${n - maxl} more lines: sed -n "${first + maxl},${first + n - 1}p" ${shquote(log)}`);
+      }
+    }
+    kind = "";
+    n = last = 0;
+  };
+  for (const raw of S.lines()) {
+    nr++;
+    const s = stripAnsi(raw).replace(/\r$/, "");
+    const k = startKind(s);
+    if (k === "g" && kind === "g" && last === 1 && ind(s) > base)
+      kind = "";
+    if (k) {
+      flush();
+      kind = k;
+      base = ind(s);
+      first = nr;
+      n = last = 1;
+      b = [s];
+      continue;
+    }
+    if (!kind)
+      continue;
+    if (!cont(s)) {
+      flush();
+      continue;
+    }
+    n++;
+    if (!blank(s))
+      last = n;
+    if (n <= maxl)
+      b[n - 1] = s;
+  }
+  flush();
+  if (!nb)
+    return [];
+  const res = [`── failures, verbatim (${nb}) ──`, ...out];
+  if (nb > maxb)
+    res.push(`… ${nb - maxb} more failures in the full log`);
+  return res;
+}
+var STOP = new Set("the and for why what does how with from this that are was not did which where when there into its were have has had you your can could should would will just only also than then them they our out about after before over under".split(" "));
+var asciiLower = (s) => s.replace(/[A-Z]/g, (c) => c.toLowerCase());
+function intentWindows(S, question, w) {
+  const terms = [];
+  const seen = new Set;
+  for (const r of asciiLower(question).split(/[^a-z0-9_]+/)) {
+    if (!r || STOP.has(r) || seen.has(r))
+      continue;
+    if (/^[0-9]+$/.test(r))
+      terms.push({ t: r, num: true });
+    else if (r.length >= 3)
+      terms.push({ t: r, num: false });
+    else
+      continue;
+    seen.add(r);
+  }
+  let total = 0;
+  const df = new Array(terms.length).fill(0);
+  const cand = [];
+  for (const line of S.lines()) {
+    total++;
+    if (!terms.length)
+      continue;
+    const tk = asciiLower(line).split(/[^a-z0-9_]+/);
+    const hits = [];
+    terms.forEach((term, k) => {
+      if (tk.some((x) => term.num ? x === term.t : x.slice(0, term.t.length) === term.t)) {
+        df[k]++;
+        hits.push(k);
+      }
+    });
+    if (hits.length)
+      cand.push({ n: total, hits });
+  }
+  const sc = new Map;
+  for (const c of cand)
+    sc.set(c.n, c.hits.reduce((v, k) => v + Math.floor(total / df[k]), 0));
+  const used = new Set;
+  const win = [];
+  for (let j = 0;j < 3; j++) {
+    let best = 0;
+    for (const c of cand)
+      if (!used.has(c.n) && (!best || sc.get(c.n) > sc.get(best)))
+        best = c.n;
+    if (!best)
+      break;
+    const lo = Math.max(1, best - 2);
+    const hi = Math.min(total, best + 4);
+    win.push([lo, hi]);
+    for (let n = lo - 2;n <= hi + 2; n++)
+      used.add(n);
+  }
+  if (!win.length)
+    return [];
+  win.sort((a, b) => a[0] - b[0]);
+  const out = [`── lines about the question (best ${win.length}, no model) ──`];
+  let n = 0;
+  for (const raw of S.lines()) {
+    n++;
+    for (const [lo, hi] of win) {
+      if (n < lo || n > hi)
+        continue;
+      if (n === lo)
+        out.push(`L${lo}-${hi}:`);
+      out.push(stripAnsi(raw).replace(/\r$/, "").slice(0, w));
+    }
+  }
+  return out;
+}
+function estTokensSrc(S) {
+  let runs = 0;
+  for (const l of S.lines())
+    runs += digitRuns(l);
+  return tokensOf(S.bytes, runs);
+}
 async function digest(log, rawLabel, code, focus, source, modelOverride, opts = {}) {
   const label = redact(rawLabel);
   const S = logSrc(log, opts.text);
@@ -2433,10 +2646,12 @@ async function digest(log, rawLabel, code, focus, source, modelOverride, opts = 
   out.push(`[offload] \`${label.slice(0, 120)}\`${code ? ` → exit ${code}` : ""} · ${fmtInt(lines)} lines / ${kb} KB · full log: ${log}`);
   const sumSection = summary ? [`── summary by ${note} (cheap model; trust the verbatim lines over it) ──`, summary] : note ? [`── model summary ${note} ──`] : [];
   const keySection = opts.prev && existsSync7(opts.prev.log) ? keyChanges(key.lines, S, logSrc(opts.prev.log), opts.prev.at).map((l) => l.slice(0, width)) : key.distinct > 0 ? [`── key lines, verbatim (${key.distinct} distinct) ──`, ...key.lines.map((l) => l.slice(0, width))] : ["── no error-like lines found ──"];
+  const failSection = compact ? failBlocks(S, log, 3, 6, width) : failBlocks(S, log, 5, 12, width);
+  const intentSection = focus && source !== "hook" ? intentWindows(S, focus, width) : [];
   if (compact)
-    out.push(...keySection, ...sumSection);
+    out.push(...failSection, ...keySection, ...sumSection);
   else
-    out.push(...sumSection, ...keySection);
+    out.push(...sumSection, ...intentSection, ...failSection, ...keySection);
   if (!summary && !compact)
     tailN += 10;
   out.push(`── last ${tailN} lines ──`);
@@ -2454,7 +2669,7 @@ async function digest(log, rawLabel, code, focus, source, modelOverride, opts = 
     model,
     bytes_in: bytes,
     bytes_out: bout,
-    saved_tokens: Math.max(0, Math.floor((bytes - bout) / 4)),
+    saved_tokens: Math.max(0, estTokensSrc(S) - estTokensText(result)),
     seconds: Math.round((Date.now() - t0) / 1000),
     model_ok: Boolean(summary),
     model_tried: tried,
@@ -2559,7 +2774,7 @@ function searchView(log, rawLabel, given) {
     model: "",
     bytes_in: bytes,
     bytes_out: bout,
-    saved_tokens: Math.max(0, Math.floor((bytes - bout) / 4)),
+    saved_tokens: Math.max(0, estTokensSrc(logSrc(log, given)) - estTokensText(result)),
     seconds: Math.round((Date.now() - t0) / 1000),
     model_ok: false,
     model_tried: false,
@@ -2630,7 +2845,7 @@ function diffView(log, rawLabel, given) {
     model: "",
     bytes_in: S.bytes,
     bytes_out: bout,
-    saved_tokens: Math.max(0, Math.floor((S.bytes - bout) / 4)),
+    saved_tokens: Math.max(0, estTokensSrc(S) - estTokensText(result)),
     seconds: Math.round((Date.now() - t0) / 1000),
     model_ok: false,
     model_tried: false,
@@ -2670,7 +2885,7 @@ function taskSummary(max = 12) {
 
 // src/hooks/logic.ts
 init_assets2();
-import { writeFileSync as writeFileSync6 } from "node:fs";
+import { writeFileSync as writeFileSync7 } from "node:fs";
 function callStyle(host) {
   if (host === "pi")
     return "mcp";
@@ -2715,7 +2930,7 @@ async function available() {
 }
 function ignored(p) {
   const globs = cfgList("hooks.ignore_globs");
-  return matchesAny(p, globs) || matchesAny(basename3(p), globs);
+  return matchesAny(p, globs) || matchesAny(basename4(p), globs);
 }
 var BINARY = /\.(png|jpe?g|gif|webp|bmp|ico|svgz|pdf|ipynb|zip|gz|tgz|tar|jar|wasm|so|dylib|dll|exe|bin|pyc|class|o|a|mp3|mp4|mov|woff2?|ttf|otf)$/i;
 function notForOffload(p) {
@@ -2857,7 +3072,7 @@ ${js.hint}`;
     model: "",
     bytes_in: bytes,
     bytes_out: bout,
-    saved_tokens: Math.max(0, Math.floor((bytes - bout) / 4)),
+    saved_tokens: Math.max(0, estTokensFile(log, bytes) - estTokensText(out)),
     seconds: Math.round((Date.now() - t0) / 1000),
     model_ok: false,
     model_tried: false,
@@ -2899,7 +3114,7 @@ ${js.lines.join(`
 `)}
 `;
   if (!long) {
-    const out = outline(file, 40);
+    const out = outline(file, Math.min(40, Math.max(16, Math.floor(lines * 3 / 100))));
     if (out)
       m += `Outline of ${file}:
 ${out}`;
@@ -2941,7 +3156,8 @@ function readGuard(host, cwd, file, offset, limit, transcript) {
   if (ignored(file) || notForOffload(p))
     return;
   const lines = fileLines(p);
-  const tokens = estTokens(fileBytes(p));
+  const bytes = fileBytes(p);
+  const tokens = estTokensFile(p, bytes);
   const chunk = cfgInt("hooks.read_max_chunk_lines", 600);
   if (offset !== undefined || limit !== undefined) {
     const start = Math.max(1, offset ?? 1);
@@ -2950,7 +3166,7 @@ function readGuard(host, cwd, file, offset, limit, transcript) {
     if (span > remaining)
       span = remaining;
     const avg = Math.floor(fileBytes(p) / (lines > 0 ? lines : 1));
-    const sliceTokens = Math.floor((span * avg + 3) / 4);
+    const sliceTokens = estTokens(span * avg);
     if (avg > 4000 && sliceTokens > cfgInt("hooks.read_threshold_tokens", 6000)) {
       appendStats({ kind: "hook", event: "read_slice_blocked", host, lines: span, file });
       return guard(`offload: that read slice is ${fmtInt(span)} lines of ${file}, but its lines average ${fmtInt(avg)} characters (minified or generated): ~${fmtInt(sliceTokens)} tokens. Bash: grep -noE '.{0,80}PATTERN.{0,80}' ${shquote(file)} shows each match with 80 characters around it, or ask: ${callStyle(host) === "mcp" ? "offload_read" : `${cliCommand()} read`} -q "<question>" ${shquote(file)}`);
@@ -2966,7 +3182,8 @@ function readGuard(host, cwd, file, offset, limit, transcript) {
   let used;
   if (lines <= maxLines && tokens <= maxTokens) {
     const tight = cfgInt("hooks.context_tight_tokens", 0);
-    if (!(tight > 0 && (lines > maxLines / 2 || tokens > maxTokens / 2)))
+    const est = tokensMax(bytes) <= maxTokens ? tokensMax(bytes) : tokens;
+    if (!(tight > 0 && (lines > maxLines / 2 || est > maxTokens / 2)))
       return;
     used = contextUsed(transcript);
     if (used === undefined || used < tight)
@@ -3030,7 +3247,7 @@ function bashGuard(host, cwd, command) {
     if (!existsSync8(p) || !statSync7(p).isFile() || ignored(f) || notForOffload(p))
       continue;
     const lines = fileLines(p);
-    const tokens = estTokens(fileBytes(p));
+    const tokens = estTokensFile(p);
     let span = lines;
     if (prog === "head" || prog === "tail") {
       span = Math.min(Number(n.replace(/\D/g, "")) || 10, lines);
@@ -3129,7 +3346,7 @@ async function postBash(opts) {
       const label = redact(cmd);
       const bytes = src.bytes;
       const note = `[offload] \`${label.slice(0, 120)}\` · ${fmtInt(lines)} lines / ${Math.ceil(bytes / 1024)} KB · same output as at ${m[2]}, shown then · full log: ${m[3]} · its digest again: offload summarize ${shquote(m[3])}`;
-      appendStats({ kind: "digest", source: "repeat", label, log: m[3], model: "", bytes_in: bytes, bytes_out: Buffer.byteLength(note), saved_tokens: Math.max(0, Math.floor((bytes - Buffer.byteLength(note)) / 4)), seconds: 0, model_ok: false, model_tried: false, worker_tokens_in: 0, worker_tokens_out: 0 });
+      appendStats({ kind: "digest", source: "repeat", label, log: m[3], model: "", bytes_in: bytes, bytes_out: Buffer.byteLength(note), saved_tokens: Math.max(0, (raw ? tokensOf(raw.length, digitRuns(raw.toString("latin1"))) : estTokensFile(bigFile, bytes)) - estTokensText(note)), seconds: 0, model_ok: false, model_tried: false, worker_tokens_in: 0, worker_tokens_out: 0 });
       return note;
     }
   }
@@ -3144,20 +3361,20 @@ async function postBash(opts) {
     if (!seen)
       return;
     try {
-      mkdirSync3(dirname2(seen), { recursive: true });
+      mkdirSync4(dirname3(seen), { recursive: true });
       const d = new Date;
       const p = (n) => String(n).padStart(2, "0");
       const line = `${Math.floor(d.getTime() / 1000)} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())} ${log}
 `;
-      writeFileSync6(seen, line);
+      writeFileSync7(seen, line);
       if (cmdSeen)
-        writeFileSync6(cmdSeen, line);
+        writeFileSync7(cmdSeen, line);
     } catch {}
   };
   if (search || diffv) {
     const log = newLogPath(cmd);
     if (raw)
-      writeFileSync6(log, raw);
+      writeFileSync7(log, raw);
     else
       copyFileSync(bigFile, log);
     raw = bytesBuf = undefined;
@@ -3169,7 +3386,7 @@ async function postBash(opts) {
   if (jsonv) {
     log = newLogPath(cmd);
     if (raw)
-      writeFileSync6(log, raw);
+      writeFileSync7(log, raw);
     else
       copyFileSync(bigFile, log);
     const v = jsonView(log, cmd, lines, src.bytes);
@@ -3183,7 +3400,7 @@ async function postBash(opts) {
   if (!log) {
     log = newLogPath(cmd);
     if (raw)
-      writeFileSync6(log, raw);
+      writeFileSync7(log, raw);
     else
       copyFileSync(bigFile, log);
   }
@@ -3206,7 +3423,7 @@ ${tasks ? `- offload_task(name, paths?, question?) — the user's own tasks: ${t
 ` : ""}Keep for yourself: debugging reasoning, design decisions, edits (read slices for exact text), small files. Full reads of files over ~${lines} lines may be blocked with an outline and these options.`;
   }
   return `offload is installed: cheap worker models do bulk reading/digesting so it stays out of your context. Use these shell commands:
-- ${cliPath} read -q "QUESTION" PATH... — questions about big files or dirs (PATH may be file:START-END). Answers cite path:Lx-Ly with machine-checked quotes; read just those lines before editing.
+- ${cliPath} read -q "QUESTION" PATH... — questions about big files or dirs (PATH may be file:START-END or file#Symbol). Answers cite path:Lx-Ly with machine-checked quotes; read just those lines before editing.
 - ${cliPath} explore "QUESTION" — read-only cheap agent searches the repo itself ("where/how is X done?" across many files).
 - ${cliPath} run -- CMD... — for noisy commands (tests, builds, installs, linters, long logs): prints a digest + verbatim error lines + full-log path, keeps the exit code.
 - ${cliPath} write --spec "..." --ref EXAMPLE_FILE --out NEW_FILE — boilerplate that follows an existing file's patterns (tests, configs, stubs); review the result.

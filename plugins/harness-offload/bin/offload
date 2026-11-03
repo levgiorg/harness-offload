@@ -72,7 +72,7 @@ need() { [ $# -ge 2 ] || die "option $1 needs a value"; }
 need_jq() { command -v jq >/dev/null 2>&1 || die "jq is required (macOS: brew install jq · Debian/Ubuntu: apt install jq)" "$CO_E_USAGE"; }
 
 # Footer helper: one compact line so Claude knows where the answer came from.
-footer() { printf '\n[offload %s%s]\n' "$*" "${CO_OC_FALLBACK:+ · $CO_OC_FALLBACK}"; }
+footer() { printf '\n[offload %s%s%s]\n' "$*" "${CO_OC_FALLBACK:+ · $CO_OC_FALLBACK}" "${CO_OC_CUT:+ · $CO_OC_CUT}"; }
 
 report_failure() {
   local what="$1" rc="$2"
@@ -82,7 +82,7 @@ report_failure() {
     "$CO_E_QUOTA") co_err "hint: quota/rate limit — add models.fallback in the config, or do this step yourself." ;;
     "$CO_E_AUTH")  co_err "hint: log the backend in (its own CLI login, or \`opencode auth login\`) or set its API key with \`offload setup\`; \`offload doctor\` shows which." ;;
     "$CO_E_MODEL") co_err "hint: check the model id (\`offload models BACKEND\` lists them) and switch with \`offload model BACKEND:MODEL\`; some providers also say \"model not found\" when the API key is wrong." ;;
-    "$CO_E_TIMEOUT") co_err "hint: raise opencode.timeout_seconds or send less input." ;;
+    "$CO_E_TIMEOUT") co_err "hint: raise opencode.timeout_seconds (or timeouts.<task> for one kind of work) or send less input." ;;
     "$CO_E_TOO_LARGE") co_err "hint: send less at once — fewer files, a range (path:START-END) — or pick a model with a bigger context window (\`offload model …\`)." ;;
   esac
 }
@@ -141,6 +141,12 @@ cmd_read() {
     path="$item"
     if [ ! -e "$item" ] && printf '%s' "$item" | grep -qE ':[0-9]+-[0-9]+$'; then
       path="${item%:*}"; from="${item##*:}"; to="${from#*-}"; from="${from%-*}"
+    elif [ ! -e "$item" ] && [ -f "${item%#*}" ]; then
+      # path#Name (or #Class.method): the symbol's lines, from its outline range
+      local sym r; path="${item%#*}"; sym="${item##*#}"
+      . "$CO_ROOT/lib/outline.sh"
+      r=$(co_symbol_range "$path" "$sym") || die "read: no symbol \"$sym\" in $path (offload outline $(co_shquote "$path") lists them)"
+      from="${r% *}"; to="${r#* }"
     fi
     path="${path#./}"
     if [ -d "$path" ]; then
@@ -191,18 +197,24 @@ EOF
   if $use_cache && [ "$cache_s" -gt 0 ]; then
     cachef="$(co_state_dir)/cache/answers/$({ cat "$prompt"; printf '\n%s|%s|%s|' "$model" "${CO_TASK_NAME:-}" "$verify"; cat "${CO_TASK_SYSTEM_FILE:-/dev/null}"; } | LC_ALL=C cksum | LC_ALL=C awk '{ print $1 "-" $2 }')"
     if [ -f "$cachef" ] && read -r c_at c_hms c_ok c_bad c_model < "$cachef" && [ $(( $(co_now) - ${c_at:-0} )) -le "$cache_s" ]; then
+      # the content's tokens: the prompt's, less its line numbers ("%6d<TAB>": 7 bytes and a number a line)
+      local cein cbout
+      cein=$(( $(co_tokens "$prompt" "$(co_file_bytes "$prompt")") - nlines * 3066 / 1000 )); [ "$cein" -gt 0 ] || cein=$(co_est_tokens "$bytes")
+      cbout=$(tail -n +2 "$cachef" | wc -c | tr -d ' ')
       tail -n +2 "$cachef"
-      footer "${CO_CMD_LABEL:-read} · $c_model · $nfiles file(s), $(co_fmt_int "$nlines") lines (~$(co_fmt_int "$(co_est_tokens "$bytes")") tokens) kept out of your context · 0s$($verify && printf ' · citations: %s verified, %s unverified' "$c_ok" "$c_bad") · cached from $c_hms (--no-cache to ask again)"
+      footer "${CO_CMD_LABEL:-read} · $c_model · $nfiles file(s), $(co_fmt_int "$nlines") lines (~$(co_fmt_int "$cein") tokens) kept out of your context · 0s$($verify && printf ' · citations: %s verified, %s unverified' "$c_ok" "$c_bad") · cached from $c_hms (--no-cache to ask again)"
       [ "${c_bad:-0}" -gt 0 ] && echo "⚠unverified = quote not found near the cited lines; confirm with Read(offset/limit) before acting on it."
-      co_stats_append "$(jq -nc --arg model "$c_model" --argjson files "$nfiles" --argjson bin "$bytes" --argjson bout "$(tail -n +2 "$cachef" | wc -c | tr -d ' ')" \
+      co_stats_append "$(jq -nc --arg model "$c_model" --argjson files "$nfiles" --argjson bin "$bytes" --argjson bout "$cbout" \
+        --argjson ein "$cein" --argjson eout "$(tail -n +2 "$cachef" | co_tokens - "$cbout")" \
         '{ts: now | floor, kind: "read", source: "cache", model: $model, files: $files, bytes_in: $bin, bytes_out: $bout,
-          saved_tokens: ((($bin - $bout) / 4) | floor | if . < 0 then 0 else . end), seconds: 0, cites_ok: 0, cites_bad: 0,
+          saved_tokens: (($ein - $eout) | if . < 0 then 0 else . end), seconds: 0, cites_ok: 0, cites_bad: 0,
           worker_tokens_in: 0, worker_tokens_out: 0}')"
       return 0
     fi
   fi
 
-  local t0 rc
+  local t0 rc ein
+  ein=$(( $(co_tokens "$prompt" "$(co_file_bytes "$prompt")") - nlines * 3066 / 1000 )); [ "$ein" -gt 0 ] || ein=$(co_est_tokens "$bytes")
   t0=$(co_now)
   co_oc_invoke read "$prompt" "$(co_work_dir)" "$answer" "$model"; rc=$?
   if [ "$rc" != 0 ]; then report_failure "read" "$rc"; exit "$rc"; fi
@@ -241,7 +253,7 @@ EOF
   if [ -n "$cachef" ]; then
     mkdir -p "${cachef%/*}" 2>/dev/null && { printf '%s %s %s %s %s\n' "$(co_now)" "$(date +%H:%M:%S)" "$ok" "$bad" "$CO_OC_MODEL"; cat "$answer"; } > "$cachef" 2>/dev/null
   fi
-  footer "${CO_CMD_LABEL:-read} · $CO_OC_MODEL · $nfiles file(s), $(co_fmt_int "$nlines") lines (~$(co_fmt_int "$(co_est_tokens "$bytes")") tokens) kept out of your context · $(co_elapsed "$t0")s$cite"
+  footer "${CO_CMD_LABEL:-read} · $CO_OC_MODEL · $nfiles file(s), $(co_fmt_int "$nlines") lines (~$(co_fmt_int "$ein") tokens) kept out of your context · $(co_elapsed "$t0")s$cite"
   [ "${bad:-0}" -gt 0 ] && echo "⚠unverified = quote not found near the cited lines; confirm with Read(offset/limit) before acting on it."
   [ -n "$skipped" ] && echo "skipped:$skipped"
 
@@ -250,8 +262,9 @@ EOF
   co_stats_append "$(jq -nc --arg model "$CO_OC_MODEL" --argjson files "$nfiles" --argjson bin "$bytes" --argjson bout "$abytes" \
     --argjson secs "$(co_elapsed "$t0")" --argjson ok "${ok:-0}" --argjson bad "${bad:-0}" \
     --argjson tin "${CO_OC_TOKENS_IN:-0}" --argjson tout "${CO_OC_TOKENS_OUT:-0}" \
+    --argjson ein "$ein" --argjson eout "$(co_tokens "$answer" "$abytes")" \
     '{ts: now | floor, kind: "read"} + (if env.CO_TASK_NAME then {task: env.CO_TASK_NAME} else {} end) + {model: $model, files: $files, bytes_in: $bin, bytes_out: $bout,
-      saved_tokens: ((($bin - $bout) / 4) | floor | if . < 0 then 0 else . end), seconds: $secs,
+      saved_tokens: (($ein - $eout) | if . < 0 then 0 else . end), seconds: $secs,
       cites_ok: $ok, cites_bad: $bad, worker_tokens_in: $tin, worker_tokens_out: $tout}')"
 }
 
@@ -303,10 +316,11 @@ cmd_explore() {
   local abytes
   abytes=$(co_file_bytes "$answer")
   co_stats_append "$(jq -nc --arg model "$CO_OC_MODEL" --argjson ctx "${CO_OC_CTX_IN:-0}" --argjson bout "$abytes" \
+    --argjson eout "$(co_tokens "$answer" "$abytes")" \
     --argjson secs "$(co_elapsed "$t0")" --argjson ok "${ok:-0}" --argjson bad "${bad:-0}" \
     --argjson tin "${CO_OC_TOKENS_IN:-0}" --argjson tout "${CO_OC_TOKENS_OUT:-0}" \
     '{ts: now | floor, kind: "explore"} + (if env.CO_TASK_NAME then {task: env.CO_TASK_NAME} else {} end) + {model: $model, bytes_out: $bout,
-      saved_tokens: (($ctx - ($bout / 4)) | floor | if . < 0 then 0 else . end), seconds: $secs,
+      saved_tokens: (($ctx - $eout) | if . < 0 then 0 else . end), seconds: $secs,
       cites_ok: $ok, cites_bad: $bad, worker_tokens_in: $tin, worker_tokens_out: $tout}')"
 }
 
@@ -324,7 +338,7 @@ cmd_run() {
   argv=()
   while [ $# -gt 0 ]; do
     case "$1" in
-      -q|--focus|--question) need "$@"; focus="$2"; shift 2 ;;
+      -q|--focus|--question|--intent) need "$@"; focus="$2"; shift 2 ;;
       -m|--model) need "$@"; model="$2"; shift 2 ;;
       -c) need "$@"; shcmd="$2"; shift 2 ;;
       --no-model) no_model=true; shift ;;
@@ -360,7 +374,7 @@ cmd_summarize() {
   local focus="" model="" label="" file="" no_model=false
   while [ $# -gt 0 ]; do
     case "$1" in
-      -q|--focus|--question) need "$@"; focus="$2"; shift 2 ;;
+      -q|--focus|--question|--intent) need "$@"; focus="$2"; shift 2 ;;
       -m|--model) need "$@"; model="$2"; shift 2 ;;
       --label) need "$@"; label="$2"; shift 2 ;;
       --no-model) no_model=true; shift ;;
@@ -466,10 +480,10 @@ cmd_write() {
     fi
   fi
   co_stats_append "$(jq -nc --arg model "$CO_OC_MODEL" --argjson lines "$n" --argjson secs "$(co_elapsed "$t0")" \
-    --argjson bytes "$(co_file_bytes "$answer")" --arg out "$out" \
+    --argjson bytes "$(co_file_bytes "$answer")" --arg out "$out" --argjson est "$(co_tokens "$answer" "$(co_file_bytes "$answer")")" \
     --argjson tin "${CO_OC_TOKENS_IN:-0}" --argjson tout "${CO_OC_TOKENS_OUT:-0}" \
     '{ts: now | floor, kind: "write", model: $model, lines: $lines, seconds: $secs,
-      saved_tokens: (if $out == "" then 0 else ($bytes / 4 | floor) end), worker_tokens_in: $tin, worker_tokens_out: $tout}')"
+      saved_tokens: (if $out == "" then 0 else $est end), worker_tokens_in: $tin, worker_tokens_out: $tout}')"
   # The file is written either way; exit 1 tells Claude the check failed.
   $check_failed && exit 1
   return 0
@@ -672,6 +686,16 @@ co_did_you_mean() {
     END { if (best != "" && bs <= 2) print best }'
 }
 
+# co_explore_warning REF — "; warning: …" when REF can't explore (read-only tool
+# use): explore then falls to the next model in the chain. Twin: exploreProblem.
+co_explore_warning() {
+  local r="$1"
+  case "$r" in @host|@self) co_detect_host >/dev/null && r=$(co_host_model) || r="" ;; esac
+  case "$r" in
+    crush:*) printf '%s' "; warning: \`crush run\` approves every tool call, so it is not used as a read-only explorer — explore uses the next model in the chain (set one: offload model explore claude:haiku, or another CLI or provider)" ;;
+  esac
+}
+
 # co_ref_check REF — validates a model reference without calling a model.
 # Sets CO_REF_NOTE (where it runs, plus a warning if it cannot run here) and
 # returns 0, or sets CO_REF_ERR and returns 1. Twin: refCheck in model.ts.
@@ -764,7 +788,9 @@ co_model_line() {
     [ "$slot" = default ] || { printf '  %-18s (default)\n' "$slot"; return 0; }
     v=@default
   fi
-  if co_ref_check "$v"; then printf '  %-18s %s — %s\n' "$slot" "$v" "$CO_REF_NOTE"
+  local w=""
+  if [ "$slot" = explore ] || { [ "$slot" = default ] && [ -z "$(co_cfg .models.explore)" ]; }; then w=$(co_explore_warning "$v"); fi
+  if co_ref_check "$v"; then printf '  %-18s %s — %s\n' "$slot" "$v" "$CO_REF_NOTE$w"
   else printf '  %-18s %s — error: %s\n' "$slot" "$v" "$CO_REF_ERR"; fi
 }
 
@@ -831,10 +857,12 @@ EOT
     return 0
   fi
   [ "$slot" = fallback ] || [ ${#refs[@]} -eq 1 ] || die "model: give one model (only fallback takes several)"
-  local r notes="" val cur eff
+  local r notes="" val cur eff w
   for r in "${refs[@]}"; do
     co_ref_check "$r" || die "model: $CO_REF_ERR (to store it anyway: offload config set $key VALUE)"
-    notes="$notes  $r — $CO_REF_NOTE"$'\n'
+    w=""
+    if [ "$slot" = explore ] || { [ "$slot" = default ] && [ -z "$(co_cfg .models.explore)" ]; }; then w=$(co_explore_warning "$r"); fi
+    notes="$notes  $r — $CO_REF_NOTE$w"$'\n'
   done
   if [ "$slot" = fallback ]; then val=$(printf '%s\n' "${refs[@]}" | jq -R . | jq -cs .); else val=$(jq -cn --arg v "${refs[0]}" '$v'); fi
   mkdir -p "$(dirname "$target")"
@@ -986,6 +1014,8 @@ cmd_doctor() {
   local ign; ign=$(co_project_config_ignored)
   [ -n "$ign" ] && echo "  $warn project config keys ignored (untrusted repo): $ign — \`offload config trust\` if this repo is yours"
   co_cfg_bool '.enabled' true || echo "  $warn offload is disabled (enabled=false or OFFLOAD_DISABLE=1): hooks pass everything through"
+  # a plugin or integration left on another version (after an upgrade)
+  co_version_notes | while IFS= read -r v; do echo "  $warn $v"; done
 
   rm -f "$(co_state_dir)/opencode-version" 2>/dev/null; CO_OC_MAJOR=""   # doctor always re-detects
   if $reset; then rm -f "$(co_state_dir)"/cooldowns/* 2>/dev/null; echo "  $ok cooldowns cleared"; fi
@@ -1217,15 +1247,25 @@ cmd_stats() {
   echo "  (estimates: bytes/4 of what was kept out of context; cache effects are not counted)"
 }
 
+# Claude Code passes the session (transcript_path) on stdin: the line then also shows
+# what was kept out since the session began (its transcript's first timestamp; other
+# sessions running at the same time count too). Twin: cmdStatusline.
 cmd_statusline() {
-  local f since
+  local f since input="" tp="" iso=""
   f="$(co_state_dir)/stats.jsonl"
   since=$(( $(co_now) - $(co_now) % 86400 ))
+  if [ ! -t 0 ]; then IFS= read -r -t 1 -d '' input || true; fi
+  case "$input" in *transcript_path*) tp=$(printf '%s' "$input" | jq -r '.transcript_path // empty' 2>/dev/null) ;; esac
+  [ -n "$tp" ] && [ -f "$tp" ] && iso=$(head -n 50 "$tp" 2>/dev/null | grep -o '"timestamp":"[^"]*"' | head -n 1 | cut -d'"' -f4)
   if [ -s "$f" ]; then
-    jq -rs --argjson since "$since" '
-      map(select(.kind != "hook" and .ts >= $since)) as $r
+    jq -rs --argjson since "$since" --arg iso "$iso" '
+      def k: if . >= 1000 then (((. / 100) | floor) / 10 | tostring) + "k" else tostring end;
+      map(select(.kind != "hook")) as $all
+      | ($all | map(select(.ts >= $since))) as $r
       | ($r | map(.saved_tokens // 0) | add // 0) as $s
-      | "▌offload \($r | length) · ~\(if $s >= 1000 then ((($s / 100) | floor) / 10 | tostring) + "k" else ($s | tostring) end) saved today"' "$f"
+      | (if ($iso | length) >= 19 then (try ($iso[0:19] + "Z" | fromdateiso8601) catch null) else null end) as $start
+      | "▌offload \($r | length) · ~\($s | k) saved today"
+        + (if $start == null then "" else " · ~\($all | map(select(.ts >= $start) | .saved_tokens // 0) | add // 0 | k) this session" end)' "$f"
   else
     echo "▌offload 0 · ~0 saved today"
   fi

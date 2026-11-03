@@ -82,11 +82,15 @@ co_model_chain() {
   } | awk 'NF && !seen[$0]++'
 }
 
-# Per-attempt timeout: opencode.timeout_seconds, capped by what is left of a
-# total budget (CO_OC_DEADLINE, epoch seconds) — hooks run under host timeouts.
+# Per-attempt timeout: timeouts.<task> (CO_OC_TASK; 0 or unset = the general
+# opencode.timeout_seconds; OFFLOAD_TIMEOUT, a one-off, beats both), capped by what is left of a total budget
+# (CO_OC_DEADLINE, epoch seconds) — hooks run under host timeouts. Twin: attemptTimeout.
 co_attempt_timeout() {
-  local t left
-  t=$(co_cfg_int '.opencode.timeout_seconds' 180)
+  local t=0 left
+  case "${OFFLOAD_TIMEOUT:-}${CO_OC_TASK:-}" in
+    [a-z]*) case "$CO_OC_TASK" in *[!a-z_-]*) ;; *) co_cfgi t ".timeouts.$CO_OC_TASK" 0 ;; esac ;;
+  esac
+  [ "$t" -gt 0 ] || t=$(co_cfg_int '.opencode.timeout_seconds' 180)
   if [ -n "${CO_OC_DEADLINE:-}" ]; then
     left=$(( CO_OC_DEADLINE - $(co_now) ))
     [ "$left" -lt "$t" ] && t=$left
@@ -498,11 +502,44 @@ co_oc_why() {
   esac
 }
 
+# The length rule added to a prompt when answers.max_tokens.<task> is set. Twin: lengthRule.
+co_length_rule() {
+  printf '<length>Keep the answer under about %s tokens (roughly %s words): the findings and their citations, no preamble or recap.</length>\n' \
+    "$(co_fmt_int "$1")" "$(co_fmt_int $(( $1 * 3 / 4 )))"
+}
+
+# co_cut_answer FILE TASK BUDGET — an answer past twice its budget (a runaway) is cut
+# after the last whole line that fits; the full answer goes to a log and CO_OC_CUT
+# says so in the footer. A one-line answer is left whole. Twin: cutAnswer.
+co_cut_answer() {
+  local f="$1" task="$2" budget="$3" limit bytes log kept
+  limit=$(( budget * 2 * 4 ))
+  bytes=$(wc -c < "$f" | tr -d ' ')
+  [ "${bytes:-0}" -gt "$limit" ] || return 0
+  co_tmp kept
+  LC_ALL=C awk -v lim="$limit" '{ n += length($0) + 1; if (n > lim) exit; print }' "$f" > "$kept"
+  [ -s "$kept" ] || return 0
+  log="$(co_state_dir)/logs/$(date +%Y%m%d-%H%M%S)-answer-$task-$$.log"
+  mkdir -p "${log%/*}" 2>/dev/null && cp "$f" "$log" 2>/dev/null || return 0
+  cp "$kept" "$f"
+  CO_OC_CUT="answer cut at ~$(co_fmt_int $(( budget * 2 ))) tokens (asked for $(co_fmt_int "$budget")) · full answer: $log"
+}
+
 co_oc_invoke() {
   local task="$1" prompt_file="$2" workdir="$3" answer_file="$4" override="${5:-}"
-  local agent="offload-$task" variant model rc=$CO_E_WORKER cool tried="" errors="" skipped=""
-  CO_OC_MODEL="" CO_OC_ERROR="" CO_OC_FALLBACK=""
+  local agent="offload-$task" variant model rc=$CO_E_WORKER cool tried="" errors="" skipped="" budget=0 lp
+  CO_OC_MODEL="" CO_OC_ERROR="" CO_OC_FALLBACK="" CO_OC_TASK="$task" CO_OC_CUT=""
   variant=$(co_cfg ".variants.$task")
+  # answers.max_tokens.<task>: the prompt asks for a short answer; a runaway is cut below
+  case "$task" in read|explore|ask) co_cfgi budget ".answers.max_tokens.$task" 0 ;; esac
+  if [ "$budget" -gt 0 ]; then
+    co_tmp lp
+    # before the last <question> line, so the question stays last (else at the end)
+    LC_ALL=C awk -v rule="$(co_length_rule "$budget")" '
+      { l[NR] = $0; if (index($0, "<question>") == 1) q = NR }
+      END { for (i = 1; i <= NR; i++) { if (i == q) print rule; print l[i] }; if (!q) print rule }' "$prompt_file" > "$lp"
+    prompt_file=$lp
+  fi
 
   while IFS= read -r model; do
     [ -z "$model" ] && continue
@@ -535,6 +572,7 @@ co_oc_invoke() {
       # answers can quote what a worker read (an explore agent may have opened
       # .env); generated code is left alone (its fixtures are not secrets)
       if [ "$task" != write ]; then co_redact < "$answer_file" > "$answer_file.r" && mv "$answer_file.r" "$answer_file"; fi
+      [ "$budget" -gt 0 ] && co_cut_answer "$answer_file" "$task" "$budget"
       CO_OC_MODEL="$model"
       [ "$model" = "@default" ] && CO_OC_MODEL="opencode-default-model"
       # the agent learns why it got a fallback model (footer)

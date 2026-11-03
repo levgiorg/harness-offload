@@ -5,7 +5,7 @@ import { invoke } from "./engine.ts";
 import { WorkerError } from "./backends/types.ts";
 import { fence, redact } from "./secrets.ts";
 import { appendStats, pruneLogs, workDir } from "./state.ts";
-import { countLines, fmtInt, shquote, stripAnsi, truncate } from "./text.ts";
+import { countLines, digitRuns, estTokensText, fmtInt, shquote, stripAnsi, tokensOf, truncate } from "./text.ts";
 
 const KEY_RE = /[a-z0-9_)\/-][.][a-z][a-z]*:[0-9][0-9]*|error|fail|exception|traceback|panic|fatal|segmentation fault|segfault|assert|✗|✘|✖|err!|cannot |can.t |undefined reference|no such file|permission denied|timed out|timeout|unresolved|not found|denied|refused|abort|killed|out of memory|oom|●|^\s*(expected|received):/;
 const ZERO_RE = /(^|[^0-9])0 (errors?|failures?|failed|problems?)|(errors?|failures?|failed)\s*[:=]\s*0([^0-9]|$)|no errors|without errors|0 vulnerabilities/;
@@ -256,6 +256,144 @@ export interface DigestOptions {
   text?: string;
 }
 
+/** Each failing test's own block, verbatim, for the common runners: jest (● name), vitest
+ *  (FAIL file > name), pytest (____ name ____), go test (--- FAIL:), cargo (---- name stdout ----).
+ *  The first line carries its line number; a long block ends with how to see the rest. Empty
+ *  when there is no such block. Twin: co_fail_blocks. */
+export function failBlocks(S: Src, log: string, maxb: number, maxl: number, w: number): string[] {
+  const ind = (s: string) => /^[ \t]*/.exec(s)![0].length;
+  const startKind = (s: string) =>
+    /^[ \t]*● /.test(s) ? "j"
+    : /^[ \t]*FAIL[ \t]+[^ \t][^]* > /.test(s) ? "v"
+    : /^___+ [^]* ___+[ \t]*$/.test(s) ? "p"
+    : /^[ \t]*--- FAIL: /.test(s) ? "g"
+    : /^---- [^]* stdout ----[ \t]*$/.test(s) ? "c"
+    : "";
+  const blank = (s: string) => /^[ \t]*$/.test(s);
+  let kind = "", base = 0, first = 0, n = 0, last = 0, nb = 0, nr = 0;
+  let b: string[] = [];
+  const seen = new Set<string>();
+  const out: string[] = [];
+  const cont = (s: string) =>
+    kind === "j" ? blank(s) || /^[ \t]/.test(s)
+    : kind === "v" ? !blank(s) && !/^[ \t]*(Test Files|Tests|Duration|Start at|Snapshots) /.test(s)
+    : kind === "p" ? !/^(___+ |===+)/.test(s)
+    : kind === "g" ? !blank(s) && ind(s) > base
+    : !blank(s);
+  const flush = () => {
+    if (!kind) return;
+    n = last;
+    if (!seen.has(b[0])) {
+      seen.add(b[0]);
+      nb++;
+      if (nb <= maxb) {
+        out.push(`L${first}: ${b[0].slice(0, w)}`);
+        for (let k = 2; k <= n && k <= maxl; k++) out.push(b[k - 1].slice(0, w));
+        if (n > maxl) out.push(`  … ${n - maxl} more lines: sed -n "${first + maxl},${first + n - 1}p" ${shquote(log)}`);
+      }
+    }
+    kind = "";
+    n = last = 0;
+  };
+  for (const raw of S.lines()) {
+    nr++;
+    const s = stripAnsi(raw).replace(/\r$/, "");
+    const k = startKind(s);
+    // a go parent whose only content is a failing subtest: the subtest says it all
+    if (k === "g" && kind === "g" && last === 1 && ind(s) > base) kind = "";
+    if (k) {
+      flush();
+      kind = k;
+      base = ind(s);
+      first = nr;
+      n = last = 1;
+      b = [s];
+      continue;
+    }
+    if (!kind) continue;
+    if (!cont(s)) {
+      flush();
+      continue;
+    }
+    n++;
+    if (!blank(s)) last = n;
+    if (n <= maxl) b[n - 1] = s;
+  }
+  flush();
+  if (!nb) return [];
+  const res = [`── failures, verbatim (${nb}) ──`, ...out];
+  if (nb > maxb) res.push(`… ${nb - maxb} more failures in the full log`);
+  return res;
+}
+
+const STOP = new Set("the and for why what does how with from this that are was not did which where when there into its were have has had you your can could should would will just only also than then them they our out about after before over under".split(" "));
+const asciiLower = (s: string) => s.replace(/[A-Z]/g, (c) => c.toLowerCase());
+
+/** Up to 3 windows of the log (2 lines before to 4 after the best line) that best match the
+ *  question, without a model: tokens (ASCII, case-insensitive), a question word matches the
+ *  tokens it starts, a number only the same number; a line scores the sum of its terms'
+ *  weights, lines ÷ lines-with-the-term; ties go to the earlier line. Twin: co_intent_windows. */
+export function intentWindows(S: Src, question: string, w: number): string[] {
+  const terms: { t: string; num: boolean }[] = [];
+  const seen = new Set<string>();
+  for (const r of asciiLower(question).split(/[^a-z0-9_]+/)) {
+    if (!r || STOP.has(r) || seen.has(r)) continue;
+    if (/^[0-9]+$/.test(r)) terms.push({ t: r, num: true });
+    else if (r.length >= 3) terms.push({ t: r, num: false });
+    else continue;
+    seen.add(r);
+  }
+  let total = 0;
+  const df = new Array<number>(terms.length).fill(0);
+  const cand: { n: number; hits: number[] }[] = [];
+  for (const line of S.lines()) {
+    total++;
+    if (!terms.length) continue;
+    const tk = asciiLower(line).split(/[^a-z0-9_]+/);
+    const hits: number[] = [];
+    terms.forEach((term, k) => {
+      if (tk.some((x) => (term.num ? x === term.t : x.slice(0, term.t.length) === term.t))) {
+        df[k]++;
+        hits.push(k);
+      }
+    });
+    if (hits.length) cand.push({ n: total, hits });
+  }
+  const sc = new Map<number, number>();
+  for (const c of cand) sc.set(c.n, c.hits.reduce((v, k) => v + Math.floor(total / df[k]), 0));
+  const used = new Set<number>();
+  const win: [number, number][] = [];
+  for (let j = 0; j < 3; j++) {
+    let best = 0;
+    for (const c of cand) if (!used.has(c.n) && (!best || sc.get(c.n)! > sc.get(best)!)) best = c.n;
+    if (!best) break;
+    const lo = Math.max(1, best - 2);
+    const hi = Math.min(total, best + 4);
+    win.push([lo, hi]);
+    for (let n = lo - 2; n <= hi + 2; n++) used.add(n);
+  }
+  if (!win.length) return [];
+  win.sort((a, b) => a[0] - b[0]);
+  const out = [`── lines about the question (best ${win.length}, no model) ──`];
+  let n = 0;
+  for (const raw of S.lines()) {
+    n++;
+    for (const [lo, hi] of win) {
+      if (n < lo || n > hi) continue;
+      if (n === lo) out.push(`L${lo}-${hi}:`);
+      out.push(stripAnsi(raw).replace(/\r$/, "").slice(0, w));
+    }
+  }
+  return out;
+}
+
+/** Estimated tokens of a log, line by line (big logs stream). Twin: co_tokens. */
+export function estTokensSrc(S: Src): number {
+  let runs = 0;
+  for (const l of S.lines()) runs += digitRuns(l);
+  return tokensOf(S.bytes, runs);
+}
+
 export async function digest(log: string, rawLabel: string, code: string, focus: string, source: string, modelOverride?: string, opts: DigestOptions = {}): Promise<string> {
   // a command line can carry credentials (FOO_KEY=… cmd): never send/store them
   const label = redact(rawLabel);
@@ -315,8 +453,11 @@ export async function digest(log: string, rawLabel: string, code: string, focus:
   const keySection = opts.prev && existsSync(opts.prev.log)
     ? keyChanges(key.lines, S, logSrc(opts.prev.log), opts.prev.at).map((l) => l.slice(0, width))
     : key.distinct > 0 ? [`── key lines, verbatim (${key.distinct} distinct) ──`, ...key.lines.map((l) => l.slice(0, width))] : ["── no error-like lines found ──"];
-  if (compact) out.push(...keySection, ...sumSection);
-  else out.push(...sumSection, ...keySection);
+  const failSection = compact ? failBlocks(S, log, 3, 6, width) : failBlocks(S, log, 5, 12, width);
+  // a question asked on the command line (-q/--intent): the log lines that best match it
+  const intentSection = focus && source !== "hook" ? intentWindows(S, focus, width) : [];
+  if (compact) out.push(...failSection, ...keySection, ...sumSection);
+  else out.push(...sumSection, ...intentSection, ...failSection, ...keySection);
   if (!summary && !compact) tailN += 10;
   out.push(`── last ${tailN} lines ──`);
   out.push(...S.last(tailN).map((l) => stripAnsi(l).slice(0, width)));
@@ -325,7 +466,7 @@ export async function digest(log: string, rawLabel: string, code: string, focus:
   const bout = Buffer.byteLength(result);
   appendStats({
     kind: "digest", source, label, log, model, bytes_in: bytes, bytes_out: bout,
-    saved_tokens: Math.max(0, Math.floor((bytes - bout) / 4)), seconds: Math.round((Date.now() - t0) / 1000),
+    saved_tokens: Math.max(0, estTokensSrc(S) - estTokensText(result)), seconds: Math.round((Date.now() - t0) / 1000),
     model_ok: Boolean(summary), model_tried: tried, worker_tokens_in: tin, worker_tokens_out: tout,
   });
   pruneLogs();
@@ -423,7 +564,7 @@ export function searchView(log: string, rawLabel: string, given?: string): strin
   const bout = Buffer.byteLength(result);
   appendStats({
     kind: "digest", source: "search", label, log, model: "", bytes_in: bytes, bytes_out: bout,
-    saved_tokens: Math.max(0, Math.floor((bytes - bout) / 4)), seconds: Math.round((Date.now() - t0) / 1000),
+    saved_tokens: Math.max(0, estTokensSrc(logSrc(log, given)) - estTokensText(result)), seconds: Math.round((Date.now() - t0) / 1000),
     model_ok: false, model_tried: false, worker_tokens_in: 0, worker_tokens_out: 0,
   });
   pruneLogs();
@@ -480,7 +621,7 @@ export function diffView(log: string, rawLabel: string, given?: string): string 
   const bout = Buffer.byteLength(result);
   appendStats({
     kind: "digest", source: "diff", label, log, model: "", bytes_in: S.bytes, bytes_out: bout,
-    saved_tokens: Math.max(0, Math.floor((S.bytes - bout) / 4)), seconds: Math.round((Date.now() - t0) / 1000),
+    saved_tokens: Math.max(0, estTokensSrc(S) - estTokensText(result)), seconds: Math.round((Date.now() - t0) / 1000),
     model_ok: false, model_tried: false, worker_tokens_in: 0, worker_tokens_out: 0,
   });
   pruneLogs();

@@ -57,7 +57,7 @@ check_dump() {
 
   for f in "${files[@]}"; do
     [ -f "$f" ] || continue
-    lines=$(co_file_lines "$f"); bytes=$(co_file_bytes "$f"); tokens=$(co_est_tokens "$bytes")
+    lines=$(co_file_lines "$f"); bytes=$(co_file_bytes "$f"); tokens=$(co_tokens "$f" "$bytes")
     case "$prog" in
       head|tail)
         n=$(printf '%s' "$n" | LC_ALL=C tr -cd '0-9'); [ -z "$n" ] && n=10

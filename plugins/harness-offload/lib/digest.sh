@@ -139,6 +139,123 @@ co_log_excerpt() {
 
 # co_digest <log_file> <label> <exit_code|""> <focus> <source>
 # Prints the digest. <source> is recorded in stats (run|hook|summarize).
+# co_fail_blocks LOG MAX_BLOCKS MAX_LINES WIDTH — each failing test's own block,
+# verbatim, for the common runners: jest (● name), vitest (FAIL file > name),
+# pytest (____ name ____), go test (--- FAIL:), cargo (---- name stdout ----).
+# The first line carries its line number; a long block ends with how to see the
+# rest. Prints nothing when there is no such block. Twin: failBlocks in digest.ts.
+co_fail_blocks() {
+  LC_ALL=C awk -v maxb="$2" -v maxl="$3" -v w="$4" -v logq="$(co_shquote "$1")" '
+    function ind(line) { match(line, /^[ \t]*/); return RLENGTH }
+    function startkind(s) {
+      if (s ~ /^[ \t]*● /) return "j"
+      if (s ~ /^[ \t]*FAIL[ \t]+[^ \t].* > /) return "v"
+      if (s ~ /^___+ .* ___+[ \t]*$/) return "p"
+      if (s ~ /^[ \t]*--- FAIL: /) return "g"
+      if (s ~ /^---- .* stdout ----[ \t]*$/) return "c"
+      return ""
+    }
+    function cont(s) {
+      if (kind == "j") return s ~ /^[ \t]*$/ || s ~ /^[ \t]/
+      if (kind == "v") return s !~ /^[ \t]*$/ && s !~ /^[ \t]*(Test Files|Tests|Duration|Start at|Snapshots) /
+      if (kind == "p") return s !~ /^(___+ |===+)/
+      if (kind == "g") return s !~ /^[ \t]*$/ && ind(s) > base
+      return s !~ /^[ \t]*$/
+    }
+    function flush(    k) {
+      if (kind == "") return
+      n = last
+      if (!(b[1] in seen)) {
+        seen[b[1]] = 1; nb++
+        if (nb <= maxb) {
+          out = out "L" first ": " substr(b[1], 1, w) "\n"
+          for (k = 2; k <= n && k <= maxl; k++) out = out substr(b[k], 1, w) "\n"
+          if (n > maxl) out = out "  … " (n - maxl) " more lines: sed -n \"" (first + maxl) "," (first + n - 1) "p\" " logq "\n"
+        }
+      }
+      kind = ""; n = last = 0
+    }
+    {
+      s = $0; gsub(/\033\[[0-9;]*[A-Za-z]/, "", s); sub(/\r$/, "", s)
+      k = startkind(s)
+      # a go parent whose only content is a failing subtest: the subtest says it all
+      if (k == "g" && kind == "g" && last == 1 && ind(s) > base) kind = ""
+      if (k != "") { flush(); kind = k; base = ind(s); first = NR; n = last = 1; b[1] = s; next }
+      if (kind == "") next
+      if (!cont(s)) { flush(); next }
+      n++; if (s !~ /^[ \t]*$/) last = n
+      if (n <= maxl) b[n] = s
+    }
+    END {
+      flush()
+      if (nb == 0) exit
+      printf "── failures, verbatim (%d) ──\n%s", nb, out
+      if (nb > maxb) printf "… %d more failures in the full log\n", nb - maxb
+    }' "$1"
+}
+
+# co_intent_windows LOG QUESTION WIDTH — up to 3 windows of the log (2 lines before to
+# 4 after the best line) that best match the question, without a model. Lines and the
+# question are split into tokens (ASCII, case-insensitive); a word of the question matches
+# the tokens it starts ("fail" → "failed"), a number only the same number. A line scores
+# the sum of its matched terms' weights, lines ÷ lines-with-the-term (rare terms count
+# most); ties go to the earlier line. Integer arithmetic only, so both engines rank the
+# same. Prints nothing when no line matches. Twin: intentWindows in digest.ts.
+co_intent_windows() {
+  CO_Q="$2" LC_ALL=C awk -v w="$3" '
+    function has(l, t,    n, k, i) {
+      n = split(l, tk, /[^a-z0-9_]+/)
+      for (k = 1; k <= nt; k++) {
+        hit[k] = 0
+        for (i = 1; i <= n; i++) {
+          if (isnum[k] ? tk[i] == term[k] : substr(tk[i], 1, length(term[k])) == term[k]) { hit[k] = 1; break }
+        }
+      }
+    }
+    BEGIN {
+      q = ENVIRON["CO_Q"]
+      ns = split("the and for why what does how with from this that are was not did which where when there into its were have has had you your can could should would will just only also than then them they our out about after before over under", sw, " ")
+      for (i = 1; i <= ns; i++) stop[sw[i]] = 1
+      m = split(tolower(q), raw, /[^a-z0-9_]+/)
+      for (i = 1; i <= m; i++) {
+        r = raw[i]
+        if (r == "" || (r in stop) || (r in seen)) continue
+        if (r ~ /^[0-9]+$/) { seen[r] = 1; nt++; term[nt] = r; isnum[nt] = 1 }
+        else if (length(r) >= 3) { seen[r] = 1; nt++; term[nt] = r; isnum[nt] = 0 }
+      }
+    }
+    FNR == NR {
+      total = NR
+      if (!nt) next
+      has(tolower($0))
+      s = 0
+      for (k = 1; k <= nt; k++) if (hit[k]) { df[k]++; m2[NR, k] = 1; s = 1 }
+      if (s) cand[++nc] = NR
+      next
+    }
+    FNR == 1 && !picked {
+      picked = 1
+      for (c = 1; c <= nc; c++) { n = cand[c]; v = 0; for (k = 1; k <= nt; k++) if ((n, k) in m2) v += int(total / df[k]); sc[n] = v }
+      for (j = 1; j <= 3; j++) {
+        best = 0
+        for (c = 1; c <= nc; c++) { n = cand[c]; if (n in used) continue; if (!best || sc[n] > sc[best]) best = n }
+        if (!best) break
+        lo = best - 2; if (lo < 1) lo = 1; hi = best + 4; if (hi > total) hi = total
+        wl[j] = lo; wh[j] = hi; nw = j
+        for (n = lo - 2; n <= hi + 2; n++) used[n] = 1
+      }
+      for (a = 1; a <= nw; a++) for (b = a + 1; b <= nw; b++) if (wl[b] < wl[a]) { t = wl[a]; wl[a] = wl[b]; wl[b] = t; t = wh[a]; wh[a] = wh[b]; wh[b] = t }
+      if (nw) printf "── lines about the question (best %d, no model) ──\n", nw
+    }
+    {
+      for (j = 1; j <= nw; j++) if (FNR >= wl[j] && FNR <= wh[j]) {
+        s = $0; gsub(/\033\[[0-9;]*[A-Za-z]/, "", s); sub(/\r$/, "", s)
+        if (FNR == wl[j]) printf "L%d-%d:\n", wl[j], wh[j]
+        print substr(s, 1, w)
+      }
+    }' "$1" "$1"
+}
+
 co_digest() {
   local log="$1" label code="$3" focus="$4" source="$5"
   # a command line can carry credentials (FOO_KEY=… cmd): never send/store them
@@ -196,6 +313,15 @@ co_digest() {
       printf -- '── model summary %s ──\n' "$model_note"
     fi
   }
+  _sc_intent_section() {
+    # a question asked on the command line (-q/--intent): the log lines that best match it
+    [ -n "$focus" ] && [ "$source" != hook ] && co_intent_windows "$log" "$focus" "$width"
+    return 0
+  }
+  _sc_fail_section() {
+    if [ "${OFFLOAD_DIGEST_COMPACT:-}" = 1 ]; then co_fail_blocks "$log" 3 6 "$width"
+    else co_fail_blocks "$log" 5 12 "$width"; fi
+  }
   _sc_key_section() {
     # a re-run of the same command in this session: only what changed (OFFLOAD_DIGEST_PREV)
     if [ -n "${OFFLOAD_DIGEST_PREV:-}" ] && [ -f "$OFFLOAD_DIGEST_PREV" ]; then
@@ -213,26 +339,28 @@ co_digest() {
     printf '%s\n' "$status_line"
     # Compact digests are cut to a 2KB preview by Claude Code: the verbatim
     # lines go first there, since they are the part that must survive.
-    if [ "${OFFLOAD_DIGEST_COMPACT:-}" = 1 ]; then _sc_key_section; _sc_summary_section
-    else _sc_summary_section; _sc_key_section; fi
+    if [ "${OFFLOAD_DIGEST_COMPACT:-}" = 1 ]; then _sc_fail_section; _sc_key_section; _sc_summary_section
+    else _sc_summary_section; _sc_intent_section; _sc_fail_section; _sc_key_section; fi
     [ -z "$summary" ] && [ "${OFFLOAD_DIGEST_COMPACT:-}" != 1 ] && tail_n=$(( tail_n + 10 ))
     printf -- '── last %s lines ──\n' "$tail_n"
     tail -n "$tail_n" "$log" | LC_ALL=C sed -e "s/$(printf '\033')\[[0-9;]*[A-Za-z]//g" | LC_ALL=C cut -c1-"$width"
     printf -- '── more: grep -n -iE "error|fail" %s | head -50   ·   sed -n "START,ENDp" %s\n' "$(co_shquote "$log")" "$(co_shquote "$log")"
   } > "$keyf.out"
 
-  local out_bytes
+  local out_bytes ein eout
   out_bytes=$(co_file_bytes "$keyf.out")
+  ein=$(co_tokens "$log" "$bytes"); eout=$(co_tokens "$keyf.out" "$out_bytes")
   cat "$keyf.out"
   rm -f "$keyf.out"
 
   co_stats_append "$(jq -nc --arg src "$source" --arg model "${CO_OC_MODEL:-}" --arg lbl "$label" --arg log "$log" \
     --argjson bin "$bytes" --argjson bout "$out_bytes" --argjson secs "$(co_elapsed "$t0")" \
+    --argjson ein "$ein" --argjson eout "$eout" \
     --argjson ok "$([ -n "$summary" ] && echo true || echo false)" \
     --argjson tried "$use_model" \
     --argjson tin "${CO_OC_TOKENS_IN:-0}" --argjson tout "${CO_OC_TOKENS_OUT:-0}" \
     '{ts: now | floor, kind: "digest", source: $src, label: $lbl, log: $log, model: $model, bytes_in: $bin, bytes_out: $bout,
-      saved_tokens: ((($bin - $bout) / 4) | floor | if . < 0 then 0 else . end), seconds: $secs, model_ok: $ok, model_tried: $tried,
+      saved_tokens: (($ein - $eout) | if . < 0 then 0 else . end), seconds: $secs, model_ok: $ok, model_tried: $tried,
       worker_tokens_in: $tin, worker_tokens_out: $tout}')"
   co_prune_logs
 }
@@ -318,9 +446,9 @@ co_search_view() {
     }' "$log" > "$out"
   cat "$out"
   co_stats_append "$(jq -nc --arg lbl "$label" --arg log "$log" --argjson bin "$bytes" --argjson bout "$(co_file_bytes "$out")" \
-    --argjson secs "$(co_elapsed "$t0")" \
+    --argjson secs "$(co_elapsed "$t0")" --argjson ein "$(co_tokens "$log" "$bytes")" --argjson eout "$(co_tokens "$out" "$(co_file_bytes "$out")")" \
     '{ts: now | floor, kind: "digest", source: "search", label: $lbl, log: $log, model: "", bytes_in: $bin, bytes_out: $bout,
-      saved_tokens: ((($bin - $bout) / 4) | floor | if . < 0 then 0 else . end), seconds: $secs, model_ok: false, model_tried: false,
+      saved_tokens: (($ein - $eout) | if . < 0 then 0 else . end), seconds: $secs, model_ok: false, model_tried: false,
       worker_tokens_in: 0, worker_tokens_out: 0}')"
   co_prune_logs
 }
@@ -361,9 +489,9 @@ co_diff_view() {
     }' "$log" > "$out"
   cat "$out"
   co_stats_append "$(jq -nc --arg lbl "$label" --arg log "$log" --argjson bin "$bytes" --argjson bout "$(co_file_bytes "$out")" \
-    --argjson secs "$(co_elapsed "$t0")" \
+    --argjson secs "$(co_elapsed "$t0")" --argjson ein "$(co_tokens "$log" "$bytes")" --argjson eout "$(co_tokens "$out" "$(co_file_bytes "$out")")" \
     '{ts: now | floor, kind: "digest", source: "diff", label: $lbl, log: $log, model: "", bytes_in: $bin, bytes_out: $bout,
-      saved_tokens: ((($bin - $bout) / 4) | floor | if . < 0 then 0 else . end), seconds: $secs, model_ok: false, model_tried: false,
+      saved_tokens: (($ein - $eout) | if . < 0 then 0 else . end), seconds: $secs, model_ok: false, model_tried: false,
       worker_tokens_in: 0, worker_tokens_out: 0}')"
   co_prune_logs
 }

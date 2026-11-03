@@ -3,7 +3,7 @@
 // 0, which every host treats as "no opinion" (fail open).
 import { autowrap, bashGuard, available, firstSession, Host, PAUSED_MESSAGE, postBash, readGuard, sessionGuide, Verdict, welcomeMessage } from "../hooks/logic.ts";
 import { readFileSync } from "node:fs";
-import { seenForget } from "../state.ts";
+import { compactIndex, seenForget } from "../state.ts";
 import { setProjectDir } from "../paths.ts";
 import { cfgBool } from "../config.ts";
 
@@ -65,10 +65,12 @@ async function handle(host: Host, event: string, input: J): Promise<J | undefine
 
   // Crush's SessionStart output is ignored (the guide goes in via context paths)
   // after a compaction or /clear the agent no longer has the digests it saw
+  // after a compaction it is told where their full logs are (a /clear means start afresh)
+  const index = event === "session-start" && input.source === "compact" ? compactIndex(input.session_id) : "";
   if (event === "session-start" && (input.source === "compact" || input.source === "clear")) seenForget(input.session_id);
   if (event === "session-start" && host === "crush") return undefined;
   if (event === "session-start") {
-    const guide = sessionGuide(host);
+    const guide = sessionGuide(host) + (index ? `\n${index}` : "");
     // Claude Code shows systemMessage to the user: one line when offload is
     // paused, and once, on the first session, what it does and with which model
     const userFacing = host === "claude" && input.source === "startup";

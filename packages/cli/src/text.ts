@@ -24,7 +24,23 @@ export function fileLines(path: string): number {
   }
 }
 
-export const estTokens = (bytes: number): number => Math.floor((bytes + 3) / 4);
+/** Token estimates. Bytes ÷ 4 undercounts real tokenizers by up to 59% (dense logs, CSV,
+ *  pretty JSON); 0.277 per byte + 1.127 per run of digits was fit on 25 files against two real
+ *  tokenizers (docs/autopilot/EXPERIMENTS.md, A8). estTokens(bytes) is the bytes-only fallback.
+ *  Twins: co_tokens, co_est_tokens. */
+export const estTokens = (bytes: number): number => Math.floor((bytes * 3 + 9) / 10);
+export const digitRuns = (s: string): number => (s.match(/[0-9]+/g) ?? []).length;
+export const tokensOf = (bytes: number, runs: number): number => Math.floor((bytes * 277 + runs * 1127 + 999) / 1000);
+export const estTokensText = (s: string): number => tokensOf(Buffer.byteLength(s), digitRuns(s));
+/** The most a text of BYTES can count (every other byte a digit run). Twin: co_tokens_max. */
+export const tokensMax = (bytes: number): number => Math.floor((bytes * 840 + 999) / 1000);
+export function estTokensFile(path: string, bytes = fileBytes(path)): number {
+  try {
+    return tokensOf(bytes, digitRuns(readFileSync(path, "latin1")));
+  } catch {
+    return estTokens(bytes);
+  }
+}
 
 /** Text = no NUL byte in the first 8 KB. */
 export function isText(path: string): boolean {

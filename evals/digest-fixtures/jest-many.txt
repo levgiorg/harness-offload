@@ -1,0 +1,113 @@
+# keep: Received: 107
+# keep: > 11 |     expect(price(1)).toBe(7);
+# keep: Received: 114
+# keep: > 12 |     expect(price(2)).toBe(14);
+# keep: Received: 121
+# keep: > 13 |     expect(price(3)).toBe(21);
+# keep: Received: 128
+# keep: > 14 |     expect(price(4)).toBe(28);
+# keep: Received: 135
+# keep: > 15 |     expect(price(5)).toBe(35);
+# keep: … 2 more failures in the full log
+# keep: Tests:       7 failed, 893 passed, 900 total
+@@noise 120 PASS src/m1/{i}.test.ts (0.{i}s)@@
+FAIL src/price/p1.test.ts
+  ● price › case 1
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: 7
+    Received: 107
+
+      10 |   it("case 1", () => {
+    > 11 |     expect(price(1)).toBe(7);
+         |                       ^
+      at Object.<anonymous> (src/price/p1.test.ts:11:23)
+
+@@noise 120 PASS src/m2/{i}.test.ts (0.{i}s)@@
+FAIL src/price/p2.test.ts
+  ● price › case 2
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: 14
+    Received: 114
+
+      11 |   it("case 2", () => {
+    > 12 |     expect(price(2)).toBe(14);
+         |                       ^
+      at Object.<anonymous> (src/price/p2.test.ts:12:23)
+
+@@noise 120 PASS src/m3/{i}.test.ts (0.{i}s)@@
+FAIL src/price/p3.test.ts
+  ● price › case 3
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: 21
+    Received: 121
+
+      12 |   it("case 3", () => {
+    > 13 |     expect(price(3)).toBe(21);
+         |                       ^
+      at Object.<anonymous> (src/price/p3.test.ts:13:23)
+
+@@noise 120 PASS src/m4/{i}.test.ts (0.{i}s)@@
+FAIL src/price/p4.test.ts
+  ● price › case 4
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: 28
+    Received: 128
+
+      13 |   it("case 4", () => {
+    > 14 |     expect(price(4)).toBe(28);
+         |                       ^
+      at Object.<anonymous> (src/price/p4.test.ts:14:23)
+
+@@noise 120 PASS src/m5/{i}.test.ts (0.{i}s)@@
+FAIL src/price/p5.test.ts
+  ● price › case 5
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: 35
+    Received: 135
+
+      14 |   it("case 5", () => {
+    > 15 |     expect(price(5)).toBe(35);
+         |                       ^
+      at Object.<anonymous> (src/price/p5.test.ts:15:23)
+
+@@noise 120 PASS src/m6/{i}.test.ts (0.{i}s)@@
+FAIL src/price/p6.test.ts
+  ● price › case 6
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: 42
+    Received: 142
+
+      15 |   it("case 6", () => {
+    > 16 |     expect(price(6)).toBe(42);
+         |                       ^
+      at Object.<anonymous> (src/price/p6.test.ts:16:23)
+
+@@noise 120 PASS src/m7/{i}.test.ts (0.{i}s)@@
+FAIL src/price/p7.test.ts
+  ● price › case 7
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: 49
+    Received: 149
+
+      16 |   it("case 7", () => {
+    > 17 |     expect(price(7)).toBe(49);
+         |                       ^
+      at Object.<anonymous> (src/price/p7.test.ts:17:23)
+
+Test Suites: 7 failed, 113 passed, 120 total
+Tests:       7 failed, 893 passed, 900 total
+Time:        41.0 s

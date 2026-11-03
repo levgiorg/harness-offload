@@ -126,7 +126,7 @@ async function main(argv: string[]): Promise<number> {
     case "demo":
       return (await import("./commands/demo.ts")).cmdDemo();
     case "statusline":
-      (await admin()).cmdStatusline();
+      await (await admin()).cmdStatusline();
       return 0;
     case "config":
       (await admin()).cmdConfig(rest);

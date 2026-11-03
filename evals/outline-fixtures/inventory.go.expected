@@ -1,0 +1,3 @@
+  L5-9: type Item struct
+  L10-17: func (i *Item) Reserve(n int) error
+  L18-20: func New(id string) *Item

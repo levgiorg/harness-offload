@@ -95,6 +95,23 @@ export async function refCheck(ref: string): Promise<{ note?: string; err?: stri
   return { note: !apiKey(ep) && ep.api_key_env ? `${note}; warning: no API key (export ${ep.api_key_env} or run offload setup)` : note };
 }
 
+/** Why REF can't do explore (read-only tool use), or undefined. @host is resolved for the
+ *  calling harness. Explore then falls to the next model in the chain. */
+export function exploreProblem(ref: string): string | undefined {
+  let r = ref;
+  if (r === "@host" || r === "@self") {
+    const h = detectHost();
+    r = (h && hostModel(h)) || "";
+  }
+  const i = r.indexOf(":");
+  const backend = i > 0 && !r.slice(0, i).includes("/") ? r.slice(0, i) : "";
+  return backend && AGENTS.includes(backend) ? CLI_AGENTS[backend].noExplore : undefined;
+}
+const exploreWarning = (ref: string) => {
+  const p = exploreProblem(ref);
+  return p ? `; warning: ${p} — explore uses the next model in the chain (set one: offload model explore claude:haiku, or another CLI or provider)` : "";
+};
+
 function slotKey(slot: string): string | undefined {
   if (SLOTS.includes(slot)) return `models.${slot}`;
   if (/^[a-z0-9_][a-z0-9_-]*$/.test(slot) && cfg(`tasks.${slot}`) !== undefined) return `tasks.${slot}.model`;
@@ -117,7 +134,8 @@ async function line(slot: string, key: string): Promise<string> {
     v = "@default";
   }
   const r = await refCheck(v);
-  return `  ${pad(label)} ${v} — ${r.err ? `error: ${r.err}` : r.note}\n`;
+  const explores = slot === "explore" || (slot === "default" && !cfgStr("models.explore"));
+  return `  ${pad(label)} ${v} — ${r.err ? `error: ${r.err}` : r.note + (explores ? exploreWarning(v) : "")}\n`;
 }
 
 function badSlot(w: string): never {
@@ -180,7 +198,8 @@ export async function cmdModel(argv: string[]): Promise<number> {
   for (const r of refs) {
     const c = await refCheck(r);
     if (c.err) die(`model: ${c.err} (to store it anyway: offload config set ${key} VALUE)`);
-    notes += `  ${r} — ${c.note}\n`;
+    const explores = slot === "explore" || (slot === "default" && !cfgStr("models.explore"));
+    notes += `  ${r} — ${c.note}${explores ? exploreWarning(r) : ""}\n`;
   }
   const val: Json = slot === "fallback" ? refs : refs[0];
   try {

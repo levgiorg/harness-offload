@@ -1,6 +1,6 @@
 import { redact } from "./secrets.ts";
 import { appendFileSync, chmodSync, closeSync, existsSync, openSync, readSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { cfgInt, cfgStr } from "./config.ts";
 import { stateHome } from "./paths.ts";
 
@@ -135,6 +135,37 @@ export const seenFile = (session: string, output: Buffer | { file: string }): st
 /** The last run of one command in a session (for a re-run's "what changed" digest). */
 export const seenCmdFile = (session: string, cmd: string): string => join(stateDir(), "seen", `${seenSession(session)}-cmd-${cksum(Buffer.from(cmd))}`);
 /** Forget what a session saw (after a compaction or /clear the agent no longer has it). */
+/** After a compaction: the session's digested outputs, newest first (at most 600 bytes), so the
+ *  agent still finds the full logs. Read before seenForget drops the markers. Twin: co_compact_index. */
+export function compactIndex(session: string | undefined): string {
+  if (!session) return "";
+  const prefix = `${seenSession(session)}-cmd-`;
+  const rows: { at: number; hms: string; log: string }[] = [];
+  try {
+    for (const f of readdirSync(join(stateDir(), "seen"))) {
+      if (!f.startsWith(prefix)) continue;
+      const m = /^(\d+) (\S+) (.*)$/.exec(readFileSync(join(stateDir(), "seen", f), "utf8").replace(/\n$/, ""));
+      if (m) rows.push({ at: Number(m[1]), hms: m[2], log: m[3] });
+    }
+  } catch {
+    return "";
+  }
+  rows.sort((a, b) => b.at - a.at || Buffer.compare(Buffer.from(a.log), Buffer.from(b.log)));
+  const head = "Before the compaction, offload digested these outputs (full logs kept; offload summarize LOG digests one again):";
+  let n = Buffer.byteLength(head); // bytes, as the bash twin counts
+  let out = "";
+  for (const r of rows) {
+    if (!r.log || !existsSync(r.log)) continue;
+    const name = basename(r.log).replace(/^.{8}-.{6}-/, "").replace(/-[^-]*\.log$/, "");
+    const line = `  ${r.hms} ${name} → ${r.log}`;
+    const len = Buffer.byteLength(line);
+    if (n + 1 + len > 600) break;
+    out += `\n${line}`;
+    n += 1 + len;
+  }
+  return out ? head + out : "";
+}
+
 export function seenForget(session: string | undefined): void {
   if (!session) return;
   const prefix = `${seenSession(session)}-`;

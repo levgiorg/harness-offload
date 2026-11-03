@@ -3,7 +3,10 @@
 case "$0" in */*) . "${0%/*}/../lib/hook.sh" ;; *) . ../lib/hook.sh ;; esac
 
 co_cfg_bool '.enabled' true || exit 0
-# after a compaction or /clear the agent no longer has the digests it saw
+# after a compaction or /clear the agent no longer has the digests it saw; after a
+# compaction it is told where their full logs are (a /clear means start afresh)
+index=""
+[ "$HK_SOURCE" = compact ] && index=$(co_compact_index)
 case "$HK_SOURCE" in compact|clear) co_seen_forget ;; esac
 if ! co_backend_present; then
   [ "$HK_SOURCE" = "startup" ] || exit 0
@@ -18,12 +21,13 @@ task_line=""
 [ -n "$tasks" ] && task_line="- $HK_CLI task NAME [PATH...] — the user's own tasks: $tasks."$'\n'
 read -r -d '' guide <<EOF2
 offload is installed: cheap worker models do bulk reading/digesting so it stays out of your context. Use these shell commands:
-- $HK_CLI read -q "QUESTION" PATH... — questions about big files or dirs (PATH may be file:START-END). Answers cite path:Lx-Ly with machine-checked quotes; Read just those lines before editing.
+- $HK_CLI read -q "QUESTION" PATH... — questions about big files or dirs (PATH may be file:START-END or file#Symbol). Answers cite path:Lx-Ly with machine-checked quotes; Read just those lines before editing.
 - $HK_CLI explore "QUESTION" — read-only cheap agent searches the repo itself ("where/how is X done?" across many files).
 - $HK_CLI run -- CMD... — for noisy commands (tests, builds, installs, linters, long logs): prints a digest + verbatim error lines + full-log path, keeps the exit code.
 - $HK_CLI write --spec "..." --ref EXAMPLE_FILE --out NEW_FILE — boilerplate that follows an existing file's patterns (tests, configs, stubs); review the result.
 ${task_line}Keep for yourself: debugging reasoning, design decisions, edits (use Read offset/limit for exact text), small files. Full reads of files over ~$lines lines may be blocked with an outline and these options; large successful Bash output may come back as a digest with a log path.
 EOF2
+[ -n "$index" ] && guide="$guide"$'\n'"$index"
 # The first session after installing also tells the user, once, in one line
 # (systemMessage is shown to the user; the guide above goes to the model).
 if [ "$HK_DIALECT" = claude ] && [ "$HK_SOURCE" = "startup" ]; then

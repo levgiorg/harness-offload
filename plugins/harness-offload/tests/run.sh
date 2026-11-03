@@ -105,9 +105,29 @@ public class Svc {
 }
 JEOF
 ( . "$PLUGIN/lib/common.sh"; . "$PLUGIN/lib/outline.sh"; co_outline Svc.java ) > "$T/ol.txt" 2>&1
-expect_has "outline: java methods" "$(cat "$T/ol.txt")" "L3: public List<String> names(int limit)"
+expect_has "outline: java methods, with their line range" "$(cat "$T/ol.txt")" "L3-5: public List<String> names(int limit)"
 
 # ------------------------------------------------------------------ config
+# R14: install.sh only installs a binary whose SHA-256 is in the release's SHA256SUMS
+R="$T/rel"; mkdir -p "$R"
+case "$(uname -s | tr '[:upper:]' '[:lower:]')-$(uname -m)" in
+  *-x86_64|*-amd64) ia="offload-$(uname -s | tr '[:upper:]' '[:lower:]')-x64" ;; *) ia="offload-$(uname -s | tr '[:upper:]' '[:lower:]')-arm64" ;;
+esac
+printf '#!/bin/sh\necho offload from the release\n' > "$R/$ia"
+( cd "$R" && { command -v sha256sum >/dev/null 2>&1 && sha256sum "$ia" || shasum -a 256 "$ia"; } > SHA256SUMS )
+iout=$(PATH="/usr/bin:/bin" OFFLOAD_BINARY=1 OFFLOAD_RELEASE_BASE="file://$R" OFFLOAD_BIN_DIR="$T/ibin" sh "$HERE/../../../install.sh" 2>&1); irc=$?
+expect_eq "install.sh: a verified binary is installed" "$irc:$("$T/ibin/offload" 2>&1)" "0:offload from the release"
+expect_has "install.sh: … and says the checksum was checked" "$iout" "checksum ok (sha256 "
+printf 'tampered\n' >> "$R/$ia"
+iout=$(PATH="/usr/bin:/bin" OFFLOAD_BINARY=1 OFFLOAD_RELEASE_BASE="file://$R" OFFLOAD_BIN_DIR="$T/ibin" sh "$HERE/../../../install.sh" 2>&1); irc=$?
+expect_eq "install.sh: a changed download is refused (exit 1)" "$irc" 1
+expect_has "install.sh: … with both checksums" "$iout" "checksum mismatch for $ia"
+expect_eq "install.sh: … and the installed binary is untouched" "$("$T/ibin/offload" 2>&1)" "offload from the release"
+expect_eq "install.sh: … with no download left behind" "$(ls -A "$T/ibin" | grep -c '^\.offload-download')" 0
+: > "$R/SHA256SUMS"
+iout=$(PATH="/usr/bin:/bin" OFFLOAD_BINARY=1 OFFLOAD_RELEASE_BASE="file://$R" OFFLOAD_BIN_DIR="$T/ibin" sh "$HERE/../../../install.sh" 2>&1); irc=$?
+expect_has "install.sh: an asset missing from SHA256SUMS is refused" "$irc:$iout" "1:"
+
 section "config"
 out=$("$OFFLOAD" config show | sed 1,3d | jq -r '.hooks.read_guard')
 expect_eq "defaults load" "$out" "block"
@@ -208,7 +228,21 @@ out=$(co_outline big.ts 10)
 expect_has "outline: finds functions with line numbers" "$out" "L1: export function fn1"
 expect_has "outline: caps entries" "$out" "more symbols not shown"
 printf 'class A:\n    def f(self):\n        pass\ndef g():\n    pass\n' > t.py
-expect_has "outline: python" "$(co_outline t.py)" "L4: def g()"
+expect_has "outline: python, with its line range" "$(co_outline t.py)" "L4-5: def g()"
+# R10: read by symbol — path#Name or path#Class.method, its lines from the outline
+OF="$HERE/../../../evals/outline-fixtures"
+out=$(STUB_PROMPT="$T/prompt-sym" "$OFFLOAD" read -q "what does it do?" "$OF/orders.ts#OrderService.total" 2>&1)
+expect_has "read path#Class.method: sends just that method's lines" "$(grep '<file' "$T/prompt-sym")" "lines=\"15-19\" total_lines=\"26\""
+expect_has "read path#Name: … and says how many lines were kept out" "$out" "1 file(s), 5 lines"
+out=$(STUB_PROMPT="$T/prompt-sym" "$OFFLOAD" read -q "?" "$OF/inventory.go#Reserve" 2>&1)
+expect_has "read path#Name: a Go method" "$(grep '<file' "$T/prompt-sym")" "lines=\"10-17\""
+out=$("$OFFLOAD" read -q "?" "$OF/orders.ts#nope" 2>&1); rc=$?
+expect_eq "read path#Name: an unknown symbol is a usage error" "$rc" 2
+expect_has "read path#Name: … that says how to list them" "$out" "no symbol \"nope\" in "
+# A5: a symbol runs until the next one at the same or an outer level — a ready Read(offset/limit)
+for of in "$HERE/../../../evals/outline-fixtures/"*.expected; do
+  expect_eq "outline: $(basename "${of%.expected}") (symbols with line ranges)" "$("$OFFLOAD" outline "${of%.expected}" 2>&1)" "$(cat "$of")"
+done
 printf 'ok 1\nok 2\nERROR: boom at src/a.ts:3:1\n0 errors found\nERROR: boom at src/a.ts:3:1\nTests: 1 failed, 2 passed\n' > k.log
 kl=$(co_key_lines k.log 10 "$T/kc")
 expect_has "key lines: error with repeat count" "$kl" "L3: ERROR: boom at src/a.ts:3:1  (x2)"
@@ -255,6 +289,16 @@ for V in 1.19.5 2.2.5; do
   expect_eq "v$V hang → timeout exit 12" "$rc" 12
   out=$("$OFFLOAD" ask -m stub/empty "hi" 2>&1); rc=$?
   expect_eq "v$V empty answer → exit 14" "$rc" 14
+  # B3: timeouts.<task> for one kind of work; the rest keep opencode.timeout_seconds
+  echo '{"timeouts":{"ask":1},"opencode":{"timeout_seconds":60}}' > "$OFFLOAD_CONFIG"
+  s=$(date +%s); out=$("$OFFLOAD" ask -m stub/hang "hi" 2>&1); rc=$?; took=$(( $(date +%s) - s ))
+  expect_eq "v$V timeouts.ask applies to ask (exit 12, ${took}s)" "$rc:$(( took < 15 ))" "12:1"
+  expect_has "v$V … and the hint names it" "$out" "timeouts.<task>"
+  echo '{"timeouts":{"ask":60,"read":0},"opencode":{"timeout_seconds":1}}' > "$OFFLOAD_CONFIG"
+  printf 'x\n' > "$T/b3.txt"
+  s=$(date +%s); "$OFFLOAD" read -m stub/hang -q "q" "$T/b3.txt" >/dev/null 2>&1; rc=$?; took=$(( $(date +%s) - s ))
+  expect_eq "v$V timeouts.read 0 → opencode.timeout_seconds (exit 12, ${took}s)" "$rc:$(( took < 15 ))" "12:1"
+  rm -f "$OFFLOAD_CONFIG"
   # fallback chain + cooldown
   rm -rf "$OFFLOAD_STATE_DIR"; : > "$T/stub.log"
   echo '{"models":{"default":"stub/auth","fallback":["stub/retry","stub/ok"]}}' > "$OFFLOAD_CONFIG"
@@ -281,6 +325,27 @@ section "commands"
 out=$(STUB_PROMPT="$T/prompt" STUB_ANSWER='fn3 adds 3 — big.ts:L3 `export function fn3(a: number)`' "$OFFLOAD" read -q "what does fn3 do?" big.ts 2>&1)
 expect_has "read: answer + verified citation footer" "$out" "citations: 1 verified, 0 unverified"
 expect_has "read: line-numbered file in prompt" "$(cat "$T/prompt")" "     3	export function fn3"
+# B7: the prompt asks for a short answer (before the question), a runaway answer is cut
+expect_eq "read: the length rule sits just before the question" "$(tail -n 2 "$T/prompt" | head -n 1)" "<length>Keep the answer under about 2,000 tokens (roughly 1,500 words): the findings and their citations, no preamble or recap.</length>"
+echo '{"answers":{"max_tokens":{"ask":10}}}' > "$OFFLOAD_CONFIG"
+long=$(seq 1 40 | sed 's/^/finding number /')
+out=$(STUB_PROMPT="$T/prompt-b7" STUB_ANSWER="$long" "$OFFLOAD" ask "list them" 2>&1)
+expect_has "ask: a runaway answer is cut at whole lines" "$out" "finding number 3
+finding number 4
+
+[offload ask"
+expect_not "ask: … the rest is not shown" "$out" "finding number 5"
+expect_has "ask: … the footer says so, with the full answer's log" "$out" "answer cut at ~20 tokens (asked for 10) · full answer: $OFFLOAD_STATE_DIR/logs/"
+cut_log=$(printf '%s' "$out" | sed -n 's/.*full answer: \([^ ]*\.log\).*/\1/p')
+expect_eq "ask: … and the log holds all of it" "$(tail -n 1 "$cut_log")" "finding number 40"
+expect_has "ask: the length rule ends the prompt when there is no <question>" "$(tail -n 1 "$T/prompt-b7")" "<length>Keep the answer under about 10 tokens (roughly 7 words)"
+out=$(STUB_ANSWER="$(printf 'x%.0s' $(seq 1 200))" "$OFFLOAD" ask "one line" 2>&1)
+expect_not "ask: a one-line answer is never cut" "$out" "answer cut"
+echo '{"answers":{"max_tokens":{"ask":0}}}' > "$OFFLOAD_CONFIG"
+out=$(STUB_PROMPT="$T/prompt-b7" STUB_ANSWER="$long" "$OFFLOAD" ask "list them" 2>&1)
+expect_has "ask: max_tokens 0 → whole answer" "$out" "finding number 40"
+expect_not "ask: … and no length rule" "$(cat "$T/prompt-b7")" "<length>"
+rm -f "$OFFLOAD_CONFIG"
 # a file offload sent from outside this folder (a log in /tmp, a sibling repo) is checked too
 mkdir -p "$T/elsewhere"; printf 'alpha\nthe retry budget is 5 attempts\nomega\n' > "$T/elsewhere/notes.txt"
 out=$(STUB_ANSWER="budget is 5 — $T/elsewhere/notes.txt:L2 \`the retry budget is 5 attempts\`" "$OFFLOAD" read -q "retry budget?" "$T/elsewhere/notes.txt" 2>&1)
@@ -769,12 +834,47 @@ expect_not "tasks: not reported as an ignored project key" "$("$OFFLOAD" config 
 rm -f "$P/.harness-offload.json"
 
 # ------------------------------------------------------------ model command
+# C5: doctor names a plugin or integration left on another version
+VS="$T/c5"; mkdir -p "$VS/st" "$VS/cc/plugins"
+printf '{"codex":{"version":"0.0.9","at":"2026-01-01"},"cursor":{"version":"%s"}}' "$("$OFFLOAD" --version | awk '{ print $2 }')" > "$VS/st/installs.json"
+echo '{"version":2,"plugins":{"harness-offload@harness-offload":[{"scope":"user","version":"0.0.8"}]}}' > "$VS/cc/plugins/installed_plugins.json"
+out=$(OFFLOAD_STATE_DIR="$VS/st" CLAUDE_CONFIG_DIR="$VS/cc" "$OFFLOAD" doctor 2>&1)
+expect_has "doctor: an older Claude Code plugin, with the update command" "$out" "Claude Code plugin 0.0.8 is older than this offload"
+expect_has "doctor: … claude plugin update with its id" "$out" "update it: claude plugin update harness-offload@harness-offload"
+expect_has "doctor: an integration set up by another version → offload sync" "$out" "codex integration was set up by offload 0.0.9"
+expect_not "doctor: … not one on this version" "$out" "cursor integration"
+echo '{"plugins":{"harness-offload@x":{"version":"99.0.0"}}}' > "$VS/cc/plugins/installed_plugins.json"
+expect_has "doctor: a newer plugin than this CLI → update the CLI" "$(OFFLOAD_STATE_DIR="$VS/st" CLAUDE_CONFIG_DIR="$VS/cc" "$OFFLOAD" doctor 2>&1)" "is older than the Claude Code plugin 99.0.0 — update it: npm i -g harness-offload@latest"
+
+# L2: the status line also shows what was kept out since this session began
+SL="$T/l2"; mkdir -p "$SL/st"; now=$(date +%s)
+printf '{"ts":%s,"kind":"read","saved_tokens":5000}\n{"ts":%s,"kind":"digest","saved_tokens":1200}\n{"ts":%s,"kind":"hook","event":"read_blocked"}\n' "$((now - 7200 > now - now % 86400 ? now - 7200 : now - now % 86400 + 1))" "$((now - 60))" "$((now - 30))" > "$SL/st/stats.jsonl"
+printf '{"type":"summary"}\n{"type":"user","timestamp":"%s"}\n' "$(jq -nr --argjson t "$((now - 600))" '$t | todate | .[0:19] + ".000Z"')" > "$SL/t.jsonl"
+out=$(printf '{"session_id":"x","transcript_path":"%s"}' "$SL/t.jsonl" | OFFLOAD_STATE_DIR="$SL/st" NO_COLOR=1 "$OFFLOAD" statusline)
+if [ $(( now % 86400 )) -lt 900 ]; then ok "statusline: today and this session (skipped in the first 15 minutes of a UTC day)"
+else expect_eq "statusline: today and this session (from Claude Code's input)" "$out" "▌offload 2 · ~6.2k saved today · ~1.2k this session"; fi
+expect_eq "statusline: without a session, today only" "$(OFFLOAD_STATE_DIR="$SL/st" NO_COLOR=1 "$OFFLOAD" statusline < /dev/null)" "▌offload 2 · ~6.2k saved today"
+s=$(date +%s); OFFLOAD_STATE_DIR="$SL/st" "$OFFLOAD" statusline < <(sleep 6) >/dev/null
+expect_eq "statusline: a stdin that never closes can't hang it" "$(( $(date +%s) - s <= 3 ))" 1
+
 section "offload model (show / change / undo)"
 unset GROQ_API_KEY OPENROUTER_API_KEY
 out=$(OFFLOAD_MODEL= "$OFFLOAD" model 2>&1); rc=$?
 expect_eq "model: show exits 0" "$rc" 0
 expect_has "model: shows the default (@host)" "$out" "default            @host"
 expect_has "model: unset slots say (default)" "$out" "read               (default)"
+# B4: a model that can't explore is called out (explore falls to the next model)
+SAVED_CFG=$OFFLOAD_CONFIG; export OFFLOAD_CONFIG="$T/b4.json"; rm -f "$OFFLOAD_CONFIG"
+out=$(OFFLOAD_MODEL= "$OFFLOAD" model explore crush:x 2>&1)
+expect_has "model: explore on crush warns it can't explore read-only" "$out" "is not used as a read-only explorer — explore uses the next model in the chain"
+out=$(OFFLOAD_MODEL= "$OFFLOAD" model explore --reset >/dev/null 2>&1; OFFLOAD_MODEL= "$OFFLOAD" model crush: 2>&1)
+expect_has "model: a crush default warns too while explore is unset" "$out" "read-only explorer"
+OFFLOAD_MODEL= "$OFFLOAD" model explore claude:haiku >/dev/null 2>&1
+out=$(OFFLOAD_MODEL= "$OFFLOAD" model 2>&1)
+expect_not "model: … not once explore has its own model" "$out" "read-only explorer"
+out=$(OFFLOAD_MODEL= "$OFFLOAD" model read crush:x 2>&1)
+expect_not "model: crush for read is fine" "$out" "read-only explorer"
+export OFFLOAD_CONFIG=$SAVED_CFG
 out=$(OFFLOAD_MODEL= OFFLOAD_HOST=claude "$OFFLOAD" model 2>&1)
 expect_has "model: @host resolved for the calling harness" "$out" "claude:haiku via claude's own plan"
 out=$("$OFFLOAD" model read groq:llama-3.3-70b 2>&1); rc=$?
@@ -957,6 +1057,13 @@ expect_eq "pre-read: huge slice blocked" "$(decision "$(pre_read '{"file_path":"
 expect_eq "pre-read: offset-only tail within chunk passes" "$(decision "$(pre_read '{"file_path":"big.ts","offset":1000}')")" "none"
 expect_eq "pre-read: binary passes" "$(decision "$(pre_read '{"file_path":"blob.bin"}')")" "none"
 expect_eq "pre-read: missing file passes" "$(decision "$(pre_read '{"file_path":"nope.ts"}')")" "none"
+# A8: tokens are estimated from the text (0.277 per byte + 1.127 per run of digits), not bytes ÷ 4
+awk 'BEGIN { for (i = 1; i <= 400; i++) printf "%d,%d,%d.%02d,2026-%02d-%02d,%d\n", i, i * 7919 % 100000, i * 31 % 997, i % 100, i % 12 + 1, i % 28 + 1, i * 13 }' > "$P/numbers.csv"
+awk 'BEGIN { for (i = 1; i <= 400; i++) print "the ledger posts each entry once and keeps a sum" }' > "$P/prose.txt"
+expect_eq "token estimate: a 400-line numeric CSV is over 6,000 tokens (bytes ÷ 4 said under)" "$(decision "$(pre_read '{"file_path":"numbers.csv"}')"):$(( $(wc -c < "$P/numbers.csv") / 4 < 6000 ))" "deny:1"
+expect_eq "token estimate: 400 lines of prose of a similar size pass" "$(decision "$(pre_read '{"file_path":"prose.txt"}')")" "none"
+expect_has "token estimate: the message gives the estimate" "$(pre_read '{"file_path":"numbers.csv"}')" "(400 lines, ~$(awk -v b="$(wc -c < "$P/numbers.csv")" '{ d += gsub(/[0-9]+/, "") } END { printf "%d", (b * 277 + d * 1127 + 999) / 1000 }' "$P/numbers.csv" | awk '{ s = $1 ""; o = ""; while (length(s) > 3) { o = "," substr(s, length(s) - 2) o; s = substr(s, 1, length(s) - 3) }; print s o }') tokens"
+rm -f "$P/numbers.csv" "$P/prose.txt"
 # A10/A11: lockfiles, minified files and JSON get advice that fits them
 awk 'BEGIN { printf "{\n  \"name\": \"app\",\n  \"packages\": {\n"; for (i = 0; i < 700; i++) printf "    \"node_modules/p%d\": {\n      \"version\": \"1.%d.0\"\n    },\n", i, i; printf "    \"last\": {}\n  },\n  \"list\": [1, 2, 3]\n}\n" }' > "$P/package-lock.json"
 awk 'BEGIN { printf "!function(){"; for (i = 0; i < 3000; i++) printf "var a%d=function(){return %d};", i, i; printf "}();" }' > "$P/app.min.js"
@@ -972,7 +1079,7 @@ expect_has "pre-read: … and gets grep -o instead of slices" "$r" "grep -noE '.
 expect_not "pre-read: … and no slice advice or outline" "$r" "offset/limit"
 r=$(pre_read '{"file_path":"app.min.js","offset":1,"limit":1}')
 expect_eq "pre-read: a one-line slice of a minified file is blocked by size" "$(decision "$r")" "deny"
-expect_has "pre-read: … with its size and grep -o" "$r" "lines average 99,796 characters (minified or generated): ~24,949 tokens. Bash: grep -noE"
+expect_has "pre-read: … with its size and grep -o" "$r" "lines average 99,796 characters (minified or generated): ~29,939 tokens. Bash: grep -noE"
 r=$(rr data.json)
 expect_has "pre-read: JSON structure counts arrays by item type" "$r" "Structure of data.json:
   object, 4 keys
@@ -1169,7 +1276,37 @@ expect_has "post-bash: … and the fixed one" "$d" "  - FAIL ledger works"
 expect_not "post-bash: … not the unchanged one again" "$(printf '%s' "$d" | sed -n '/key lines since/,/gone since/p')" "FAIL cart works"
 expect_has "post-bash: another command in the session gets a normal digest" "$(posts sess-R "npm run build" "$r2
 build step")" "── key lines, verbatim"
-hook session-start "$(jq -nc --arg c "$P" '{session_id: "sess-A", cwd: $c, source: "compact"}')" >/dev/null
+# A8: a digest's saved tokens are the input's estimate less the output's, the same in both engines
+SV="$T/a8st"; mkdir -p "$SV"
+awk 'BEGIN { for (i = 1; i <= 900; i++) printf "row %d value %d.%d at 2026-01-%02d\n", i, i * 37, i % 10, i % 28 + 1 }' > "$T/a8.log"
+OFFLOAD_STATE_DIR="$SV" "$OFFLOAD" summarize --no-model "$T/a8.log" > "$T/a8.out" 2>&1
+a8in=$(awk -v b="$(wc -c < "$T/a8.log")" '{ d += gsub(/[0-9]+/, "") } END { printf "%d", (b * 277 + d * 1127 + 999) / 1000 }' "$T/a8.log")
+a8out=$(awk -v b="$(wc -c < "$T/a8.out")" '{ d += gsub(/[0-9]+/, "") } END { printf "%d", (b * 277 + d * 1127 + 999) / 1000 }' "$T/a8.out")
+expect_eq "token estimate: a digest saves estimate(input) − estimate(output)" "$(jq -s '.[-1].saved_tokens' "$SV/stats.jsonl")" "$(( a8in - a8out ))"
+# R6: -q/--intent on run and summarize: the log lines that best match the question, no model
+awk 'BEGIN { for (i = 1; i <= 2000; i++) { if (i == 1234) print "info: cache restored for lodash from s3://ci-cache/node (1.2 GB)"; else print "step " i ": compiled module m" i " ok" } }' > "$T/intent.log"
+out=$("$OFFLOAD" summarize --no-model --intent "was the cache for lodash restored?" "$T/intent.log" 2>&1)
+expect_has "summarize --intent: the matching window, with its line numbers" "$out" "── lines about the question (best 1, no model) ──
+L1232-1238:"
+expect_has "summarize --intent: … holds the line no other section keeps" "$out" "info: cache restored for lodash from s3://ci-cache/node (1.2 GB)"
+expect_not "summarize without a question: no such section" "$("$OFFLOAD" summarize --no-model "$T/intent.log" 2>&1)" "lines about the question"
+out=$("$OFFLOAD" run -q "lodash cache" --no-model -- cat "$T/intent.log" 2>&1)
+expect_has "run -q: the same section" "$out" "info: cache restored for lodash"
+# R7: after a compaction the agent is told where the session's full logs are
+ctx=$(hook session-start "$(jq -nc --arg c "$P" '{session_id: "sess-A", cwd: $c, source: "compact"}')" | jq -r '.hookSpecificOutput.additionalContext // ""')
+expect_has "session-start compact: lists the session's digested outputs" "$ctx" "Before the compaction, offload digested these outputs (full logs kept; offload summarize LOG digests one again):"
+expect_has "session-start compact: … with the command and its full log" "$ctx" " make-test → $OFFLOAD_STATE_DIR/logs/"
+for i in 1 2 3 4 5 6 7 8; do posts sess-C "make check$i" "$big_out
+run $i" >/dev/null; sleep 1; done
+ctx=$(hook session-start "$(jq -nc --arg c "$P" '{session_id: "sess-C", cwd: $c, source: "compact"}')" | jq -r '.hookSpecificOutput.additionalContext // ""')
+idx=$(printf '%s' "$ctx" | sed -n '/^Before the compaction/,$p')
+expect_eq "session-start compact: the index stays within 600 bytes" "$(( $(printf '%s' "$idx" | LC_ALL=C wc -c) <= 600 ))" 1
+expect_has "session-start compact: … newest first" "$(printf '%s\n' "$idx" | sed -n 2p)" " make-check8 → "
+ctx=$(hook session-start "$(jq -nc --arg c "$P" '{session_id: "sess-C", cwd: $c, source: "compact"}')" | jq -r '.hookSpecificOutput.additionalContext // ""')
+expect_not "session-start compact: listed once (the next compaction starts afresh)" "$ctx" "Before the compaction"
+posts sess-D "make lint" "$big_out" >/dev/null
+ctx=$(hook session-start "$(jq -nc --arg c "$P" '{session_id: "sess-D", cwd: $c, source: "clear"}')" | jq -r '.hookSpecificOutput.additionalContext // ""')
+expect_not "session-start clear: no index (a fresh start)" "$ctx" "Before the compaction"
 expect_has "post-bash: after a compaction the digest is shown again" "$(posts sess-A "make test" "$big_out")" "── key lines"
 expect_has "post-bash: without a session id nothing is deduplicated" "$(post "make test" "$big_out" >/dev/null; post "make test" "$big_out" | jq -r '.hookSpecificOutput.updatedToolOutput.stdout')" "── key lines"
 rm -f "$OFFLOAD_CONFIG"

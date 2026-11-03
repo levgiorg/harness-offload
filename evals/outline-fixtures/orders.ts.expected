@@ -1,0 +1,7 @@
+  L3-7: export interface Order
+  L8-19: export class OrderService
+  L9-10: constructor(private repo: Repo) {}
+  L11-14: async place(order: Order): Promise<void>
+  L15-19: private total(items: number[]): number
+  L20-23: export const refund = async (id: string) =>
+  L24-26: export function audit(id: string): void

@@ -88,11 +88,17 @@ export function outline(path: string, max = 50): string {
     line = line.replace(/^ +/, "");
     if (CONTROL.test(line)) return;
     line = line.replace(/[ \t]*\{?[ \t\r]*$/, "");
-    if (line.length > 110) line = line.slice(0, 107) + "...";
+    if (line.length > 90) line = line.slice(0, 87) + "...";
     rows.push({ n: idx + 1, txt: line, dep });
   });
   if (rows.length === 0) return "";
   const n = rows.length;
+  // a symbol runs until the next symbol at the same or an outer level (or the end of the file)
+  const total = lines.length - (text.endsWith("\n") ? 1 : 0);
+  const to = rows.map((r, i) => {
+    for (let j = i + 1; j < n; j++) if (rows[j].dep <= r.dep) return rows[j].n - 1;
+    return total;
+  });
   let lim = Math.max(...rows.map((r) => r.dep));
   while (lim > 0) {
     const lower = rows.filter((r) => r.dep < lim).map((r) => r.dep);
@@ -109,7 +115,7 @@ export function outline(path: string, max = 50): string {
   const out: string[] = [];
   let k = 0;
   let nextPick = 0;
-  for (const r of rows) {
+  for (const [i, r] of rows.entries()) {
     if (r.dep > lim) continue;
     if (r.dep === lim) {
       k++;
@@ -117,8 +123,33 @@ export function outline(path: string, max = 50): string {
       nextPick += stride;
     }
     if (out.length >= max) break;
-    out.push(`  L${r.n}: ${r.txt}`);
+    out.push(to[i] > r.n ? `  L${r.n}-${to[i]}: ${r.txt}` : `  L${r.n}: ${r.txt}`);
   }
   if (out.length < n) out.push(`  ... ${n - out.length} more symbols not shown (grep -n to find them)`);
   return out.join("\n") + "\n";
+}
+
+/** The outline range of the first symbol whose line names NAME (a dotted name looks for the
+ *  member inside the first part's range); undefined when there is none. Twin: co_symbol_range. */
+export function symbolRange(path: string, name: string): [number, number] | undefined {
+  if (!/^[A-Za-z0-9_$]+(\.[A-Za-z0-9_$]+)*$/.test(name)) return undefined;
+  const part = name.split(".");
+  let k = 0;
+  let lo = 0;
+  let hi = Infinity;
+  for (const line of outline(path, 100000).split("\n")) {
+    const m = /^ {2}L(\d+)(?:-(\d+))?: /.exec(line);
+    if (!m) continue;
+    const a = Number(m[1]);
+    const b = m[2] ? Number(m[2]) : a;
+    if (a < lo || a > hi) continue;
+    const w = part[k].replace(/\$/g, "[$]");
+    if (new RegExp(`(^|[^A-Za-z0-9_$])${w}([^A-Za-z0-9_$]|$)`).test(line.slice(m[0].length))) {
+      if (k === part.length - 1) return [a, b];
+      k++;
+      lo = a + 1;
+      hi = b;
+    }
+  }
+  return undefined;
 }

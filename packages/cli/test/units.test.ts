@@ -168,3 +168,15 @@ describe("explore in a big repo", () => {
     expect(r.stdout).toContain("src/fx/ledger.ts:L2");
   }, 60_000);
 });
+
+describe("lineDiff (installer dry runs)", () => {
+  test("changed lines with one line of context, … between hunks, nothing when equal", async () => {
+    const { lineDiff } = await import("../src/hosts/install.ts");
+    const a = ["a", "b", "c", "d", "e", "f", "g"].join("\n") + "\n";
+    const b = ["a", "B", "c", "d", "e", "f", "g", "h"].join("\n") + "\n";
+    expect(lineDiff(a, b)).toEqual(["  a", "+ B", "- b", "  c", "…", "  g", "+ h"]);
+    expect(lineDiff(a, a)).toEqual([]);
+    expect(lineDiff("", "x\n")).toEqual(["+ x"]);
+    expect(lineDiff("", Array.from({ length: 60 }, (_, i) => `l${i}`).join("\n"), 40)).toHaveLength(41);
+  });
+});

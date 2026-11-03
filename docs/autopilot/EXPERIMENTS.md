@@ -50,3 +50,24 @@ Hypothesis → method → result → decision. Numbers only from runs that happe
 - 210 KB API response (`curl`): before, a digest of the last 15 lines ("}", "]"…) + a worker summary that read all
   210 KB; after, 0.6 KB: structure ("users": array, 4,000 objects) + `jq '.users | length' LOG`, no worker call.
 - 608 KB lockfile-shaped output → 4 structure lines; JSON lines and invalid JSON → unchanged digest. Both engines identical.
+
+## L5 — failing tests' blocks in digests
+- New fixture `jest-many` (7 failures spread through 934 lines of passes). Before: the digest kept 2 of its 12 must-keep
+  lines (key lines take 3 per kind; the code frames and Received values were lost). After: 12/12, 1.8 → 3.4 KB.
+- The five single-failure runner fixtures already kept most lines through the tail (failures near the end); the jest
+  code frame was the one line lost there. No section appears for the other 16 fixtures.
+- Same blocks from awk (gawk, mawk, BSD awk) and TypeScript on 80 random logs; 28 ms for 56k lines.
+
+## A8 — token estimate
+- Reference: OpenAI's o200k_base and cl100k_base (tiktoken, in a scratch venv); Claude's tokenizer is not available
+  offline, so the target is "within 15% of both". 25 files: TS/JS/Python/shell code, jest/pytest/cargo/gradle/tsc/
+  docker logs, pretty and minified JSON, a lockfile, CSV, Markdown, HTML, minified JS, CJK.
+- bytes ÷ 4: 17 of 25 files off by more than 15%, worst 59% (all undercounts: dense logs, CSV, pretty JSON).
+- Fits: a 7-feature model reached 13% in-sample but 83% leave-one-out (overfit). Searching small non-negative models
+  by worst leave-one-out error picked 0.277 × bytes + 1.127 × digit runs: 6 of 25 over 15% (CJK 34%, HTML with
+  inline SVG 35%, pretty-printed JSON 18–37%), the rest 1–15%. Shipped; the AC's "< 15 % everywhere" is not met
+  for those three kinds, recorded rather than over-fitted.
+- Where it is used: the read guard (the file is counted only when its size can't settle it: ~7–22 KB at the
+  default 6,000-token limit; +4 ms per Read there), its messages, read footers, and every saved_tokens in stats;
+  bash (awk) and TS give the same number (60 random texts). A 12.9 KB numeric CSV (÷4: 3,229 tokens) is now held
+  back as ~8,900 tokens; 19.6 KB of prose still passes.

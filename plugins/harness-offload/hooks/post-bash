@@ -96,9 +96,11 @@ if [ -n "$seen" ] && [ -f "$seen" ]; then
   if [ $(( $(co_now) - ${s_at:-0} )) -le 3600 ] && [ -f "$s_log" ] && cmp -s "$outf" "$s_log"; then
     label=$(printf '%s' "$cmd" | co_redact)
     note="[offload] \`$(printf '%s' "$label" | LC_ALL=C cut -c1-120)\` · $(co_fmt_int "$lines") lines / $(( (bytes + 1023) / 1024 )) KB · same output as at $s_hms, shown then · full log: $s_log · its digest again: offload summarize $(co_shquote "$s_log")"
-    co_stats_append "$(jq -nc --arg lbl "$label" --arg log "$s_log" --argjson bin "$bytes" --argjson bout "$(printf '%s' "$note" | wc -c | tr -d ' ')" \
+    nb=$(printf '%s' "$note" | wc -c | tr -d ' ')
+    co_stats_append "$(jq -nc --arg lbl "$label" --arg log "$s_log" --argjson bin "$bytes" --argjson bout "$nb" \
+      --argjson ein "$(co_tokens "$outf" "$bytes")" --argjson eout "$(printf '%s' "$note" | co_tokens - "$nb")" \
       '{ts: now | floor, kind: "digest", source: "repeat", label: $lbl, log: $log, model: "", bytes_in: $bin, bytes_out: $bout,
-        saved_tokens: ((($bin - $bout) / 4) | floor | if . < 0 then 0 else . end), seconds: 0, model_ok: false, model_tried: false,
+        saved_tokens: (($ein - $eout) | if . < 0 then 0 else . end), seconds: 0, model_ok: false, model_tried: false,
         worker_tokens_in: 0, worker_tokens_out: 0}')"
     emit "$note"
     exit 0
