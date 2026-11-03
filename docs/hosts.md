@@ -53,6 +53,11 @@ Copilot CLI, Crush and Qwen Code were verified end to end with their real binari
 - **Install:** `offload install opencode` writes `~/.config/opencode/plugins/harness-offload.js` (v2) or `plugin/` (v1): a one-line re-export of the package's `dist/opencode.js`.
 - One default export serves both: v2 uses `{id, setup}` (`tool.hook("execute.before"/"execute.after")`, `session.hook("context")`), v1 calls `server()` (`tool.execute.before/after`, `experimental.chat.system.transform`).
 - When OpenCode itself is the *worker*, offload sets `OFFLOAD_DISABLE=1`, so the plugin stays out of the way.
+- **Which model reads:** by default the model OpenCode itself uses by default (`@host` = `@default` here).
+  Pick another with `offload models opencode` (lists what your OpenCode can use) and
+  `offload model provider/model` (all kinds of work), `offload model read provider/model` (one kind), or
+  `-m provider/model` for one call; `offload model --reset` goes back. A bare `provider/model` means
+  OpenCode; another backend is `BACKEND:MODEL` (`claude:haiku`, `groq:llama-3.3-70b`).
 
 ## Kilo Code CLI
 - Kilo is an OpenCode v1 fork with the same plugin API; `offload install kilo` writes `~/.config/kilo/plugin/harness-offload.js` (the same bundle as OpenCode).

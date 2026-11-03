@@ -24,7 +24,7 @@
 
 CO_BACKENDS_LOADED=1
 CO_E_USAGE=2 CO_E_QUOTA=10 CO_E_AUTH=11 CO_E_TIMEOUT=12 CO_E_MODEL=13
-CO_E_WORKER=14 CO_E_NOOC=15 CO_E_REFUSED=16
+CO_E_WORKER=14 CO_E_NOOC=15 CO_E_REFUSED=16 CO_E_TOO_LARGE=17
 
 # Outputs of the last co_oc_invoke / co_oc_attempt call.
 CO_OC_MODEL="" CO_OC_TOKENS_IN=0 CO_OC_TOKENS_OUT=0 CO_OC_CTX_IN=0 CO_OC_COST=0 CO_OC_SECONDS=0 CO_OC_ERROR=""
@@ -195,6 +195,13 @@ co_oc_config() {
 co_oc_classify() {
   local msg
   msg=$(printf '%s' "$1" | LC_ALL=C tr '[:upper:]' '[:lower:]')
+  # first: "context limit reached" is not a quota, and the model is fine (no cooldown)
+  case "$msg" in
+    *"prompt is too long"*|*"input is too long"*|*"input too long"*|*"context length"*|*context_length*|*"maximum context"*|\
+    *"context window"*|*"too many tokens"*|*"too many input tokens"*|*"exceeds the context"*|*"exceed the context"*|\
+    *"exceeds the token"*|*"exceeds the maximum context"*|*"exceeds the model's"*|*"request too large"*|*"payload too large"*)
+      return $CO_E_TOO_LARGE ;;
+  esac
   case "$msg" in
     *provider.rate-limit*|*provider.quota*|*provider.free-limit*|*provider.go-limit*|*provider.overloaded*|\
     *"usage limit"*|*"rate limit"*|*rate_limit*|*quota*|*"too many requests"*|*429*|*overloaded*|*"limit reached"*|*"insufficient"*|*credit*)
@@ -540,6 +547,7 @@ ${errors}(\`offload doctor --reset\` clears cooldowns)"
   fi
   CO_OC_ERROR="no model succeeded:
 $errors"
+  [ "$rc" = "$CO_E_TOO_LARGE" ] && CO_OC_ERROR="$CO_OC_ERROR(the input is larger than the model can take: ask about fewer files or a range, path:START-END, or use a model with a bigger context window)"
   return "$rc"
 }
 

@@ -1,0 +1,18 @@
+# keep: test ledger::tests::late_fee_rounds ... FAILED
+# keep: assertion `left == right` failed
+# keep: test result: FAILED. 211 passed; 1 failed
+@@noise 211 test m{i}::tests::case_{i} ... ok@@
+test ledger::tests::late_fee_rounds ... FAILED
+
+failures:
+
+---- ledger::tests::late_fee_rounds stdout ----
+thread 'ledger::tests::late_fee_rounds' panicked at src/ledger.rs:88:9:
+assertion `left == right` failed
+  left: 26
+ right: 25
+
+failures:
+    ledger::tests::late_fee_rounds
+
+test result: FAILED. 211 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out

@@ -81,7 +81,7 @@ check_dump() {
     hk_not_for_offload "$f" && continue
     hk_may_act || return 0
     . "$CO_ROOT/lib/outline.sh"
-    hk_event bash_read_blocked "{\"lines\":$lines,\"tokens\":$tokens,\"prog\":\"$prog\"}"
+    hk_event bash_read_blocked "$(jq -nc --argjson l "$lines" --argjson t "$tokens" --arg p "$prog" --arg f "$f" '{lines: $l, tokens: $t, prog: $p, file: $f}')"
     hk_guard "$(hk_big_file_message "$f" "$lines" "$tokens" "\`$prog\`")"
   done
   return 0
@@ -95,7 +95,7 @@ if co_cfg_bool '.hooks.autowrap' false; then
     [ "$HK_BACKGROUND" = "true" ] && exit 0
     hk_may_act || exit 0
     wrapped="$HK_CLI run -c $(co_shquote "$cmd")"
-    hk_event autowrap
+    hk_event autowrap "$(jq -nc --arg c "$(printf '%s' "$cmd" | co_redact)" '{command: $c}')"
     printf '%s' "$HK_INPUT" | jq -c --arg c "$wrapped" '
       {hookSpecificOutput: {hookEventName: "PreToolUse", updatedInput: (.tool_input + {command: $c})}}'
     exit 0

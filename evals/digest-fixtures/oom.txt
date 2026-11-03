@@ -1,0 +1,6 @@
+# keep: Killed
+# keep: FATAL ERROR: Reached heap limit Allocation failed - JavaScript heap out of memory
+@@noise 300 [webpack] building module {i}/900@@
+<--- Last few GCs --->
+FATAL ERROR: Reached heap limit Allocation failed - JavaScript heap out of memory
+Killed

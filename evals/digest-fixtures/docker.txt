@@ -1,0 +1,8 @@
+# keep: ERROR: failed to solve: process "/bin/sh -c npm ci" did not complete successfully: exit code: 1
+# keep: npm error code ERESOLVE
+@@noise 260 #{i} [internal] load metadata for docker.io/library/node:22 0.{i}s@@
+#12 [build 4/7] RUN npm ci
+#12 2.311 npm error code ERESOLVE
+#12 2.312 npm error ERESOLVE unable to resolve dependency tree
+#12 ERROR: process "/bin/sh -c npm ci" did not complete successfully: exit code: 1
+ERROR: failed to solve: process "/bin/sh -c npm ci" did not complete successfully: exit code: 1

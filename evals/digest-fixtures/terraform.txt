@@ -1,0 +1,10 @@
+# keep: Error: creating S3 Bucket (acme-logs): BucketAlreadyExists
+# keep: with aws_s3_bucket.logs,
+@@noise 300   # module.svc{i}.aws_iam_role.r will be read during apply@@
+╷
+│ Error: creating S3 Bucket (acme-logs): BucketAlreadyExists
+│ 
+│   with aws_s3_bucket.logs,
+│   on main.tf line 12, in resource "aws_s3_bucket" "logs":
+│   12: resource "aws_s3_bucket" "logs" {
+╵

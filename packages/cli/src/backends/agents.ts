@@ -108,11 +108,9 @@ export const CLI_AGENTS: Record<string, AgentSpec> = {
       if (!j) throw new WorkerError(E.WORKER, "claude: no JSON output");
       if (j.is_error) throw new WorkerError(classify(String(j.result ?? j.error ?? "error")), `claude: ${j.result ?? "error"}`);
       const u = j.usage ?? {};
-      return empty(String(j.result ?? ""), {
-        tokensIn: (u.input_tokens ?? 0) + (u.cache_read_input_tokens ?? 0) + (u.cache_creation_input_tokens ?? 0),
-        tokensOut: u.output_tokens ?? 0,
-        cost: j.total_cost_usd ?? 0,
-      });
+      const tin = (u.input_tokens ?? 0) + (u.cache_read_input_tokens ?? 0) + (u.cache_creation_input_tokens ?? 0);
+      // what the worker read (an explore's footer reports it), as the bash engine counts it
+      return empty(String(j.result ?? ""), { tokensIn: tin, tokensOut: u.output_tokens ?? 0, ctxIn: tin, cost: j.total_cost_usd ?? 0 });
     },
   },
   codex: {
@@ -321,7 +319,8 @@ export const CLI_AGENTS: Record<string, AgentSpec> = {
       if (!j) throw new WorkerError(E.WORKER, "cursor-agent: no JSON output");
       if (j.is_error) throw new WorkerError(classify(String(j.result ?? "error")), `cursor-agent: ${j.result ?? "error"}`);
       const u = j.usage ?? {};
-      return empty(String(j.result ?? ""), { tokensIn: (u.inputTokens ?? 0) + (u.cacheReadTokens ?? 0), tokensOut: u.outputTokens ?? 0, ctxIn: u.inputTokens ?? 0 });
+      const tin = (u.inputTokens ?? 0) + (u.cacheReadTokens ?? 0);
+      return empty(String(j.result ?? ""), { tokensIn: tin, tokensOut: u.outputTokens ?? 0, ctxIn: tin });
     },
   },
 };

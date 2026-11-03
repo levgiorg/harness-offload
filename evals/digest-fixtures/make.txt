@@ -1,0 +1,5 @@
+# keep: src/net.c:88:5: error: implicit declaration of function 'connect_tls'
+# keep: make: *** [Makefile:23: build/net.o] Error 1
+@@noise 300 cc -O2 -c src/m{i}.c -o build/m{i}.o@@
+src/net.c:88:5: error: implicit declaration of function 'connect_tls' [-Wimplicit-function-declaration]
+make: *** [Makefile:23: build/net.o] Error 1

@@ -1,0 +1,15 @@
+# keep: FAILED tests/test_orders.py::test_bulk_discount - assert Decimal('25.00') == Decimal('5.00')
+# keep: E       assert Decimal('25.00') == Decimal('5.00')
+# keep: 1 failed, 640 passed
+@@noise 320 tests/test_m{i}.py::test_case_{i} PASSED [ {i}%]@@
+tests/test_orders.py::test_bulk_discount FAILED
+=================================== FAILURES ===================================
+______________________________ test_bulk_discount ______________________________
+    def test_bulk_discount():
+>       assert quote(lines).discount == Decimal("5.00")
+E       assert Decimal('25.00') == Decimal('5.00')
+
+tests/test_orders.py:41: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_orders.py::test_bulk_discount - assert Decimal('25.00') == Decimal('5.00')
+======================== 1 failed, 640 passed in 12.31s ========================

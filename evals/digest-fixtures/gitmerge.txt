@@ -1,0 +1,5 @@
+# keep: CONFLICT (content): Merge conflict in src/config.ts
+# keep: Automatic merge failed; fix conflicts and then commit the result.
+@@noise 300 Auto-merging src/m{i}.ts@@
+CONFLICT (content): Merge conflict in src/config.ts
+Automatic merge failed; fix conflicts and then commit the result.

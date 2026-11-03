@@ -9,6 +9,7 @@ export const E = {
   WORKER: 14,
   MISSING: 15,
   REFUSED: 16,
+  TOO_LARGE: 17,
 } as const;
 
 export class WorkerError extends Error {
@@ -57,6 +58,8 @@ export interface Backend {
 /** Maps an error string to an exit code (same rules as the bash engine). */
 export function classify(message: string): number {
   const m = message.toLowerCase();
+  // first: "context limit reached" is not a quota, and the model is fine (no cooldown)
+  if (/prompt is too long|input is too long|input too long|context.length|maximum context|context window|too many (input )?tokens|exceeds? the (model.s )?(maximum )?(context|token)|request too large|payload too large/.test(m)) return E.TOO_LARGE;
   if (/provider\.(rate-limit|quota|free-limit|go-limit|overloaded)|usage limit|rate limit|rate_limit|quota|too many requests|\b429\b|overloaded|limit reached|insufficient|credit/.test(m)) return E.QUOTA;
   if (/provider\.auth|api key|api_key|unauthori[sz]ed|\b401\b|\b403\b|forbidden|not authenticated|log ?in|authenticat|auth type|auth method|security token|invalid token|token expired|expired token|no providers? configured/.test(m)) return E.AUTH;
   if (/provider\.no-route|model unavailable|model not found|unknown model|provider not found|providermodelnotfound|model_not_found|does not exist/.test(m)) return E.MODEL;

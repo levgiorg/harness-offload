@@ -9,6 +9,11 @@ const { resolve } = await import("node:path");
 // Absolute paths: Bun on Windows rejects rmSync on "../.."-relative directories (EINVAL).
 const pkgDir = resolve(import.meta.dir, "..");
 const repoDir = resolve(pkgDir, "..", "..");
+// The committed plugin dist must be what this Bun produces: CI rebuilds it with the pinned
+// version and fails on any difference, so a build with another Bun is flagged here.
+const pinned = readFileSync(resolve(pkgDir, ".bun-version"), "utf8").trim();
+if (Bun.version !== pinned)
+  console.warn(`warning: building with Bun ${Bun.version}; the committed dist is built with Bun ${pinned} (packages/cli/.bun-version). Use that version, or CI's reproducibility check will fail.`);
 mkdirSync("dist", { recursive: true });
 for (const f of readdirSync("dist")) if (/^(chunk-.*|main)\.js$/.test(f)) rmSync(`dist/${f}`);
 const res = await Bun.build({

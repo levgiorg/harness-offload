@@ -1,0 +1,10 @@
+# keep: KeyError: 'price'
+# keep: File "app/cart.py", line 41, in total
+@@noise 280 INFO worker {i} processed batch {i} in {i}ms@@
+Traceback (most recent call last):
+  File "/usr/lib/python3.12/runpy.py", line 198, in _run_module_as_main
+  File "app/main.py", line 12, in <module>
+    run()
+  File "app/cart.py", line 41, in total
+    return sum(i["price"] for i in items)
+KeyError: 'price'

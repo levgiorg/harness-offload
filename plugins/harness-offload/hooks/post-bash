@@ -40,8 +40,15 @@ hk_skip_subagent && exit 0
 # Commands whose output Claude needs verbatim: judge by the last pipeline
 # segment, since that is what produced the output.
 last=$(printf '%s\n' "$cmd" | tail -n 1 | awk '{ n = split($0, p, /\|\||&&|;|\|/); print p[n] }')
+# A huge search (grep/rg/find…) gets the search view: counts per file and the
+# first matches, instead of thousands of lines or a summary that loses them.
+search=""
+if co_cfg_bool '.hooks.search_view' true; then
+  sre=$(co_cfg '.hooks.search_commands')
+  [ -n "$sre" ] && printf '%s\n' "$last" | grep -qE -- "$sre" && search=1
+fi
 never=$(co_cfg '.hooks.bash_never_summarize')
-if [ -n "$never" ] && printf '%s\n' "$last" | grep -qE -- "$never"; then exit 0; fi
+if [ -z "$search" ] && [ -n "$never" ] && printf '%s\n' "$last" | grep -qE -- "$never"; then exit 0; fi
 
 . "$CO_ROOT/lib/digest.sh"
 co_tmp outf
@@ -49,13 +56,57 @@ if [ -n "$persisted" ]; then
   cp "$persisted" "$outf" 2>/dev/null || exit 0
   export OFFLOAD_DIGEST_COMPACT=1
 else
-printf '%s' "$HK_INPUT" | jq -r '
+# -j: the output exactly as the tool gave it (-r would add a newline, and a line to the count)
+printf '%s' "$HK_INPUT" | jq -j '
   (.tool_response.stdout // "") as $o | (.tool_response.stderr // "") as $e
   | if ($e | length) > 0 then $o + (if ($o | length) > 0 then "\n" else "" end) + "[stderr]\n" + $e else $o end' > "$outf" 2>/dev/null || exit 0
 fi
 
 lines=$(co_file_lines "$outf"); bytes=$(co_file_bytes "$outf")
 [ "$lines" -le "$max_lines" ] && [ "$bytes" -le "$max_bytes" ] && exit 0
+
+emit() {
+  if [ "$HK_DIALECT" = copilot ]; then
+    jq -nc --arg d "$1" '{modifiedResult: {resultType: "success", textResultForLlm: $d}}'
+  else
+    printf '%s' "$HK_INPUT" | jq -c --arg d "$1" '
+      {hookSpecificOutput: {hookEventName: "PostToolUse",
+        updatedToolOutput: ((.tool_response // {}) + {stdout: $d, stderr: ""})}}'
+  fi
+}
+
+# The same output again in this session (a re-run with nothing changed): say so in
+# one line instead of a second digest (and a second worker call).
+seen=$(co_seen_file "$outf") || seen=""
+if [ -n "$seen" ] && [ -f "$seen" ]; then
+  read -r s_at s_hms s_log < "$seen"
+  # byte for byte against the earlier run's log, so a checksum clash can't mislead
+  if [ $(( $(co_now) - ${s_at:-0} )) -le 3600 ] && [ -f "$s_log" ] && cmp -s "$outf" "$s_log"; then
+    label=$(printf '%s' "$cmd" | co_redact)
+    note="[offload] \`$(printf '%s' "$label" | LC_ALL=C cut -c1-120)\` · $(co_fmt_int "$lines") lines / $(( (bytes + 1023) / 1024 )) KB · same output as at $s_hms, shown then · full log: $s_log · its digest again: offload summarize $(co_shquote "$s_log")"
+    co_stats_append "$(jq -nc --arg lbl "$label" --arg log "$s_log" --argjson bin "$bytes" --argjson bout "$(printf '%s' "$note" | wc -c | tr -d ' ')" \
+      '{ts: now | floor, kind: "digest", source: "repeat", label: $lbl, log: $log, model: "", bytes_in: $bin, bytes_out: $bout,
+        saved_tokens: ((($bin - $bout) / 4) | floor | if . < 0 then 0 else . end), seconds: 0, model_ok: false, model_tried: false,
+        worker_tokens_in: 0, worker_tokens_out: 0}')"
+    emit "$note"
+    exit 0
+  fi
+fi
+mark_seen() {
+  [ -n "$seen" ] || return 0
+  mkdir -p "${seen%/*}" 2>/dev/null && printf '%s %s %s\n' "$(co_now)" "$(date +%H:%M:%S)" "$1" > "$seen" 2>/dev/null
+  return 0
+}
+
+if [ -n "$search" ]; then
+  log=$(co_new_log "$cmd")
+  cp "$outf" "$log" 2>/dev/null || exit 0
+  digest=$(co_search_view "$log" "$cmd") || exit 0
+  [ -z "$digest" ] && exit 0
+  mark_seen "$log"
+  emit "$digest"
+  exit 0
+fi
 
 # The model is optional here: without a worker (or within cooldown) the
 # digest is purely deterministic, which still beats a 30K-char dump. The agent
@@ -71,11 +122,5 @@ cp "$outf" "$log" 2>/dev/null || exit 0
 focus=$HK_DESCRIPTION
 digest=$(co_digest "$log" "$cmd" "0" "$focus" hook) || exit 0
 [ -z "$digest" ] && exit 0
-
-if [ "$HK_DIALECT" = copilot ]; then
-  jq -nc --arg d "$digest" '{modifiedResult: {resultType: "success", textResultForLlm: $d}}'
-  exit 0
-fi
-printf '%s' "$HK_INPUT" | jq -c --arg d "$digest" '
-  {hookSpecificOutput: {hookEventName: "PostToolUse",
-    updatedToolOutput: ((.tool_response // {}) + {stdout: $d, stderr: ""})}}'
+mark_seen "$log"
+emit "$digest"

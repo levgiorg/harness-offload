@@ -451,6 +451,9 @@ co_state_dir() {
   co_cfgv d '.state_dir'
   [ -z "$d" ] && d="${XDG_STATE_HOME:-$HOME/.local/state}/harness-offload"
   [ -d "$d/logs" ] && [ -d "$d/cooldowns" ] || mkdir -p "$d/logs" "$d/cooldowns" 2>/dev/null
+  # logs hold raw command output (which can print secrets): the folder is private,
+  # existing installs included; the marker keeps this to one chmod per state dir
+  [ -e "$d/.private" ] || { chmod 700 "$d" 2>/dev/null && : > "$d/.private" 2>/dev/null; }
   printf '%s' "$d"
 }
 
@@ -468,6 +471,23 @@ co_prune_logs() {
   d=$(co_state_dir)
   days=$(co_cfg_int '.log_retention_days' 7)
   find "$d/logs" -type f -name '*.log' -mtime +"$days" -exec rm -f {} + 2>/dev/null || true
+  find "$d/seen" -type f -mmin +120 -exec rm -f {} + 2>/dev/null || true
+}
+
+# Outputs this session already saw (digested or search view): one marker per
+# session + POSIX cksum of the output, holding "<epoch> <HH:MM:SS> <log>". Twin:
+# seenFile() in state.ts — the same name and contents, so both engines share them.
+co_seen_session() { printf '%s' "$1" | LC_ALL=C tr -c 'A-Za-z0-9_-' '_' | LC_ALL=C cut -c1-64; }
+co_seen_file() {
+  [ -n "${HK_SESSION:-}" ] || return 1
+  local sum
+  sum=$(LC_ALL=C cksum < "$1" | LC_ALL=C awk '{ print $1 "-" $2 }')
+  printf '%s/seen/%s-%s' "$(co_state_dir)" "$(co_seen_session "$HK_SESSION")" "$sum"
+}
+# Forget what this session saw (after a compaction or /clear the agent no longer has it).
+co_seen_forget() {
+  [ -n "${HK_SESSION:-}" ] || return 0
+  rm -f "$(co_state_dir)/seen/$(co_seen_session "$HK_SESSION")"-* 2>/dev/null || true
 }
 
 # ------------------------------------------------------------------ privacy

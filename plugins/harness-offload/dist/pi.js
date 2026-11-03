@@ -1,23 +1,19 @@
-var __defProp = Object.defineProperty;
-var __returnValue = (v) => v;
-function __exportSetter(name, newValue) {
-  this[name] = __returnValue.bind(null, newValue);
-}
-var __export = (target, all) => {
-  for (var name in all)
-    __defProp(target, name, {
-      get: all[name],
-      enumerable: true,
-      configurable: true,
-      set: __exportSetter.bind(all, name)
-    });
+var __esm = (fn, res, err) => () => {
+  if (fn)
+    try {
+      res = fn(fn = 0);
+    } catch (e) {
+      err = [e];
+    }
+  if (err)
+    throw err[0];
+  return res;
 };
-var __esm = (fn, res) => () => (fn && (res = fn(fn = 0)), res);
 
 // src/generated/assets.ts
 var DEFAULTS_JSON, OUTLINE_JSON, CONNECTORS_JSON, PROMPT_TEXT;
 var init_assets = __esm(() => {
-  DEFAULTS_JSON = { enabled: true, backend: "opencode", endpoints: {}, agents: {}, hosts: { codex: { call: "mcp" }, cursor: { call: "mcp" } }, models: { default: "@host", read: "", explore: "", summarize: "", write: "", ask: "", fallback: ["@default"] }, variants: { read: "", explore: "", summarize: "", write: "", ask: "" }, opencode: { bin: "opencode", timeout_seconds: 180, max_stream_errors: 2, keep_sessions: false, disable_claude_code_compat: true }, read: { max_input_bytes: 1500000, max_files: 60, verify_citations: true }, explore: { max_steps: 40 }, digest: { threshold_lines: 150, threshold_bytes: 12000, use_model: true, max_model_input_bytes: 400000, key_lines: 30, tail_lines: 15 }, hooks: { read_guard: "block", read_threshold_lines: 600, read_threshold_tokens: 6000, read_max_chunk_lines: 600, bash_read_guard: true, summarize_bash_output: true, bash_output_threshold_lines: 250, bash_output_threshold_bytes: 20000, digest_timeout_seconds: 20, bash_never_summarize: "^[[:space:]]*(sudo[[:space:]]+)?(cat|bat|nl|head|tail|less|more|sed|awk|grep|egrep|fgrep|rg|ag|ack|jq|yq|diff|wc|ls|tree|find|fd|stat|file|echo|printf|offload|git[[:space:]]+(diff|show|blame|status|log))([[:space:]]|$)", autowrap: false, autowrap_pattern: "^[[:space:]]*((npm|pnpm|yarn|bun)[[:space:]]+(run[[:space:]]+)?(test|build|lint|install|ci|typecheck)|npx[[:space:]]+(jest|vitest|tsc|eslint|playwright)|(jest|vitest|pytest|tox|tsc|eslint|ruff|mypy)([[:space:]]|$)|go[[:space:]]+(test|build|vet)|cargo[[:space:]]+(test|build|check|clippy)|(mvn|mvnw|\\./mvnw|gradle|\\./gradlew)([[:space:]]|$)|make([[:space:]]|$)|pip[[:space:]]+install|docker[[:space:]]+(build|compose[[:space:]]+build)|terraform[[:space:]]+plan)", subagents: true, ignore_globs: [] }, privacy: { secret_globs: [".env", ".env.*", "*.pem", "*.key", "*.p12", "*.pfx", "*.jks", "*.keystore", "id_rsa*", "id_ecdsa*", "id_ed25519*", ".npmrc", ".pypirc", ".netrc", "credentials", "credentials.*", "secrets.*", "*.tfvars", "*.tfstate"], secret_allow_globs: ["*.example", "*.sample", "*.template", "*.dist"], redact: true }, state_dir: "", log_retention_days: 7 };
+  DEFAULTS_JSON = { enabled: true, backend: "opencode", endpoints: {}, agents: {}, hosts: { codex: { call: "mcp" }, cursor: { call: "mcp" } }, models: { default: "@host", read: "", explore: "", summarize: "", write: "", ask: "", fallback: ["@default"] }, variants: { read: "", explore: "", summarize: "", write: "", ask: "" }, opencode: { bin: "opencode", timeout_seconds: 180, max_stream_errors: 2, keep_sessions: false, disable_claude_code_compat: true }, read: { max_input_bytes: 1500000, max_files: 60, verify_citations: true }, explore: { max_steps: 40 }, digest: { threshold_lines: 150, threshold_bytes: 12000, use_model: true, max_model_input_bytes: 400000, key_lines: 30, tail_lines: 15 }, hooks: { read_guard: "block", read_threshold_lines: 600, read_threshold_tokens: 6000, read_max_chunk_lines: 600, bash_read_guard: true, summarize_bash_output: true, bash_output_threshold_lines: 250, bash_output_threshold_bytes: 20000, digest_timeout_seconds: 20, search_view: true, search_commands: "^[[:space:]]*(sudo[[:space:]]+)?(grep|egrep|fgrep|rg|ag|ack|git[[:space:]]+grep|find|fd)([[:space:]]|$)", bash_never_summarize: "^[[:space:]]*(sudo[[:space:]]+)?(cat|bat|nl|head|tail|less|more|sed|awk|grep|egrep|fgrep|rg|ag|ack|jq|yq|diff|wc|ls|tree|find|fd|stat|file|echo|printf|offload|git[[:space:]]+(diff|show|blame|status|log))([[:space:]]|$)", autowrap: false, autowrap_pattern: "^[[:space:]]*((npm|pnpm|yarn|bun)[[:space:]]+(run[[:space:]]+)?(test|build|lint|install|ci|typecheck)|npx[[:space:]]+(jest|vitest|tsc|eslint|playwright)|(jest|vitest|pytest|tox|tsc|eslint|ruff|mypy)([[:space:]]|$)|go[[:space:]]+(test|build|vet)|cargo[[:space:]]+(test|build|check|clippy)|(mvn|mvnw|\\./mvnw|gradle|\\./gradlew)([[:space:]]|$)|make([[:space:]]|$)|pip[[:space:]]+install|docker[[:space:]]+(build|compose[[:space:]]+build)|terraform[[:space:]]+plan)", subagents: true, ignore_globs: [] }, privacy: { secret_globs: [".env", ".env.*", "*.pem", "*.key", "*.p12", "*.pfx", "*.jks", "*.keystore", "id_rsa*", "id_ecdsa*", "id_ed25519*", ".npmrc", ".pypirc", ".netrc", "credentials", "credentials.*", "secrets.*", "*.tfvars", "*.tfstate"], secret_allow_globs: ["*.example", "*.sample", "*.template", "*.dist"], redact: true }, state_dir: "", log_retention_days: 7 };
   OUTLINE_JSON = { _comment: "Symbol-outline regexes (POSIX ERE), shared by the bash and TypeScript engines. Matched with grep -E / converted to JS RegExp.", languages: [{ exts: ["ts", "tsx", "js", "jsx", "mjs", "cjs", "mts", "cts", "vue", "svelte"], regex: "^[[:space:]]*(export[[:space:]]+)?(default[[:space:]]+)?(declare[[:space:]]+)?(abstract[[:space:]]+)?(async[[:space:]]+)?(function\\*?|class|interface|type|enum|namespace|module)[[:space:]]+[A-Za-z_$]|^[[:space:]]*(export[[:space:]]+)?(const|let|var)[[:space:]]+[A-Za-z_$][A-Za-z0-9_$]*[[:space:]]*(:[^=]*)?=[[:space:]]*(async[[:space:]]+)?(\\(|function|[A-Za-z_$][A-Za-z0-9_$]*[[:space:]]*=>)|^[[:space:]]{2,4}((public|private|protected|static|async|readonly|override|get|set)[[:space:]]+)*[A-Za-z_$#][A-Za-z0-9_$]*[[:space:]]*(<[^>]*>)?\\([^;]*\\)[[:space:]]*(:[^=;{]*)?\\{|^[[:space:]]*(describe|it|test)(\\.[a-z]+)?\\(" }, { exts: ["py", "pyi"], regex: "^[[:space:]]*(async[[:space:]]+)?def[[:space:]]+[A-Za-z_]|^[[:space:]]*class[[:space:]]+[A-Za-z_]" }, { exts: ["go"], regex: "^func[[:space:]]|^type[[:space:]]+[A-Za-z_][A-Za-z0-9_]*[[:space:]]|^(var|const)[[:space:]]+\\(" }, { exts: ["rs"], regex: "^[[:space:]]*(pub(\\([^)]*\\))?[[:space:]]+)?(async[[:space:]]+)?(unsafe[[:space:]]+)?(fn|struct|enum|trait|impl|mod|macro_rules!|type)[[:space:]<]" }, { exts: ["java", "kt", "kts", "scala", "cs", "groovy", "swift", "dart"], regex: "^[[:space:]]*(@[A-Za-z]+[[:space:]]+)*((public|private|protected|internal|open|override|abstract|final|static|sealed|data|suspend|async|virtual|partial)[[:space:]]+)*(class|interface|enum|record|struct|object|fun|func|extension|protocol)[[:space:]]+[A-Za-z_]|^[[:space:]]*((public|private|protected|internal|static|final|abstract|synchronized|override|async|virtual)[[:space:]]+)+[][A-Za-z_<>,.?[:space:]]+[[:space:]]+[A-Za-z_][A-Za-z0-9_]*[[:space:]]*\\(" }, { exts: ["rb", "rake"], regex: "^[[:space:]]*(def|class|module)[[:space:]]" }, { exts: ["php"], regex: "^[[:space:]]*((public|private|protected|static|abstract|final)[[:space:]]+)*(function|class|interface|trait|enum)[[:space:]]+[A-Za-z_]" }, { exts: ["c", "h", "cc", "cpp", "cxx", "hpp", "hh", "m", "mm"], regex: "^[A-Za-z_][A-Za-z0-9_:<>,*&[:space:]]*[[:space:]*&]+[A-Za-z_~][A-Za-z0-9_:~]*[[:space:]]*\\([^;]*$|^(typedef[[:space:]]+)?(struct|class|enum|union|namespace)[[:space:]]+[A-Za-z_]|^#define[[:space:]]+[A-Z_]" }, { exts: ["sh", "bash", "zsh"], regex: "^[[:space:]]*(function[[:space:]]+)?[A-Za-z_][A-Za-z0-9_:-]*[[:space:]]*\\(\\)[[:space:]]*\\{?|^[[:space:]]*function[[:space:]]+[A-Za-z_]" }, { exts: ["md", "mdx", "markdown", "rst", "adoc"], regex: "^#{1,4}[[:space:]]" }, { exts: ["yml", "yaml"], regex: "^[A-Za-z_][A-Za-z0-9_.-]*:|^  [A-Za-z_][A-Za-z0-9_.-]*:[[:space:]]*$" }, { exts: ["toml", "ini", "cfg"], regex: "^\\[" }, { exts: ["sql"], regex: "^[[:space:]]*(create|alter|CREATE|ALTER)[[:space:]]+" }, { exts: ["json"], regex: '^  "[^"]+"[[:space:]]*:' }], default: "^[[:space:]]*(export[[:space:]]+)?(pub[[:space:]]+)?(async[[:space:]]+)?(def|fn|func|function|class|interface|struct|enum|trait|impl|module|type)[[:space:]]+[A-Za-z_]|^#{1,3}[[:space:]]" };
   CONNECTORS_JSON = { _comment: "HTTP endpoint presets, the default cheap model per harness for the @host model ref, and the API-key backup per harness for @host-api. Shared by the bash and TypeScript engines; override with `endpoints` / `host_models` / `host_api_models` in your config.", endpoints: { openai: { type: "openai", base_url: "https://api.openai.com/v1", api_key_env: "OPENAI_API_KEY", label: "OpenAI API" }, openrouter: { type: "openai", base_url: "https://openrouter.ai/api/v1", api_key_env: "OPENROUTER_API_KEY", label: "OpenRouter" }, anthropic: { type: "anthropic", base_url: "https://api.anthropic.com", api_key_env: "ANTHROPIC_API_KEY", label: "Anthropic API" }, google: { type: "openai", base_url: "https://generativelanguage.googleapis.com/v1beta/openai", api_key_env: "GEMINI_API_KEY", label: "Google AI Studio (Gemini API)" }, groq: { type: "openai", base_url: "https://api.groq.com/openai/v1", api_key_env: "GROQ_API_KEY", label: "Groq" }, deepseek: { type: "openai", base_url: "https://api.deepseek.com/v1", api_key_env: "DEEPSEEK_API_KEY", label: "DeepSeek" }, mistral: { type: "openai", base_url: "https://api.mistral.ai/v1", api_key_env: "MISTRAL_API_KEY", label: "Mistral" }, together: { type: "openai", base_url: "https://api.together.xyz/v1", api_key_env: "TOGETHER_API_KEY", label: "Together AI" }, fireworks: { type: "openai", base_url: "https://api.fireworks.ai/inference/v1", api_key_env: "FIREWORKS_API_KEY", label: "Fireworks" }, cerebras: { type: "openai", base_url: "https://api.cerebras.ai/v1", api_key_env: "CEREBRAS_API_KEY", label: "Cerebras" }, xai: { type: "openai", base_url: "https://api.x.ai/v1", api_key_env: "XAI_API_KEY", label: "xAI" }, zai: { type: "openai", base_url: "https://api.z.ai/api/paas/v4", api_key_env: "ZAI_API_KEY", label: "Z.ai (GLM)" }, moonshot: { type: "openai", base_url: "https://api.moonshot.ai/v1", api_key_env: "MOONSHOT_API_KEY", label: "Moonshot (Kimi)" }, ollama: { type: "openai", base_url: "http://127.0.0.1:11434/v1", label: "Ollama (local)" }, lmstudio: { type: "openai", base_url: "http://127.0.0.1:1234/v1", label: "LM Studio (local)" }, vllm: { type: "openai", base_url: "http://127.0.0.1:8000/v1", label: "vLLM (local)" }, dashscope: { type: "openai", base_url: "https://dashscope-intl.aliyuncs.com/compatible-mode/v1", api_key_env: "DASHSCOPE_API_KEY", label: "Alibaba Model Studio (Qwen)" }, github: { type: "openai", base_url: "https://models.github.ai/inference", api_key_env: "GITHUB_TOKEN", label: "GitHub Models" } }, host_models: { claude: "claude:haiku", codex: "codex:gpt-6-luna", gemini: "gemini:flash-lite", cursor: "cursor:", pi: "pi:", opencode: "@default", kilo: "@default", devin: "claude:haiku", copilot: "copilot:", qwen: "qwen:", crush: "crush:", amp: "@default" }, host_api_models: { claude: "anthropic:claude-haiku-5-5", devin: "anthropic:claude-haiku-5-5", codex: "openai:gpt-6-luna", gemini: "google:gemini-flash-lite-latest", qwen: "dashscope:qwen-flash", copilot: "github:openai/gpt-4.1-mini" }, worker_names: { _comment: 'How offload names a worker for the user, e.g. "Haiku on your Claude plan".', plans: { claude: "your Claude plan", codex: "your ChatGPT plan", gemini: "your Google account", cursor: "your Cursor plan", copilot: "your Copilot plan", qwen: "your Qwen Code login", pi: "Pi's own login", crush: "Crush's own setup" }, models: { haiku: "Haiku", sonnet: "Sonnet", opus: "Opus", "flash-lite": "Gemini Flash-Lite", flash: "Gemini Flash" } } };
   PROMPT_TEXT = {
@@ -78,12 +74,6 @@ var init_assets2 = __esm(() => {
 });
 
 // src/outline.ts
-var exports_outline = {};
-__export(exports_outline, {
-  posixToJs: () => posixToJs,
-  outlineRegex: () => outlineRegex,
-  outline: () => outline
-});
 import { readFileSync as readFileSync9 } from "node:fs";
 import { basename as basename2 } from "node:path";
 function posixToJs(ere) {
@@ -235,8 +225,8 @@ var init_outline = __esm(() => {
 import { Type } from "typebox";
 
 // src/hooks/logic.ts
-import { existsSync as existsSync7, readFileSync as readFileSync10, statSync as statSync6 } from "node:fs";
-import { basename as basename3, delimiter as delimiter2, isAbsolute as isAbsolute3, join as join8, resolve as resolve2 } from "node:path";
+import { existsSync as existsSync7, mkdirSync as mkdirSync3, readFileSync as readFileSync10, statSync as statSync6 } from "node:fs";
+import { basename as basename3, delimiter as delimiter2, dirname as dirname2, isAbsolute as isAbsolute3, join as join8, resolve as resolve2 } from "node:path";
 import { fileURLToPath } from "node:url";
 
 // src/config.ts
@@ -832,7 +822,8 @@ var E = {
   MODEL: 13,
   WORKER: 14,
   MISSING: 15,
-  REFUSED: 16
+  REFUSED: 16,
+  TOO_LARGE: 17
 };
 
 class WorkerError extends Error {
@@ -844,6 +835,8 @@ class WorkerError extends Error {
 }
 function classify(message) {
   const m = message.toLowerCase();
+  if (/prompt is too long|input is too long|input too long|context.length|maximum context|context window|too many (input )?tokens|exceeds? the (model.s )?(maximum )?(context|token)|request too large|payload too large/.test(m))
+    return E.TOO_LARGE;
   if (/provider\.(rate-limit|quota|free-limit|go-limit|overloaded)|usage limit|rate limit|rate_limit|quota|too many requests|\b429\b|overloaded|limit reached|insufficient|credit/.test(m))
     return E.QUOTA;
   if (/provider\.auth|api key|api_key|unauthori[sz]ed|\b401\b|\b403\b|forbidden|not authenticated|log ?in|authenticat|auth type|auth method|security token|invalid token|token expired|expired token|no providers? configured/.test(m))
@@ -958,35 +951,35 @@ class HttpBackend {
     }
     return (j?.data ?? []).map((m) => String(m.id)).sort();
   }
-  async run(req2) {
+  async run(req) {
     const key = apiKey(this.ep);
     if (!key && !/127\.0\.0\.1|localhost/.test(this.ep.base_url)) {
       throw new WorkerError(E.AUTH, `no API key for ${this.ep.name}: set ${this.ep.api_key_env ?? "it"} or run \`offload setup\``);
     }
-    if (!req2.model)
+    if (!req.model)
       throw new WorkerError(E.MODEL, `endpoint ${this.ep.name} needs a model id, e.g. ${this.ep.name}:<model>`);
-    return this.ep.type === "anthropic" ? this.anthropic(req2, key) : this.openai(req2, key);
+    return this.ep.type === "anthropic" ? this.anthropic(req, key) : this.openai(req, key);
   }
-  async openai(req2, key) {
+  async openai(req, key) {
     const headers = { ...this.ep.headers ?? {} };
     if (key)
       headers.authorization = `Bearer ${key}`;
-    const tools = req2.task === "explore" ? TOOL_SPECS.map((t) => ({ type: "function", function: t })) : undefined;
+    const tools = req.task === "explore" ? TOOL_SPECS.map((t) => ({ type: "function", function: t })) : undefined;
     const messages = [
-      { role: "system", content: req2.system },
-      { role: "user", content: req2.prompt }
+      { role: "system", content: req.system },
+      { role: "user", content: req.prompt }
     ];
     let tokensIn = 0;
     let tokensOut = 0;
     let ctxIn = 0;
-    const deadline = Date.now() + req2.timeoutSec * 1000;
-    const steps = req2.task === "explore" ? req2.maxSteps ?? 40 : 1;
+    const deadline = Date.now() + req.timeoutSec * 1000;
+    const steps = req.task === "explore" ? req.maxSteps ?? 40 : 1;
     for (let step = 0;step < steps; step++) {
-      const body = { model: req2.model, messages };
+      const body = { model: req.model, messages };
       if (tools)
         body.tools = tools;
-      if (req2.variant)
-        body.reasoning_effort = req2.variant;
+      if (req.variant)
+        body.reasoning_effort = req.variant;
       const j = await post(`${this.ep.base_url}/chat/completions`, body, headers, Math.max(1000, deadline - Date.now()));
       tokensIn += j?.usage?.prompt_tokens ?? 0;
       tokensOut += j?.usage?.completion_tokens ?? 0;
@@ -1007,26 +1000,26 @@ class HttpBackend {
         try {
           args = JSON.parse(c.function?.arguments || "{}");
         } catch {}
-        messages.push({ role: "tool", tool_call_id: c.id, content: await runTool(c.function?.name, args, { root: req2.cwd, secretGlobs: req2.secretGlobs ?? [], allowGlobs: req2.allowGlobs ?? [] }) });
+        messages.push({ role: "tool", tool_call_id: c.id, content: await runTool(c.function?.name, args, { root: req.cwd, secretGlobs: req.secretGlobs ?? [], allowGlobs: req.allowGlobs ?? [] }) });
       }
       if (step === steps - 2)
         messages.push({ role: "user", content: "Step budget almost used: answer now with what you found." });
     }
     throw new WorkerError(E.WORKER, `explore used all ${steps} steps without answering`);
   }
-  async anthropic(req2, key) {
+  async anthropic(req, key) {
     const headers = { "anthropic-version": "2023-06-01", ...this.ep.headers ?? {} };
     if (key)
       headers["x-api-key"] = key;
-    const tools = req2.task === "explore" ? TOOL_SPECS.map((t) => ({ name: t.name, description: t.description, input_schema: t.parameters })) : undefined;
-    const messages = [{ role: "user", content: req2.prompt }];
+    const tools = req.task === "explore" ? TOOL_SPECS.map((t) => ({ name: t.name, description: t.description, input_schema: t.parameters })) : undefined;
+    const messages = [{ role: "user", content: req.prompt }];
     let tokensIn = 0;
     let tokensOut = 0;
     let ctxIn = 0;
-    const deadline = Date.now() + req2.timeoutSec * 1000;
-    const steps = req2.task === "explore" ? req2.maxSteps ?? 40 : 1;
+    const deadline = Date.now() + req.timeoutSec * 1000;
+    const steps = req.task === "explore" ? req.maxSteps ?? 40 : 1;
     for (let step = 0;step < steps; step++) {
-      const body = { model: req2.model, max_tokens: 8192, system: req2.system, messages };
+      const body = { model: req.model, max_tokens: 8192, system: req.system, messages };
       if (tools)
         body.tools = tools;
       const j = await post(`${this.ep.base_url}/v1/messages`, body, headers, Math.max(1000, deadline - Date.now()));
@@ -1044,7 +1037,7 @@ class HttpBackend {
       messages.push({ role: "assistant", content });
       messages.push({
         role: "user",
-        content: await Promise.all(uses.map(async (u) => ({ type: "tool_result", tool_use_id: u.id, content: await runTool(u.name, u.input ?? {}, { root: req2.cwd, secretGlobs: req2.secretGlobs ?? [], allowGlobs: req2.allowGlobs ?? [] }) })))
+        content: await Promise.all(uses.map(async (u) => ({ type: "tool_result", tool_use_id: u.id, content: await runTool(u.name, u.input ?? {}, { root: req.cwd, secretGlobs: req.secretGlobs ?? [], allowGlobs: req.allowGlobs ?? [] }) })))
       });
     }
     throw new WorkerError(E.WORKER, `explore used all ${steps} steps without answering`);
@@ -1132,7 +1125,7 @@ function spawnSafe(cmd, args, opts) {
   return childProcess().spawn(p.file, p.args, { ...opts, ...p.opts, shell: false });
 }
 function runProcess(cmd, args, opts) {
-  return new Promise((resolve2) => {
+  return new Promise((resolve) => {
     let stdout = "";
     let stderr = "";
     let timedOut = false;
@@ -1141,7 +1134,7 @@ function runProcess(cmd, args, opts) {
     try {
       child = spawnSafe(cmd, args, { cwd: opts.cwd, env: opts.env, stdio: ["pipe", "pipe", "pipe"], detached: !isWin2 });
     } catch (e) {
-      resolve2({ code: 127, stdout: "", stderr: String(e), timedOut: false });
+      resolve({ code: 127, stdout: "", stderr: String(e), timedOut: false });
       return;
     }
     track(child);
@@ -1156,7 +1149,7 @@ function runProcess(cmd, args, opts) {
       killTree(child, "SIGKILL");
       child.stdout?.destroy();
       child.stderr?.destroy();
-      resolve2({ code, stdout, stderr, timedOut, killedBy });
+      resolve({ code, stdout, stderr, timedOut, killedBy });
     };
     const kill = () => {
       killTree(child, "SIGTERM");
@@ -1224,12 +1217,18 @@ async function which(cmd) {
 }
 
 // src/state.ts
-import { appendFileSync, existsSync as existsSync5, mkdirSync as mkdirSync2, readFileSync as readFileSync5, readdirSync as readdirSync2, rmSync, statSync as statSync4, writeFileSync as writeFileSync2 } from "node:fs";
+import { appendFileSync, chmodSync as chmodSync2, existsSync as existsSync5, mkdirSync as mkdirSync2, readFileSync as readFileSync5, readdirSync as readdirSync2, rmSync, statSync as statSync4, writeFileSync as writeFileSync2 } from "node:fs";
 import { join as join5 } from "node:path";
 function stateDir() {
   const d = cfgStr("state_dir") || join5(stateHome(), "harness-offload");
   for (const sub of ["logs", "cooldowns", "work"])
     mkdirSync2(join5(d, sub), { recursive: true });
+  if (!existsSync5(join5(d, ".private"))) {
+    try {
+      chmodSync2(d, 448);
+      writeFileSync2(join5(d, ".private"), "");
+    } catch {}
+  }
   return d;
 }
 var workDir = () => join5(stateDir(), "work");
@@ -1246,7 +1245,7 @@ function newLogPath(label) {
   const d = new Date;
   const p = (n) => String(n).padStart(2, "0");
   const ts = `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}`;
-  return join5(stateDir(), "logs", `${ts}-${slug(redact(label))}.log`);
+  return join5(stateDir(), "logs", `${ts}-${slug(redact(label))}-${process.pid}.log`);
 }
 function pruneLogs() {
   const days = cfgInt("log_retention_days", 7);
@@ -1259,7 +1258,36 @@ function pruneLogs() {
         rmSync(p, { force: true });
     }
   } catch {}
+  try {
+    const seen = join5(stateDir(), "seen");
+    for (const f of readdirSync2(seen)) {
+      const p = join5(seen, f);
+      if (statSync4(p).mtimeMs < Date.now() - 120 * 60000)
+        rmSync(p, { force: true });
+    }
+  } catch {}
 }
+var CRC = (() => {
+  const t = new Uint32Array(256);
+  for (let i = 0;i < 256; i++) {
+    let c = i << 24;
+    for (let k = 0;k < 8; k++)
+      c = c & 2147483648 ? c << 1 ^ 79764919 : c << 1;
+    t[i] = c >>> 0;
+  }
+  return t;
+})();
+function cksum(buf) {
+  let crc = 0;
+  const step = (b) => crc = (crc << 8 ^ CRC[(crc >>> 24 ^ b) & 255]) >>> 0;
+  for (const b of buf)
+    step(b);
+  for (let n = buf.length;n > 0; n = Math.floor(n / 256))
+    step(n & 255);
+  return `${~crc >>> 0}-${buf.length}`;
+}
+var seenSession = (s) => s.replace(/[^A-Za-z0-9_-]/g, "_").slice(0, 64);
+var seenFile = (session, text) => join5(stateDir(), "seen", `${seenSession(session)}-${cksum(Buffer.from(text))}`);
 var cooldownFile = (model) => join5(stateDir(), "cooldowns", model.replace(/[^A-Za-z0-9._-]/g, "_"));
 function cooling(model) {
   const f = cooldownFile(model);
@@ -1288,10 +1316,10 @@ async function opencodeMajor() {
   if (majorCache)
     return majorCache;
   const b = bin();
-  const cache2 = join6(stateDir(), "opencode-version");
+  const cache = join6(stateDir(), "opencode-version");
   try {
-    if (existsSync6(cache2) && Date.now() - statSync5(cache2).mtimeMs < 3600000) {
-      const [maj, cbin] = readFileSync6(cache2, "utf8").trim().split(" ");
+    if (existsSync6(cache) && Date.now() - statSync5(cache).mtimeMs < 3600000) {
+      const [maj, cbin] = readFileSync6(cache, "utf8").trim().split(" ");
       if (cbin === b && /^\d+$/.test(maj))
         return majorCache = Number(maj);
     }
@@ -1302,7 +1330,7 @@ async function opencodeMajor() {
   const major = m ? Number(m[1]) : 1;
   if (m) {
     try {
-      writeFileSync3(cache2, `${major} ${b}
+      writeFileSync3(cache, `${major} ${b}
 `);
     } catch {}
   }
@@ -1337,10 +1365,10 @@ function opencodeConfig(major, overrides = {}) {
       system,
       permissions: [{ action: "*", resource: "*", effect: "deny" }]
     });
-    const explore2 = v2("offload read-only explorer", P.explore);
-    explore2.steps = steps;
-    explore2.permissions.push(...["read", "grep", "glob"].map((action) => ({ action, resource: "*", effect: "allow" })));
-    explore2.permissions.push(...secrets.map((resource) => ({ action: "read", resource, effect: "deny" })));
+    const explore = v2("offload read-only explorer", P.explore);
+    explore.steps = steps;
+    explore.permissions.push(...["read", "grep", "glob"].map((action) => ({ action, resource: "*", effect: "allow" })));
+    explore.permissions.push(...secrets.map((resource) => ({ action: "read", resource, effect: "deny" })));
     return merge(user, {
       snapshots: false,
       agents: {
@@ -1348,7 +1376,7 @@ function opencodeConfig(major, overrides = {}) {
         "offload-summarize": v2("offload output digester", P.summarize),
         "offload-write": v2("offload code writer", P.write),
         "offload-ask": v2("offload one-shot helper", P.ask),
-        "offload-explore": explore2
+        "offload-explore": explore
       }
     });
   }
@@ -1429,45 +1457,45 @@ class OpencodeBackend {
     return r.stdout.split(`
 `).map((s) => s.trim()).filter((s) => /^[\w.-]+\/\S+$/.test(s));
   }
-  async run(req2) {
+  async run(req) {
     if (!await which(bin()))
       throw new WorkerError(E.MISSING, `opencode CLI not found (${bin()}). Install it from https://opencode.ai, or set opencode.bin in the config.`);
     const major = await opencodeMajor();
-    const agent = `offload-${req2.task}`;
-    const args = ["run", "--format", "json", "--agent", agent, "--title", `offload:${req2.task}`];
+    const agent = `offload-${req.task}`;
+    const args = ["run", "--format", "json", "--agent", agent, "--title", `offload:${req.task}`];
     if (major >= 2) {
       args.push("--standalone");
-      if (req2.model)
-        args.push("-m", req2.variant ? `${req2.model}#${req2.variant}` : req2.model);
+      if (req.model)
+        args.push("-m", req.variant ? `${req.model}#${req.variant}` : req.model);
     } else {
       args.push("--print-logs", "--log-level", "ERROR");
-      if (req2.model)
-        args.push("-m", req2.model);
-      if (req2.variant)
-        args.push("--variant", req2.variant);
+      if (req.model)
+        args.push("-m", req.model);
+      if (req.variant)
+        args.push("--variant", req.variant);
     }
     const env = {
       ...process.env,
-      OPENCODE_CONFIG_CONTENT: JSON.stringify(opencodeConfig(major, req2.system !== PROMPTS[req2.task] ? { [req2.task]: req2.system } : {})),
+      OPENCODE_CONFIG_CONTENT: JSON.stringify(opencodeConfig(major, req.system !== PROMPTS[req.task] ? { [req.task]: req.system } : {})),
       OPENCODE_DISABLE_AUTOUPDATE: "1",
       OFFLOAD_DISABLE: "1",
-      PWD: req2.cwd
+      PWD: req.cwd
     };
     if (cfgBool("opencode.disable_claude_code_compat", true))
       env.OPENCODE_DISABLE_CLAUDE_CODE = "1";
     const maxErr = cfgInt("opencode.max_stream_errors", 2);
     const r = await runProcess(bin(), args, {
-      input: req2.prompt,
-      cwd: req2.cwd,
+      input: req.prompt,
+      cwd: req.cwd,
       env,
-      timeoutMs: req2.timeoutSec * 1000,
-      watchdog: (out, err2) => retries(out, err2) >= maxErr ? "retries" : undefined
+      timeoutMs: req.timeoutSec * 1000,
+      watchdog: (out, err) => retries(out, err) >= maxErr ? "retries" : undefined
     });
     const events = parseEvents(r.stdout);
     const sid = events.find((e) => e.sessionID)?.sessionID || (r.stderr.match(/session\.id=(ses_[A-Za-z0-9]+)/) || [])[1];
     forgetSession(sid, major);
     if (r.timedOut)
-      throw new WorkerError(E.TIMEOUT, `timed out after ${req2.timeoutSec}s`);
+      throw new WorkerError(E.TIMEOUT, `timed out after ${req.timeoutSec}s`);
     if (r.killedBy === "retries") {
       const msg = (r.stderr.match(/error\.error="([^"]*)"/g) || []).pop()?.replace(/^error\.error="|"$/g, "");
       const why = `provider kept failing and retrying (${retries(r.stdout, r.stderr)} retries): ${msg || "likely rate limit, quota or overload"}`;
@@ -1564,29 +1592,29 @@ function crushLockdown() {
   } catch {}
   return { options: { disabled_tools: CRUSH_TOOLS }, ...Object.keys(mcp).length ? { mcp } : {} };
 }
-var merged = (req2) => `<instructions>
-${req2.system}
+var merged = (req) => `<instructions>
+${req.system}
 </instructions>
 
-${req2.prompt}`;
+${req.prompt}`;
 var CLI_AGENTS = {
   claude: {
     label: "Claude Code (claude -p) — your Claude plan (Haiku)",
     models: async () => ["haiku", "sonnet"],
     bin: "claude",
     install: "https://claude.com/claude-code",
-    args: (req2) => {
-      const a = ["-p", "--output-format", "json", "--no-session-persistence", "--setting-sources", "", "--strict-mcp-config", "--disable-slash-commands", "--system-prompt", req2.system];
-      if (req2.model)
-        a.push("--model", req2.model);
-      if (req2.task === "explore") {
+    args: (req) => {
+      const a = ["-p", "--output-format", "json", "--no-session-persistence", "--setting-sources", "", "--strict-mcp-config", "--disable-slash-commands", "--system-prompt", req.system];
+      if (req.model)
+        a.push("--model", req.model);
+      if (req.task === "explore") {
         a.push("--tools", "Read,Grep,Glob", "--allowedTools", "Read,Grep,Glob");
-        const deny = (req2.secretGlobs ?? []).map((g) => `Read(**/${g})`).join(",");
+        const deny = (req.secretGlobs ?? []).map((g) => `Read(**/${g})`).join(",");
         if (deny)
           a.push("--disallowedTools", deny);
       } else
         a.push("--tools", "");
-      return { args: a, input: req2.prompt };
+      return { args: a, input: req.prompt };
     },
     parse: (out) => {
       const j = lastJson(out);
@@ -1595,11 +1623,8 @@ var CLI_AGENTS = {
       if (j.is_error)
         throw new WorkerError(classify(String(j.result ?? j.error ?? "error")), `claude: ${j.result ?? "error"}`);
       const u = j.usage ?? {};
-      return empty(String(j.result ?? ""), {
-        tokensIn: (u.input_tokens ?? 0) + (u.cache_read_input_tokens ?? 0) + (u.cache_creation_input_tokens ?? 0),
-        tokensOut: u.output_tokens ?? 0,
-        cost: j.total_cost_usd ?? 0
-      });
+      const tin = (u.input_tokens ?? 0) + (u.cache_read_input_tokens ?? 0) + (u.cache_creation_input_tokens ?? 0);
+      return empty(String(j.result ?? ""), { tokensIn: tin, tokensOut: u.output_tokens ?? 0, ctxIn: tin, cost: j.total_cost_usd ?? 0 });
     }
   },
   codex: {
@@ -1607,14 +1632,14 @@ var CLI_AGENTS = {
     models: async () => ["gpt-6-luna", "gpt-6.1-terra", "gpt-6.1-sol"],
     bin: "codex",
     install: "npm i -g @openai/codex  (then: codex login)",
-    args: (req2) => {
-      const a = ["exec", "--json", "--ephemeral", "--skip-git-repo-check", "-s", "read-only", "--disable", "hooks", "--ignore-rules", "-C", req2.cwd];
-      if (req2.model)
-        a.push("-m", req2.model);
-      if (req2.variant)
-        a.push("-c", `model_reasoning_effort="${req2.variant}"`);
+    args: (req) => {
+      const a = ["exec", "--json", "--ephemeral", "--skip-git-repo-check", "-s", "read-only", "--disable", "hooks", "--ignore-rules", "-C", req.cwd];
+      if (req.model)
+        a.push("-m", req.model);
+      if (req.variant)
+        a.push("-c", `model_reasoning_effort="${req.variant}"`);
       a.push("-");
-      return { args: a, input: merged(req2) };
+      return { args: a, input: merged(req) };
     },
     parse: (out) => {
       let text = "";
@@ -1644,16 +1669,16 @@ var CLI_AGENTS = {
     models: async () => ["flash-lite", "flash", "pro"],
     bin: "gemini",
     install: "npm i -g @google/gemini-cli",
-    args: (req2) => {
+    args: (req) => {
       const a = ["-o", "json", "--approval-mode", "plan", "--skip-trust", "-e", "none"];
-      if (req2.model)
-        a.push("-m", req2.model);
+      if (req.model)
+        a.push("-m", req.model);
       a.push("-p", "Answer as instructed above.");
-      return { args: a, input: req2.prompt };
+      return { args: a, input: req.prompt };
     },
-    env: (req2, dir) => {
-      const file = join7(dir, `gemini-system-${req2.task}.md`);
-      writeFileSync4(file, req2.system);
+    env: (req, dir) => {
+      const file = join7(dir, `gemini-system-${req.task}.md`);
+      writeFileSync4(file, req.system);
       return { GEMINI_SYSTEM_MD: file, GEMINI_CLI_TRUST_WORKSPACE: "true" };
     },
     parse: (out, err) => {
@@ -1683,18 +1708,18 @@ var CLI_AGENTS = {
     },
     bin: "pi",
     install: "npm i -g @earendil-works/pi-coding-agent",
-    args: (req2) => {
-      const a = ["-p", "--mode", "json", "--no-session", "-na", "-ne", "-ns", "-nc", "--no-mcp", "--system-prompt", req2.system];
-      if (req2.task === "explore")
+    args: (req) => {
+      const a = ["-p", "--mode", "json", "--no-session", "-na", "-ne", "-ns", "-nc", "--no-mcp", "--system-prompt", req.system];
+      if (req.task === "explore")
         a.push("--tools", "read,grep,find,ls");
       else
         a.push("--no-tools");
-      if (req2.model)
-        a.push("--model", req2.variant ? `${req2.model}:${req2.variant}` : req2.model);
+      if (req.model)
+        a.push("--model", req.variant ? `${req.model}:${req.variant}` : req.model);
       a.push(`
 
 Answer as instructed above.`);
-      return { args: a, input: req2.prompt };
+      return { args: a, input: req.prompt };
     },
     parse: (out) => {
       let text = "";
@@ -1724,17 +1749,17 @@ Answer as instructed above.`);
     label: "GitHub Copilot CLI (copilot) — your Copilot plan",
     bin: "copilot",
     install: "npm i -g @github/copilot  (then run copilot once and /login)",
-    args: (req2) => {
+    args: (req) => {
       const a = ["--output-format", "json", "-s", "--no-custom-instructions", "--no-ask-user", "--disable-builtin-mcps", "--no-auto-update"];
-      if (req2.model)
-        a.push("--model", req2.model);
-      if (req2.variant)
-        a.push("--reasoning-effort", req2.variant);
-      if (req2.task === "explore")
+      if (req.model)
+        a.push("--model", req.model);
+      if (req.variant)
+        a.push("--reasoning-effort", req.variant);
+      if (req.task === "explore")
         a.push("--allow-all-tools", "--available-tools", "view", "grep", "glob");
       else
         a.push("--available-tools", "none");
-      return { args: a, input: merged(req2) };
+      return { args: a, input: merged(req) };
     },
     parse: (out) => {
       let text = "";
@@ -1754,15 +1779,15 @@ Answer as instructed above.`);
     label: "Qwen Code (qwen) — your Qwen account or keys",
     bin: "qwen",
     install: "npm i -g @qwen-code/qwen-code  (then run qwen once and /auth)",
-    args: (req2) => {
-      const a = ["--output-format", "json", "--system-prompt", req2.system, "--approval-mode", "plan", "--chat-recording", "false", "-e", "none"];
-      if (req2.model)
-        a.push("-m", req2.model);
-      a.push("--core-tools", ...req2.task === "explore" ? ["read_file", "grep_search", "glob"] : ["none"]);
+    args: (req) => {
+      const a = ["--output-format", "json", "--system-prompt", req.system, "--approval-mode", "plan", "--chat-recording", "false", "-e", "none"];
+      if (req.model)
+        a.push("-m", req.model);
+      a.push("--core-tools", ...req.task === "explore" ? ["read_file", "grep_search", "glob"] : ["none"]);
       a.push("--", "Answer as instructed above.");
-      return { args: a, input: req2.prompt };
+      return { args: a, input: req.prompt };
     },
-    env: (req2, dir) => {
+    env: (req, dir) => {
       const file = join7(dir, "qwen-worker-settings.json");
       writeFileSync4(file, JSON.stringify({ memory: { enableManagedAutoMemory: false, enableManagedAutoDream: false } }));
       return { QWEN_CODE_SYSTEM_SETTINGS_PATH: file };
@@ -1791,19 +1816,19 @@ Answer as instructed above.`);
     label: "Crush (crush run) — your Crush providers",
     bin: "crush",
     install: "brew install charmbracelet/tap/crush  or  npm i -g @charmland/crush",
-    args: (req2) => {
-      if (req2.task === "explore")
+    args: (req) => {
+      if (req.task === "explore")
         throw new WorkerError(E.USAGE, "crush: `crush run` approves every tool call, so it is not used as a read-only explorer; the next model in the chain takes over");
       const a = ["run", "-q"];
-      if (req2.model)
-        a.push("-m", req2.model);
-      if (req2.variant)
-        a.push("--reasoning-effort", req2.variant);
+      if (req.model)
+        a.push("-m", req.model);
+      if (req.variant)
+        a.push("--reasoning-effort", req.variant);
       a.push("Answer as instructed above.");
-      return { args: a, input: merged(req2) };
+      return { args: a, input: merged(req) };
     },
-    env: (req2) => {
-      writeFileSync4(join7(req2.cwd, ".crush.json"), JSON.stringify(crushLockdown()));
+    env: (req) => {
+      writeFileSync4(join7(req.cwd, ".crush.json"), JSON.stringify(crushLockdown()));
       return {};
     },
     parse: (out) => empty(out.trim())
@@ -1812,11 +1837,11 @@ Answer as instructed above.`);
     label: "Cursor CLI (cursor-agent -p) — Cursor plan",
     bin: "cursor-agent",
     install: "curl https://cursor.com/install -fsS | bash  (then: cursor-agent login)",
-    args: (req2) => {
-      const a = ["-p", "--output-format", "json", "--mode", "ask", "--trust", "--workspace", req2.cwd];
-      if (req2.model)
-        a.push("--model", req2.model);
-      a.push(merged(req2));
+    args: (req) => {
+      const a = ["-p", "--output-format", "json", "--mode", "ask", "--trust", "--workspace", req.cwd];
+      if (req.model)
+        a.push("--model", req.model);
+      a.push(merged(req));
       return { args: a, input: "" };
     },
     parse: (out) => {
@@ -1826,29 +1851,30 @@ Answer as instructed above.`);
       if (j.is_error)
         throw new WorkerError(classify(String(j.result ?? "error")), `cursor-agent: ${j.result ?? "error"}`);
       const u = j.usage ?? {};
-      return empty(String(j.result ?? ""), { tokensIn: (u.inputTokens ?? 0) + (u.cacheReadTokens ?? 0), tokensOut: u.outputTokens ?? 0, ctxIn: u.inputTokens ?? 0 });
+      const tin = (u.inputTokens ?? 0) + (u.cacheReadTokens ?? 0);
+      return empty(String(j.result ?? ""), { tokensIn: tin, tokensOut: u.outputTokens ?? 0, ctxIn: tin });
     }
   }
 };
 function cliAgentBackend(name) {
   const spec = CLI_AGENTS[name];
-  const bin2 = () => cfgStr(`agents.${name}.bin`, spec.bin);
+  const bin = () => cfgStr(`agents.${name}.bin`, spec.bin);
   return {
     kind: name,
     label: spec.label,
     models: spec.models,
     async available() {
-      const p = await which(bin2());
-      return p ? { ok: true, detail: p } : { ok: false, detail: `${bin2()} not found — ${spec.install}` };
+      const p = await which(bin());
+      return p ? { ok: true, detail: p } : { ok: false, detail: `${bin()} not found — ${spec.install}` };
     },
-    async run(req2) {
-      if (!await which(bin2()))
-        throw new WorkerError(E.MISSING, `${bin2()} not found — install: ${spec.install}`);
-      const { args, input } = spec.args(req2);
-      const env = { ...process.env, OFFLOAD_DISABLE: "1", ...spec.env ? spec.env(req2, workDir()) : {} };
-      const r = await runProcess(bin2(), args, { input, cwd: req2.cwd, env, timeoutMs: req2.timeoutSec * 1000 });
+    async run(req) {
+      if (!await which(bin()))
+        throw new WorkerError(E.MISSING, `${bin()} not found — install: ${spec.install}`);
+      const { args, input } = spec.args(req);
+      const env = { ...process.env, OFFLOAD_DISABLE: "1", ...spec.env ? spec.env(req, workDir()) : {} };
+      const r = await runProcess(bin(), args, { input, cwd: req.cwd, env, timeoutMs: req.timeoutSec * 1000 });
       if (r.timedOut)
-        throw new WorkerError(E.TIMEOUT, `timed out after ${req2.timeoutSec}s`);
+        throw new WorkerError(E.TIMEOUT, `timed out after ${req.timeoutSec}s`);
       const mapped = spec.exitCode?.(r.code);
       let res;
       try {
@@ -2054,13 +2080,15 @@ ${errors.join(`
 `)}
 (\`offload doctor --reset\` clears cooldowns)`);
   }
+  const hint = lastCode === E.TOO_LARGE ? `
+(the input is larger than the model can take: ask about fewer files or a range, path:START-END, or use a model with a bigger context window)` : "";
   throw new WorkerError(lastCode, `no model succeeded:
 ${errors.join(`
-`)}`);
+`)}${hint}`);
 }
 
 // src/digest.ts
-var KEY_RE = /[a-z0-9_)\/-][.][a-z][a-z]*:[0-9][0-9]*|error|fail|exception|traceback|panic|fatal|segmentation fault|segfault|assert|✗|✘|✖|err!|cannot |can.t |undefined reference|no such file|permission denied|timed out|timeout|unresolved|not found|denied|refused|abort|killed|out of memory|oom/;
+var KEY_RE = /[a-z0-9_)\/-][.][a-z][a-z]*:[0-9][0-9]*|error|fail|exception|traceback|panic|fatal|segmentation fault|segfault|assert|✗|✘|✖|err!|cannot |can.t |undefined reference|no such file|permission denied|timed out|timeout|unresolved|not found|denied|refused|abort|killed|out of memory|oom|●|^\s*(expected|received):/;
 var ZERO_RE = /(^|[^0-9])0 (errors?|failures?|failed|problems?)|(errors?|failures?|failed)\s*[:=]\s*0([^0-9]|$)|no errors|without errors|0 vulnerabilities/;
 var splitLines = (text) => {
   const l = text.split(`
@@ -2070,31 +2098,71 @@ var splitLines = (text) => {
     l.pop();
   return l;
 };
+var FRAME_RE = /^[ \t]*(at |File "|\/)/;
+var LIBFRAME_RE = /node_modules\/|site-packages\/|dist-packages\/|\/lib\/python[0-9.]*\/|<frozen |node:internal|\(node:|java\.base\/|jdk\.internal|at (java|javax|sun|jdk|kotlin|scala)\.|at org\.(junit|apache|gradle|springframework)\.|at junit\.|\/go\/src\/(runtime|testing)\/|\/rustc\//;
+var STRONG_RE = /●|error|fail|exception|traceback|panic|fatal|segmentation fault|segfault|assert|✗|✘|✖|err!|undefined reference|abort|killed|out of memory/;
 function keyLines(text, max) {
-  const seen = new Map;
+  const kinds = new Map;
   const order = [];
+  const seen = new Map;
+  let libFrames = 0;
   splitLines(text).forEach((raw, i) => {
     const l = raw.toLowerCase();
     if (!KEY_RE.test(l) || ZERO_RE.test(l))
       return;
+    if (FRAME_RE.test(raw) && LIBFRAME_RE.test(raw)) {
+      libFrames++;
+      return;
+    }
     const t = stripAnsi(raw).replace(/[ \t\r]+$/, "");
     if (!t)
       return;
-    const s = seen.get(t);
-    if (s)
-      s.rep++;
-    else {
-      seen.set(t, { n: i + 1, rep: 1 });
-      order.push(t);
+    const k = t.replace(/[0-9]+/g, "#");
+    let kind = kinds.get(k);
+    if (!kind) {
+      kind = { count: 0, strong: STRONG_RE.test(l), lines: [], distinct: 0, take: 0 };
+      kinds.set(k, kind);
+      order.push(k);
     }
+    kind.count++;
+    if (seen.has(t))
+      return;
+    seen.set(t, i + 1);
+    kind.distinct++;
+    if (kind.distinct <= 3)
+      kind.lines.push(t);
   });
-  const out = order.slice(0, max).map((t) => {
-    const s = seen.get(t);
-    return `L${s.n}: ${truncate(t, 240)}${s.rep > 1 ? `  (x${s.rep})` : ""}`;
-  });
-  if (order.length > max)
-    out.push(`... ${order.length - max} more distinct matching lines`);
-  return { lines: out, distinct: order.length };
+  let left = max;
+  for (const strongPass of [true, false])
+    for (const k of order) {
+      if (left <= 0)
+        break;
+      const kind = kinds.get(k);
+      if (kind.strong !== strongPass)
+        continue;
+      kind.take = Math.min(strongPass ? 3 : 1, kind.distinct, left);
+      left -= kind.take;
+    }
+  const picked = [];
+  for (const k of order) {
+    const kind = kinds.get(k);
+    kind.lines.slice(0, kind.take).forEach((t, j) => {
+      let s = truncate(t, 240);
+      const last = j === kind.take - 1;
+      if (last && kind.distinct === 1 && kind.count > 1)
+        s += `  (x${kind.count})`;
+      else if (last && kind.distinct > 1 && kind.count > kind.take)
+        s += `  (${kind.count} similar lines)`;
+      picked.push({ n: seen.get(t), s });
+    });
+  }
+  picked.sort((a, b) => a.n - b.n);
+  const out = picked.map((p) => `L${p.n}: ${p.s}`);
+  if (seen.size > picked.length)
+    out.push(`... ${seen.size - picked.length} more distinct matching lines`);
+  if (libFrames > 0)
+    out.push(`... ${libFrames} stack frames in libraries and the runtime left out`);
+  return { lines: out, distinct: seen.size };
 }
 function logExcerpt(text) {
   const lines = splitLines(text);
@@ -2155,7 +2223,8 @@ async function digest(log, rawLabel, code, focus, source, modelOverride, opts = 
   let model = "";
   let tin = 0;
   let tout = 0;
-  if (cfgBool("digest.use_model", true) && !opts.noModel && process.env.OFFLOAD_NO_MODEL !== "1") {
+  const tried = cfgBool("digest.use_model", true) && !opts.noModel && process.env.OFFLOAD_NO_MODEL !== "1";
+  if (tried) {
     const prompt = [
       `<command>${label}</command>`,
       code ? `<exit_code>${code}</exit_code>` : "",
@@ -2199,14 +2268,113 @@ async function digest(log, rawLabel, code, focus, source, modelOverride, opts = 
     kind: "digest",
     source,
     label,
+    log,
     model,
     bytes_in: bytes,
     bytes_out: bout,
     saved_tokens: Math.max(0, Math.floor((bytes - bout) / 4)),
     seconds: Math.round((Date.now() - t0) / 1000),
     model_ok: Boolean(summary),
+    model_tried: tried,
     worker_tokens_in: tin,
     worker_tokens_out: tout
+  });
+  pruneLogs();
+  return result;
+}
+function searchView(log, rawLabel) {
+  const t0 = Date.now();
+  const label = redact(rawLabel);
+  const text = readFileSync8(log, "utf8");
+  const bytes = Buffer.byteLength(text);
+  const kb = Math.ceil(bytes / 1024);
+  const cut = (s) => s.length > 200 ? s.slice(0, 197) + "..." : s;
+  const pathy = (p) => p !== "" && !/[ \t]/.test(p) && (p.includes("/") || /\.[A-Za-z0-9]+$/.test(p));
+  const groups = () => ({ order: [], cnt: new Map, first: new Map });
+  const add = (g, key, line) => {
+    const c = g.cnt.get(key) ?? 0;
+    if (c === 0) {
+      g.order.push(key);
+      g.first.set(key, []);
+    }
+    g.cnt.set(key, c + 1);
+    if (c < 2)
+      g.first.get(key).push(line);
+  };
+  const m = groups();
+  const d = groups();
+  const all = [];
+  let nm = 0;
+  let np = 0;
+  for (const raw of splitLines(text)) {
+    const t = raw.replace(/\x1b\[[0-9;]*[A-Za-z]/g, "").replace(/\r$/, "");
+    if (t === "")
+      continue;
+    all.push(t);
+    const c = t.indexOf(":");
+    const p = c > 0 ? t.slice(0, c) : "";
+    if (pathy(p)) {
+      nm++;
+      add(m, p, t);
+    } else if (pathy(t)) {
+      np++;
+      const slash = t.lastIndexOf("/");
+      add(d, slash >= 0 ? t.slice(0, slash) : ".", t);
+    }
+  }
+  const n = all.length;
+  const mode = nm * 10 >= n * 6 ? "m" : np * 10 >= n * 6 ? "d" : "l";
+  const out = [];
+  let head = `[offload] \`${label.slice(0, 120)}\` · ${fmtInt(countLines(text))} lines / ${kb} KB`;
+  if (mode === "m")
+    head += ` · ${fmtInt(nm)} matches in ${fmtInt(m.order.length)} files`;
+  if (mode === "d")
+    head += ` · ${fmtInt(np)} paths in ${fmtInt(d.order.length)} folders`;
+  out.push(`${head} · full log: ${log}`);
+  const list = (g, unit, what) => {
+    const shown = Math.min(g.order.length, 20);
+    const top = g.order.map((k, i) => ({ k, i, c: g.cnt.get(k) })).sort((a, b) => b.c - a.c || a.i - b.i).slice(0, shown).map((x) => x.k);
+    out.push(`── ${what} per ${unit} (${fmtInt(g.order.length)} ${unit}s) ──`);
+    for (const k of top)
+      out.push(`${String(g.cnt.get(k)).padStart(7)}  ${cut(k)}`);
+    if (g.order.length > shown) {
+      const chosen = new Set(top);
+      const rest = g.order.filter((k) => !chosen.has(k)).reduce((s, k) => s + g.cnt.get(k), 0);
+      out.push(`      … ${fmtInt(g.order.length - shown)} more ${unit}s, ${fmtInt(rest)} ${what}`);
+    }
+    out.push(`── first ${what} in the top ${Math.min(shown, 10)} ${unit}s ──`);
+    for (const k of top.slice(0, 10))
+      for (const l of g.first.get(k))
+        out.push(cut(l));
+  };
+  if (mode === "m")
+    list(m, "file", "matches");
+  else if (mode === "d")
+    list(d, "folder", "paths");
+  else {
+    out.push(`── first ${Math.min(n, 40)} lines ──`, ...all.slice(0, 40).map(cut));
+    if (n > 40)
+      out.push(`── last ${Math.min(n - 40, 10)} lines ──`, ...all.slice(Math.max(n - 10, 40)).map(cut));
+  }
+  out.push(`── narrow it: a path or a sharper pattern; counts: grep -c / rg -c; the rest: sed -n "START,ENDp" ${shquote(log)}; or ask: offload read -q "QUESTION" FILE ──`);
+  const result = out.join(`
+`) + `
+`;
+  const bout = Buffer.byteLength(result);
+  appendStats({
+    kind: "digest",
+    source: "search",
+    label,
+    log,
+    model: "",
+    bytes_in: bytes,
+    bytes_out: bout,
+    saved_tokens: Math.max(0, Math.floor((bytes - bout) / 4)),
+    seconds: Math.round((Date.now() - t0) / 1000),
+    model_ok: false,
+    model_tried: false,
+    worker_tokens_in: 0,
+    worker_tokens_out: 0
   });
   pruneLogs();
   return result;
@@ -2349,12 +2517,12 @@ function readGuard(host, cwd, file, offset, limit) {
       span = remaining;
     if (span <= chunk)
       return;
-    appendStats({ kind: "hook", event: "read_slice_blocked", host, lines: span });
+    appendStats({ kind: "hook", event: "read_slice_blocked", host, lines: span, file });
     return guard(`offload: that read slice is ${fmtInt(span)} lines of ${file}; keep slices to at most ${chunk} lines, or ask: ${callStyle(host) === "mcp" ? "offload_read" : `${cliCommand()} read`} -q "<question>" ${shquote(file)}:${start}-${start + span - 1}`);
   }
   if (lines <= cfgInt("hooks.read_threshold_lines", 600) && tokens <= cfgInt("hooks.read_threshold_tokens", 6000))
     return;
-  appendStats({ kind: "hook", event: "read_blocked", host, lines, tokens });
+  appendStats({ kind: "hook", event: "read_blocked", host, lines, tokens, file });
   return guard(bigFileMessage(host, file, lines, tokens, "A full read"));
 }
 function bashGuard(host, cwd, command) {
@@ -2424,7 +2592,7 @@ function bashGuard(host, cwd, command) {
       continue;
     if (span <= maxLines && lines <= maxLines && tokens <= maxTokens)
       continue;
-    appendStats({ kind: "hook", event: "bash_read_blocked", host, lines, tokens, prog });
+    appendStats({ kind: "hook", event: "bash_read_blocked", host, lines, tokens, prog, file: f });
     return guard(bigFileMessage(host, f, lines, tokens, `\`${prog}\``));
   }
   return;
@@ -2438,11 +2606,21 @@ async function postBash(opts) {
   const lastLine = cmd.trim().split(`
 `).pop() ?? "";
   const last = lastLine.split(/\|\||&&|;|\|/).pop() ?? "";
-  const never = cfgStr("hooks.bash_never_summarize");
-  if (never) {
+  let search = false;
+  const sre = cfgBool("hooks.search_view", true) ? cfgStr("hooks.search_commands") : "";
+  if (sre) {
     try {
-      const { posixToJs: posixToJs2 } = await Promise.resolve().then(() => (init_outline(), exports_outline));
-      if (new RegExp(posixToJs2(never)).test(last))
+      await Promise.resolve().then(() => init_outline());
+      search = new RegExp(posixToJs(sre)).test(last);
+    } catch {
+      search = false;
+    }
+  }
+  const never = cfgStr("hooks.bash_never_summarize");
+  if (never && !search) {
+    try {
+      await Promise.resolve().then(() => init_outline());
+      if (new RegExp(posixToJs(never)).test(last))
         return;
     } catch {
       return;
@@ -2459,11 +2637,43 @@ async function postBash(opts) {
 `) ? 1 : 0);
   if (lines <= cfgInt("hooks.bash_output_threshold_lines", 250) && Buffer.byteLength(text) <= cfgInt("hooks.bash_output_threshold_bytes", 20000))
     return;
+  const seen = opts.session ? seenFile(opts.session, text) : "";
+  if (seen && existsSync7(seen)) {
+    const m = /^(\d+) (\S+) (.*)$/.exec(readFileSync10(seen, "utf8").replace(/\n$/, ""));
+    if (m && Math.floor(Date.now() / 1000) - Number(m[1]) <= 3600 && existsSync7(m[3]) && readFileSync10(m[3]).equals(Buffer.from(text))) {
+      const label = redact(cmd);
+      const bytes = Buffer.byteLength(text);
+      const note = `[offload] \`${label.slice(0, 120)}\` · ${fmtInt(lines)} lines / ${Math.ceil(bytes / 1024)} KB · same output as at ${m[2]}, shown then · full log: ${m[3]} · its digest again: offload summarize ${shquote(m[3])}`;
+      appendStats({ kind: "digest", source: "repeat", label, log: m[3], model: "", bytes_in: bytes, bytes_out: Buffer.byteLength(note), saved_tokens: Math.max(0, Math.floor((bytes - Buffer.byteLength(note)) / 4)), seconds: 0, model_ok: false, model_tried: false, worker_tokens_in: 0, worker_tokens_out: 0 });
+      return note;
+    }
+  }
+  const markSeen = (log) => {
+    if (!seen)
+      return;
+    try {
+      mkdirSync3(dirname2(seen), { recursive: true });
+      const d = new Date;
+      const p = (n) => String(n).padStart(2, "0");
+      writeFileSync6(seen, `${Math.floor(d.getTime() / 1000)} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())} ${log}
+`);
+    } catch {}
+  };
+  if (search) {
+    const log = newLogPath(cmd);
+    writeFileSync6(log, text);
+    const v = searchView(log, cmd).replace(/\n$/, "");
+    markSeen(log);
+    return v;
+  }
   const budgetSec = cfgInt("hooks.digest_timeout_seconds", 20);
   const noModel = budgetSec === 0 || !await available();
   const log = newLogPath(cmd);
   writeFileSync6(log, text);
-  return digest(log, cmd, "0", opts.description ?? "", "hook", undefined, { noModel, compact, budgetSec });
+  const d = (await digest(log, cmd, "0", opts.description ?? "", "hook", undefined, { noModel, compact, budgetSec })).replace(/\n$/, "");
+  if (d)
+    markSeen(log);
+  return d;
 }
 function sessionGuide(host, cliPath = cliCommand()) {
   const lines = cfgStr("hooks.read_threshold_lines", "600");
@@ -2488,10 +2698,10 @@ ${tasks ? `- ${cliPath} task NAME [PATH...] — the user's own tasks: ${tasks}.
 
 // src/integrations/spawn-cli.ts
 import { existsSync as existsSync8 } from "node:fs";
-import { dirname as dirname2, join as join9 } from "node:path";
+import { dirname as dirname3, join as join9 } from "node:path";
 import { fileURLToPath as fileURLToPath2 } from "node:url";
 async function runCli(args, cwd, input = "", signal) {
-  const here = dirname2(fileURLToPath2(import.meta.url));
+  const here = dirname3(fileURLToPath2(import.meta.url));
   const js = [join9(here, "cli.js"), join9(here, "..", "dist", "cli.js")].find((p) => existsSync8(p));
   const [cmd, pre] = js ? ["node", [js]] : ["offload", []];
   const limit = (cfgInt("opencode.timeout_seconds", 180) * 2 + 60) * 1000;

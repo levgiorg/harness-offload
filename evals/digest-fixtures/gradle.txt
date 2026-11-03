@@ -1,0 +1,12 @@
+# keep: RefundTest > refundsTwice() FAILED
+# keep: > There were failing tests. See the report at: file:///work/build/reports/tests/test/index.html
+# keep: BUILD FAILED in 41s
+@@noise 280 > Task :module{i}:compileJava UP-TO-DATE@@
+RefundTest > refundsTwice() FAILED
+    org.opentest4j.AssertionFailedError at RefundTest.java:22
+
+* What went wrong:
+Execution failed for task ':app:test'.
+> There were failing tests. See the report at: file:///work/build/reports/tests/test/index.html
+
+BUILD FAILED in 41s

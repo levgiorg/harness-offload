@@ -1,0 +1,8 @@
+# keep: [ERROR] Tests run: 3, Failures: 1, Errors: 0, Skipped: 0, Time elapsed: 0.1 s <<< FAILURE! -- in com.acme.pay.RefundTest
+# keep: [ERROR]   RefundTest.refundsTwice:22 expected:<2> but was:<1>
+# keep: [INFO] BUILD FAILURE
+@@noise 300 [INFO] Downloaded from central: https://repo.maven.apache.org/maven2/org/lib{i}/lib{i}-1.{i}.jar ({i} kB at 1.2 MB/s)@@
+[ERROR] Tests run: 3, Failures: 1, Errors: 0, Skipped: 0, Time elapsed: 0.1 s <<< FAILURE! -- in com.acme.pay.RefundTest
+[ERROR] Failures: 
+[ERROR]   RefundTest.refundsTwice:22 expected:<2> but was:<1>
+[INFO] BUILD FAILURE

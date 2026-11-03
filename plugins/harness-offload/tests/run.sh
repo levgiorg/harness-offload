@@ -249,6 +249,15 @@ section "commands"
 out=$(STUB_PROMPT="$T/prompt" STUB_ANSWER='fn3 adds 3 — big.ts:L3 `export function fn3(a: number)`' "$OFFLOAD" read -q "what does fn3 do?" big.ts 2>&1)
 expect_has "read: answer + verified citation footer" "$out" "citations: 1 verified, 0 unverified"
 expect_has "read: line-numbered file in prompt" "$(cat "$T/prompt")" "     3	export function fn3"
+# a file offload sent from outside this folder (a log in /tmp, a sibling repo) is checked too
+mkdir -p "$T/elsewhere"; printf 'alpha\nthe retry budget is 5 attempts\nomega\n' > "$T/elsewhere/notes.txt"
+out=$(STUB_ANSWER="budget is 5 — $T/elsewhere/notes.txt:L2 \`the retry budget is 5 attempts\`" "$OFFLOAD" read -q "retry budget?" "$T/elsewhere/notes.txt" 2>&1)
+expect_has "read: citation into a file sent from outside the folder (absolute) is verified" "$out" "citations: 1 verified, 0 unverified"
+rel=$(cd "$P" && printf '%s' "$T/elsewhere/notes.txt" | awk -v p="$P" '{ n = split(p, a, "/"); s = ""; for (i = 2; i <= n; i++) s = s "../"; print s substr($0, 2) }')
+out=$(STUB_ANSWER="budget — $rel:L2 \`the retry budget is 5 attempts\`" "$OFFLOAD" read -q "retry budget?" "$rel" 2>&1)
+expect_has "read: … and through ../ (as given)" "$out" "citations: 1 verified, 0 unverified"
+out=$(STUB_ANSWER="hosts — /etc/hosts:L1 \`localhost\` and $T/elsewhere/notes.txt:L2 \`the retry budget is 5 attempts\`" "$OFFLOAD" read -q "?" "$T/elsewhere/notes.txt" 2>&1)
+expect_has "read: a file that was NOT sent stays unverifiable outside the folder" "$out" "citations: 1 verified, 1 unverified"
 out=$(STUB_PROMPT="$T/prompt-key" "$OFFLOAD" run -c 'OPENAI_API_KEY=sk-proj-abcdefghijklmnopqrstuvwxyz seq 1 3000' 2>&1)
 expect_not "run: a key in the command line never reaches the worker" "$(cat "$T/prompt-key" 2>/dev/null)" "abcdefghijklmnopqrstuvwxyz"
 expect_not "run: … nor the stats or log names" "$(cat "$OFFLOAD_STATE_DIR/stats.jsonl"; ls "$OFFLOAD_STATE_DIR/logs")" "abcdefghijklmnopqrstuvwxyz"
@@ -277,6 +286,71 @@ expect_has "read: directory expands to files" "$(cat "$T/prompt")" 'path="d/sub/
 expect_not "read: directory skips secrets" "$(cat "$T/prompt")" 'd/.env'
 out=$(STUB_PROMPT="$T/prompt" STUB_ANSWER='done' "$OFFLOAD" explore "where is fn3?" 2>&1)
 expect_has "explore: answer" "$out" "[offload explore"
+# a citation whose path the worker shortened or mangled is repaired to the one file it means
+mkdir -p repair/src/fx repair/hooks repair/a repair/b
+printf 'export const ledger = []\nexport function post(entry) { ledger.push(entry) }\n' > repair/src/fx/ledger.ts
+printf '#!/bin/sh\n# blocks full reads of huge files\nexit 0\n' > repair/hooks/pre-read
+printf 'export const same = "first"\n' > repair/a/util.ts
+printf 'export const same = "second"\n' > repair/b/util.ts
+out=$(STUB_ANSWER='post appends — fx/ledger.ts:L2 `ledger.push(entry)`; the hook — pre-read:L2 `blocks full reads`' "$OFFLOAD" read -q "?" repair 2>&1)
+expect_has "read: a shortened path and a bare file name are still verified" "$out" "citations: 2 verified, 0 unverified"
+expect_has "read: … the shortened one is rewritten to the real path" "$out" "repair/src/fx/ledger.ts:L2"
+expect_has "read: … and so is the bare file name" "$out" "repair/hooks/pre-read:L2"
+out=$(STUB_ANSWER='post — app/fx/ledger.ts:L2 `ledger.push(entry)`' "$OFFLOAD" read -q "?" repair 2>&1)
+expect_has "read: a wrong folder with a unique file name is repaired by name" "$out" "repair/src/fx/ledger.ts:L2"
+out=$(STUB_ANSWER='first — util.ts:L1 `same = "first"`; also — lib/nowhere.ts:L2 `ledger.push(entry)`' "$OFFLOAD" read -q "?" repair 2>&1)
+expect_has "read: an ambiguous name, or one no sent file has, stays unverified" "$out" "citations: 0 verified, 2 unverified"
+expect_has "read: … and is left as written" "$out" "util.ts:L1 \`same"
+out=$(STUB_ANSWER='a — `repair/src/fx/ledger.ts:L2` `ledger.push(entry)`, defined just above `repair/src/fx/ledger.ts:L1`.' "$OFFLOAD" read -q "?" repair 2>&1)
+expect_has "read: a backticked citation's closing backtick never becomes the next one's quote" "$out" "citations: 2 verified, 0 unverified"
+out=$(STUB_ANSWER='- `repair/src/fx/ledger.ts:L2` in `post()`: `repair/src/fx/ledger.ts:L2` `ledger.push(entry)`; not `repair/src/fx/ledger.ts:L20` `ledger.push(entry)`' "$OFFLOAD" read -q "?" repair 2>&1)
+expect_has "read: the same citation twice on a line is checked once, where its quote is" "$out" "citations: 1 verified, 1 unverified"
+out=$(STUB_ANSWER='- `repair/src/fx/ledger.ts:2` in `post()`: `ledger.push(entry)`; served on localhost:8080 at 10:30' "$OFFLOAD" read -q "?" repair 2>&1)
+expect_has "read: path:N without L is checked when the path is a sent file (second quote span)" "$out" "citations: 1 verified, 0 unverified"
+out=$(STUB_ANSWER='port localhost:8080 and nowhere.ts:2 `ledger.push(entry)`' "$OFFLOAD" read -q "?" repair 2>&1)
+expect_has "read: host:port and unknown name:N are plain text, not citations" "$out" "citations: 0 verified, 0 unverified"
+out=$(STUB_ANSWER='a — repair/src/fx/ledger.ts:L2 `export function post(...) { ledger.push(entry) }`' "$OFFLOAD" read -q "?" repair 2>&1)
+expect_has "read: a quote shortened with ... is verified piece by piece" "$out" "citations: 1 verified, 0 unverified"
+out=$(STUB_ANSWER='b — repair/src/fx/ledger.ts:L2 `ledger.push(entry) … export function`' "$OFFLOAD" read -q "?" repair 2>&1)
+expect_has "read: … and the pieces must come in order" "$out" "citations: 0 verified, 1 unverified"
+# digest fixtures (evals/digest-fixtures): lines a digest must never lose, without a model
+DF="$PLUGIN/../../evals/digest-fixtures"
+for spec in "$DF"/*.txt; do
+  [ -f "$spec" ] || continue
+  name=$(basename "$spec" .txt)
+  awk -f "$DF/expand.awk" "$spec" > "$T/fx-$name.log"
+  dg=$("$OFFLOAD" summarize --no-model "$T/fx-$name.log" 2>&1)
+  miss=""
+  while IFS= read -r k; do printf '%s' "$dg" | grep -qF -- "$k" || miss="$miss
+  missing: $k"; done <<EOF_KEEP
+$(sed -n 's/^# keep: //p' "$spec")
+EOF_KEEP
+  if [ -z "$miss" ]; then ok "digest keeps what matters: $name"; else bad "digest keeps what matters: $name" "$miss"; fi
+done
+# real worker answers (evals/real-answers): the verifier must give the recorded counts
+RA="$PLUGIN/../../evals/real-answers"
+if [ -f "$RA/cases.txt" ]; then
+  RD="$T/real"; mkdir -p "$RD/proj"
+  "$PLUGIN/../../evals/fixtures/generate.sh" "$RD/fx" >/dev/null && cp -r "$PLUGIN/../../evals/fixtures/warehouse" "$RD/fx/"
+  cp "$RA/orders.py" "$RD/proj/"
+  while IFS='|' read -r name kind dir paths want; do
+    name=$(echo $name); kind=$(echo $kind); dir=$(echo $dir); want=$(echo $want)
+    case "$name" in ''|'#'*) continue ;; esac
+    ans=$(sed "s|{{DIR}}|$RD|g" "$RA/$name.md")
+    if [ "$kind" = read ]; then
+      # shellcheck disable=SC2086
+      out=$(cd "$RD/$dir" && STUB_ANSWER="$ans" "$OFFLOAD" read -q "?" $(echo $paths | sed "s|{{DIR}}|$RD|g") 2>&1)
+    else
+      out=$(cd "$RD/$dir" && STUB_ANSWER="$ans" "$OFFLOAD" explore "?" 2>&1)
+    fi
+    expect_has "real answer $name: $want verified/unverified" "$out" "citations: ${want% *} verified, ${want#* } unverified"
+  done < "$RA/cases.txt"
+fi
+out=$(STUB_ANSWER='posting — src/fx/ledger.ts:L2 `ledger.push(entry)`' "$OFFLOAD" explore "where are entries posted?" 2>&1)
+expect_has "explore: a citation missing the folder prefix is checked against the project's files" "$out" "citations: 1 verified, 0 unverified"
+expect_has "explore: … and rewritten to the real path" "$out" "repair/src/fx/ledger.ts:L2"
+out=$(STUB_ANSWER='posting — src/fx/ledger.ts:L2 `nothing like this line`' "$OFFLOAD" explore "where?" 2>&1)
+expect_has "explore: a repaired path still needs its quote to match" "$out" "citations: 0 verified, 1 unverified"
 out=$(STUB_ANSWER='```ts
 const a = 1
 ```' "$OFFLOAD" write --spec "make a" --ref small.txt --out gen/a.ts 2>&1)
@@ -300,6 +374,27 @@ out=$(OFFLOAD_MODEL=stub/auth "$OFFLOAD" run -- sh -c 'i=0; while [ $i -lt 400 ]
 expect_has "run: model failure still gives a deterministic digest" "$out" "L401: Error: nope"
 out=$(awk 'BEGIN { for (i = 1; i <= 400; i++) print "row " i }' | "$OFFLOAD" summarize -q "anything odd?" --no-model)
 expect_has "summarize: stdin" "$out" "400 lines"
+# 600 warnings that differ only in numbers must not push real errors out of the key lines
+awk 'BEGIN { for (i = 1; i <= 1200; i++) { if (i == 500) print "src/pay/charge.ts:88:5 - error TS2345: Argument of type string"; else if (i == 700) print "FAIL src/pay/refund.test.ts > refunds twice"; else if (i % 2) printf "warning: deprecated API useLegacy() in src/mod%d.ts:%d:%d\n", i % 40, i, i % 9; else printf "  compiling module %d\n", i } }' > "$T/noisy.log"
+out=$("$OFFLOAD" summarize --no-model "$T/noisy.log")
+expect_has "digest: a real error survives 600 near-identical warnings" "$out" "L500: src/pay/charge.ts:88:5 - error TS2345"
+expect_has "digest: … and so does a failing test" "$out" "L700: FAIL src/pay/refund.test.ts"
+expect_has "digest: lines that differ only in numbers are one kind" "$out" "(600 similar lines)"
+expect_has "digest: … and the rest is counted" "$out" "... 599 more distinct matching lines"
+awk 'BEGIN { for (i = 1; i <= 300; i++) print "build ok"; for (i = 1; i <= 5; i++) printf "FAIL test %d\n", i }' > "$T/fails.log"
+out=$("$OFFLOAD" summarize --no-model "$T/fails.log")
+expect_has "digest: error-like kinds show up to three instances" "$out" "L303: FAIL test 3  (5 similar lines)"
+# library and runtime stack frames are counted, not shown; the project's own frames stay
+{ printf 'TypeError: boom\n      at total (src/cart.ts:41:11)\n'; for i in 1 2 3 4 5 6; do printf '      at Object.<anonymous> (node_modules/jest-circus/build/utils.js:30%d:1)\n' $i; done
+  printf 'java.lang.AssertionError: expected:<1> but was:<0>\n\tat org.junit.Assert.fail(Assert.java:89)\n\tat com.acme.pay.RefundTest.testRefund(RefundTest.java:21)\n\tat java.base/jdk.internal.reflect.DirectMethodHandleAccessor.invoke(DirectMethodHandleAccessor.java:103)\n'
+  printf '  File "/usr/lib/python3.12/unittest/case.py", line 58, in testPartExecutor\n  File "tests/test_pay.py", line 9, in test_refund\nAssertionError: 1 != 0\n'
+  seq 1 300; } > "$T/frames.log"
+out=$("$OFFLOAD" summarize --no-model "$T/frames.log")
+expect_has "digest: the project's own frame stays (node)" "$out" "at total (src/cart.ts:41:11)"
+expect_has "digest: … (java)" "$out" "at com.acme.pay.RefundTest.testRefund(RefundTest.java:21)"
+expect_not "digest: library frames are not shown (node_modules)" "$out" "jest-circus"
+expect_not "digest: … (junit, jdk internals)" "$out" "org.junit.Assert.fail"
+expect_has "digest: … but counted" "$out" "... 8 stack frames in libraries and the runtime left out"
 expect_has "summarize: digest is recorded in stats" "$(tail -1 "$OFFLOAD_STATE_DIR/stats.jsonl")" '"source":"summarize"'
 expect_eq "stats: no blank or broken lines" "$(jq -Rr 'fromjson? // "BAD" | select(. == "BAD")' "$OFFLOAD_STATE_DIR/stats.jsonl" | wc -l | tr -d ' ')" 0
 out=$("$OFFLOAD" stats)
@@ -308,7 +403,35 @@ out=$("$OFFLOAD" doctor 2>&1)
 expect_has "doctor runs" "$out" "worker agents load"
 n_del=$(jq -s 'map(select(.kind != "hook")) | length' "$OFFLOAD_STATE_DIR/stats.jsonl")
 expect_eq "stats --json: delegations match the log" "$("$OFFLOAD" stats --json | jq -r .delegations)" "$n_del"
+now=$(date +%s); for e in read_blocked bash_read_blocked read_slice_blocked autowrap; do printf '{"ts":%s,"kind":"hook","event":"%s"}\n' "$now" "$e" >> "$OFFLOAD_STATE_DIR/stats.jsonl"; done
+n_blk=$(jq -s '[.[] | select(.kind == "hook" and ((.event // "") | endswith("blocked")))] | length' "$OFFLOAD_STATE_DIR/stats.jsonl")
+expect_eq "stats --json: blocked reads (extra agent turns) counted, other hook events not" "$("$OFFLOAD" stats --json | jq -r .blocked_reads)" "$n_blk"
+[ "$n_blk" -ge 3 ] && ok "stats: (fixture has blocked reads)" || bad "stats: (fixture has blocked reads)" "n_blk=$n_blk"
+expect_has "stats: blocked reads shown as extra turns" "$("$OFFLOAD" stats)" "blocked reads: $n_blk (each costs the agent one more turn"
 expect_has "stats: 14-day sparkline" "$("$OFFLOAD" stats)" "last 14 days"
+# an input too large for a model: its own exit code, a hint, and no cooldown (the model is fine)
+out=$("$OFFLOAD" ask -m stub/toolong "x" 2>&1); rc=$?
+expect_eq "too large: exit 17, not a quota error (10)" "$rc" 17
+expect_has "too large: says how to send less" "$out" "hint: send less at once"
+SAVED_STATE=$OFFLOAD_STATE_DIR; export OFFLOAD_STATE_DIR="$T/state-toolong"
+printf '{"models":{"default":"stub/toolong","fallback":["stub/ok"]}}' > "$OFFLOAD_CONFIG"
+out=$("$OFFLOAD" ask "x" 2>&1); rc=$?
+expect_eq "too large: the chain moves on to the next model" "$rc" 0
+expect_eq "too large: no cooldown for that model" "$(ls "$OFFLOAD_STATE_DIR/cooldowns" 2>/dev/null | wc -l | tr -d ' ')" 0
+rm -f "$OFFLOAD_CONFIG"; export OFFLOAD_STATE_DIR=$SAVED_STATE
+# logs hold raw command output: the state folder is private (new and existing ones)
+( umask 022; export OFFLOAD_STATE_DIR="$T/state-perm"; mkdir -p "$OFFLOAD_STATE_DIR"; chmod 755 "$OFFLOAD_STATE_DIR"
+  seq 1 400 | "$OFFLOAD" summarize --no-model >/dev/null 2>&1
+  ls -ld "$OFFLOAD_STATE_DIR" | cut -c1-10 ) > "$T/perm.txt"
+expect_eq "state: the state folder (logs, stats) is private, even one that existed" "$(cat "$T/perm.txt")" "drwx------"
+# a model failure is a model that was tried and failed — not a digest that never asked one
+SAVED_STATE=$OFFLOAD_STATE_DIR; export OFFLOAD_STATE_DIR="$T/state-fail"
+seq 1 400 | "$OFFLOAD" summarize --no-model >/dev/null 2>&1
+seq 1 400 | "$OFFLOAD" summarize -m stub/auth >/dev/null 2>&1
+expect_eq "stats: a digest with no model asked is not a model failure" "$("$OFFLOAD" stats | awk '/digest:summarize/ { print $2 }')" 2
+expect_eq "stats: … only the failed model call counts" "$("$OFFLOAD" stats | awk '/digest:summarize/ { print $NF }')" 1
+expect_eq "stats rows say whether a model was tried" "$(jq -s -c 'map(.model_tried)' "$OFFLOAD_STATE_DIR/stats.jsonl")" "[false,true]"
+export OFFLOAD_STATE_DIR=$SAVED_STATE
 if [ "$HAVE_TS_NODE" = true ]; then
   out=$("$OFFLOAD" dashboard --out "$T/dash.html" 2>&1)
   expect_eq "dashboard: prints the report path" "$out" "$T/dash.html"
@@ -334,6 +457,8 @@ expect_not "claude: never --bare (it cannot use subscription logins)" "$alog" "a
 expect_has "claude: model passed" "$alog" "arg[haiku]"
 : > "$STUB_AGENT_LOG"; ag explore -m claude:haiku "where is fn3?" >/dev/null
 expect_has "claude: explore gets read-only tools" "$(cat "$STUB_AGENT_LOG")" "arg[Read,Grep,Glob]"
+out=$(ag explore -m claude:haiku "where is fn3?")
+expect_has "claude explore: footer counts what the worker read (input + cache)" "$out" "worker read ~120 tokens"
 out=$(ag ask -m codex:gpt-6-luna "hello codex")
 expect_has "codex: answer (merged prompt on stdin)" "$out" "CODEX-STUB: hello codex"
 : > "$STUB_AGENT_LOG"; ag ask -m codex:gpt-6-luna "x" >/dev/null
@@ -342,6 +467,8 @@ out=$(ag ask -m gemini:flash-lite "hello gemini")
 expect_has "gemini: answer + system prompt file" "$out" "GEMINI-STUB sys=ok: hello gemini"
 out=$(ag ask -m cursor: "hello cursor")
 expect_has "cursor: answer (prompt as argument)" "$out" "CURSOR-STUB: hello cursor"
+out=$(ag explore -m cursor: "where is fn3?")
+expect_has "cursor explore: footer counts what the worker read" "$out" "worker read ~30 tokens"
 out=$(ag ask -m pi: "hello pi")
 expect_has "pi: answer" "$out" "PI-STUB: hello pi"
 out=$(ag read -m pi: -q "what?" small.txt)
@@ -760,7 +887,68 @@ rm -f "$OFFLOAD_CONFIG"
 expect_has "post-bash: digest_timeout_seconds 0 still digests" "$d" "src/x.ts:4:2"
 expect_not "post-bash: digest_timeout_seconds 0 skips the model" "$d" "STATUS: from model"
 expect_eq "post-bash: digest_timeout_seconds 0 never starts the worker" "$(wc -l < "$T/stub.log" | tr -d ' ')" 0
-expect_eq "post-bash: viewer commands untouched (grep)" "$(post "grep -rn unit ." "$big_out")" ""
+# the line count is the output's own: a final newline is not one more line
+printf '{"hooks":{"digest_timeout_seconds":0}}' > "$OFFLOAD_CONFIG"
+d=$(post "make build" "$(seq 1 900)
+" | jq -r '.hookSpecificOutput.updatedToolOutput.stdout')
+expect_has "post-bash: a final newline is not counted as a line" "$d" "→ exit 0 · 900 lines"
+# the same command digested twice at once (parallel agents) keeps two logs
+post "make build" "$big_out" > "$T/pb1" & post "make build" "$big_out" > "$T/pb2" & wait
+rm -f "$OFFLOAD_CONFIG"
+l1=$(jq -r '.hookSpecificOutput.updatedToolOutput.stdout' "$T/pb1" | sed -n 's/.*full log: \([^ ]*\.log\).*/\1/p' | head -1)
+l2=$(jq -r '.hookSpecificOutput.updatedToolOutput.stdout' "$T/pb2" | sed -n 's/.*full log: \([^ ]*\.log\).*/\1/p' | head -1)
+expect_eq "post-bash: two identical commands at once keep separate logs" "$([ -n "$l1" ] && [ -f "$l1" ] && [ -f "$l2" ] && [ "$l1" != "$l2" ] && echo separate || echo "same: $l1 $l2")" separate
+expect_eq "post-bash: viewer commands untouched (cat)" "$(post "cat build.log" "$big_out")" ""
+# a huge search gets the search view: counts per file, first matches, the full log
+search_out=$(awk 'BEGIN { for (i = 1; i <= 400; i++) printf "src/f%d.ts:%d:  const unit%d = load()\n", i % 7, i, i; for (i = 1; i <= 30; i++) printf "lib/rare.ts:%d:  rare%d\n", i, i }')
+d=$(post "rg -n unit src lib" "$search_out" | jq -r '.hookSpecificOutput.updatedToolOutput.stdout')
+expect_has "post-bash: huge search → search view header" "$d" "· 430 matches in 8 files · full log:"
+expect_has "post-bash: search view counts per file, busiest first" "$(printf '%s' "$d" | sed -n 3p)" "     58  src/f1.ts"
+expect_has "post-bash: search view shows first matches verbatim" "$d" "src/f1.ts:1:  const unit1 = load()"
+expect_has "post-bash: search view says how to narrow it" "$d" "── narrow it:"
+lg=$(printf '%s' "$d" | sed -n '1s/.*full log: //p')
+expect_eq "post-bash: search view keeps every line in the log" "$(awk 'END { print NR }' "$lg")" 430
+expect_has "post-bash: search view is recorded as a digest (source search)" "$(tail -n 1 "$OFFLOAD_STATE_DIR/stats.jsonl")" '"source":"search"'
+expect_eq "post-bash: small search untouched" "$(post "rg -n unit src" "$(printf '%s\n' "$search_out" | head -20)")" ""
+expect_eq "post-bash: search piped to head untouched" "$(post "rg -n unit src | head -700" "$search_out")" ""
+d=$(post "find . -name '*.ts'" "$(awk 'BEGIN { for (i = 1; i <= 300; i++) printf "./pkg%d/src/file%d.ts\n", i % 3, i }')" | jq -r '.hookSpecificOutput.updatedToolOutput.stdout')
+expect_has "post-bash: huge path list → per-folder view" "$d" "· 300 paths in 3 folders"
+d=$(post "grep -n unit build.log" "$big_out" | jq -r '.hookSpecificOutput.updatedToolOutput.stdout')
+expect_has "post-bash: single-file grep → first and last lines" "$d" "── first 40 lines ──"
+expect_has "post-bash: … with its last lines" "$d" "warning: deprecated api in src/x.ts:4:2"
+printf '{"hooks":{"search_view":false}}' > "$OFFLOAD_CONFIG"
+expect_eq "post-bash: hooks.search_view false leaves searches alone" "$(post "rg -n unit src lib" "$search_out")" ""
+rm -f "$OFFLOAD_CONFIG"
+# offload explain: what the hooks did, why, how to change it
+SAVED_STATE=$OFFLOAD_STATE_DIR; export OFFLOAD_STATE_DIR="$T/state-explain"
+expect_has "explain: nothing yet" "$("$OFFLOAD" explain)" "Nothing yet"
+pre_read '{"file_path":"big.ts"}' >/dev/null
+post "rg -n unit src lib" "$search_out" >/dev/null
+out=$("$OFFLOAD" explain)
+expect_has "explain: newest first, with a count" "$out" "newest first (2 of 2)"
+expect_has "explain: a blocked Read names the file and size" "$out" "blocked a full Read of big.ts ("
+expect_has "explain: … the rule with its current value" "$out" "why: over hooks.read_threshold_lines (600)"
+expect_has "explain: … and how to turn it off" "$out" "off: offload config set hooks.read_guard off"
+expect_has "explain: a search view points at the full log" "$out" "all of it: $OFFLOAD_STATE_DIR/logs/"
+expect_eq "explain N limits the list" "$("$OFFLOAD" explain 1 | grep -c '^  [0-9]')" 1
+export OFFLOAD_STATE_DIR=$SAVED_STATE
+# the same output again in one session: one line instead of a second digest
+posts() { hook post-bash "$(jq -nc --arg c "$P" --arg s "$1" --arg k "$2" --arg o "$3" '{session_id: $s, cwd: $c, tool_name: "Bash", tool_input: {command: $k}, tool_response: {stdout: $o, stderr: ""}}')" | jq -r '.hookSpecificOutput.updatedToolOutput.stdout // ""'; }
+printf '{"hooks":{"digest_timeout_seconds":0}}' > "$OFFLOAD_CONFIG"
+d1=$(posts sess-A "make test" "$big_out"); d2=$(posts sess-A "make test" "$big_out")
+expect_has "post-bash: first run of an output gets the digest" "$d1" "── key lines"
+expect_has "post-bash: the same output again in the session is one line" "$d2" "same output as at"
+expect_eq "post-bash: … and only one line" "$(printf '%s\n' "$d2" | wc -l | tr -d ' ')" 1
+expect_has "post-bash: … pointing at the first run's log" "$d2" "full log: $(printf '%s' "$d1" | sed -n '1s/.*full log: //p')"
+expect_has "post-bash: … recorded as a repeat" "$(tail -n 1 "$OFFLOAD_STATE_DIR/stats.jsonl")" '"source":"repeat"'
+expect_has "post-bash: another session gets the full digest" "$(posts sess-B "make test" "$big_out")" "── key lines"
+expect_has "post-bash: changed output gets the full digest" "$(posts sess-A "make test" "$big_out
+one more line")" "── key lines"
+expect_has "post-bash: a repeated search is one line too" "$(posts sess-A "rg -n unit src lib" "$search_out" >/dev/null; posts sess-A "rg -n unit src lib" "$search_out")" "same output as at"
+hook session-start "$(jq -nc --arg c "$P" '{session_id: "sess-A", cwd: $c, source: "compact"}')" >/dev/null
+expect_has "post-bash: after a compaction the digest is shown again" "$(posts sess-A "make test" "$big_out")" "── key lines"
+expect_has "post-bash: without a session id nothing is deduplicated" "$(post "make test" "$big_out" >/dev/null; post "make test" "$big_out" | jq -r '.hookSpecificOutput.updatedToolOutput.stdout')" "── key lines"
+rm -f "$OFFLOAD_CONFIG"
 expect_eq "post-bash: last pipe segment decides (| head)" "$(post "make build 2>&1 | head -700" "$big_out")" ""
 expect_eq "post-bash: background commands untouched" "$(hook post-bash "$(jq -nc --arg o "$big_out" '{tool_input: {command: "make", run_in_background: true}, tool_response: {stdout: $o}}')")" ""
 printf '%s\nERROR: only in the full file\n' "$big_out" > "$T/persisted.txt"
@@ -805,6 +993,52 @@ if $HAVE_TS_NODE && [ -f "$PLUGIN/dist/hook.cjs" ]; then
   rm -f "$OFFLOAD_CONFIG"
   expect_has "post-bash (TS hook bundle): digest_timeout_seconds 0 still digests" "$d" "updatedToolOutput"
   expect_eq "post-bash (TS hook bundle): digest_timeout_seconds 0 never starts the worker" "$(wc -l < "$T/stub.log" | tr -d ' ')" 0
+  printf '{"hooks":{"digest_timeout_seconds":0}}' > "$OFFLOAD_CONFIG"
+  d=$(ts_hook post-bash "$(jq -nc --arg c "$P" --arg o "$(seq 1 900)
+" '{cwd: $c, tool_name: "Bash", tool_input: {command: "make"}, tool_response: {stdout: $o, stderr: ""}}')" | jq -r '.hookSpecificOutput.updatedToolOutput.stdout')
+  rm -f "$OFFLOAD_CONFIG"
+  expect_has "post-bash (TS hook bundle): a final newline is not counted as a line" "$d" "→ exit 0 · 900 lines"
+  # hooks.autowrap works in the TypeScript hooks too
+  echo '{"hooks":{"autowrap":true}}' > "$OFFLOAD_CONFIG"
+  r=$(OFFLOAD_CLI_COMMAND=offload ts_hook pre-bash "$(jq -nc --arg c "$P" '{cwd: $c, tool_name: "Bash", tool_input: {command: "npm test", description: "Run tests"}}')")
+  expect_eq "pre-bash (TS hook bundle): autowrap rewrites a noisy command" "$(printf '%s' "$r" | jq -r '.hookSpecificOutput.updatedInput.command')" "offload run -c 'npm test'"
+  expect_eq "pre-bash (TS hook bundle): … keeping the other input fields" "$(printf '%s' "$r" | jq -r '.hookSpecificOutput.updatedInput.description')" "Run tests"
+  expect_eq "pre-bash (TS hook bundle): autowrap ignores other commands" "$(ts_hook pre-bash "$(jq -nc --arg c "$P" '{cwd: $c, tool_name: "Bash", tool_input: {command: "ls -la"}}')")" ""
+  expect_eq "pre-bash (TS hook bundle): autowrap leaves background commands alone" "$(ts_hook pre-bash "$(jq -nc --arg c "$P" '{cwd: $c, tool_name: "Bash", tool_input: {command: "npm test", run_in_background: true}}')")" ""
+  rm -f "$OFFLOAD_CONFIG"
+  expect_eq "pre-bash (TS hook bundle): autowrap is off by default" "$(ts_hook pre-bash "$(jq -nc --arg c "$P" '{cwd: $c, tool_name: "Bash", tool_input: {command: "npm test"}}')")" ""
+  printf '{"hooks":{"digest_timeout_seconds":0}}' > "$OFFLOAD_CONFIG"
+  j=$(jq -nc --arg c "$P" --rawfile o big.log '{session_id: "ts-sess", cwd: $c, tool_name: "Bash", tool_input: {command: "make"}, tool_response: {stdout: $o, stderr: ""}}')
+  ts_hook post-bash "$j" >/dev/null
+  expect_has "post-bash (TS hook bundle): the same output again is one line" "$(ts_hook post-bash "$j" | jq -r '.hookSpecificOutput.updatedToolOutput.stdout')" "same output as at"
+  ts_hook session-start "$(jq -nc --arg c "$P" '{session_id: "ts-sess", cwd: $c, source: "clear"}')" >/dev/null
+  expect_has "post-bash (TS hook bundle): after /clear the digest is shown again" "$(ts_hook post-bash "$j" | jq -r '.hookSpecificOutput.updatedToolOutput.stdout')" "── "
+  ts_hook session-start "$(jq -nc --arg c "$P" '{session_id: "ts-sess", cwd: $c, source: "clear"}')" >/dev/null
+  first=$(printf '%s' "$j" | "$PLUGIN/hooks/post-bash" | jq -r '.hookSpecificOutput.updatedToolOutput.stdout')
+  expect_has "post-bash: (bash hook writes the marker on a fresh session)" "$first" "── "
+  expect_has "post-bash: a bash marker is honoured by the TS hook (shared format)" "$(ts_hook post-bash "$j" | jq -r '.hookSpecificOutput.updatedToolOutput.stdout')" "same output as at"
+  rm -f "$OFFLOAD_CONFIG"
+  # every digest fixture reads the same in both engines
+  for spec in "$PLUGIN/../../evals/digest-fixtures"/*.txt; do
+    name=$(basename "$spec" .txt); awk -f "$PLUGIN/../../evals/digest-fixtures/expand.awk" "$spec" > "$T/pf-$name.log"
+    vb=$("$PLUGIN/bin/offload" summarize --no-model "$T/pf-$name.log" 2>&1 | sed 's#/[^ ]*/logs/[^ ]*\.log#LOG#g')
+    vt=$("$PLUGIN/bin/offload-ts" summarize --no-model "$T/pf-$name.log" 2>&1 | sed 's#/[^ ]*/logs/[^ ]*\.log#LOG#g')
+    expect_eq "digest: bash and TS give the same text ($name)" "$vt" "$vb"
+  done
+  # the search view and the digest read the same in both engines
+  for k in "rg -n unit src lib" "make"; do
+    j=$(jq -nc --arg c "$P" --arg k "$k" --arg o "$(awk 'BEGIN { for (i = 1; i <= 400; i++) printf "src/f%d.ts:%d: unit %d failed\n", i % 7, i, i }')" '{cwd: $c, tool_name: "Bash", tool_input: {command: $k}, tool_response: {stdout: $o, stderr: ""}}')
+    vb=$(printf '%s' "$j" | OFFLOAD_NO_MODEL=1 "$PLUGIN/hooks/post-bash" | jq -r '.hookSpecificOutput.updatedToolOutput.stdout' | sed 's#/[^ ]*/logs/[^ ]*\.log#LOG#g')
+    vt=$(OFFLOAD_NO_MODEL=1 ts_hook post-bash "$j" | jq -r '.hookSpecificOutput.updatedToolOutput.stdout' | sed 's#/[^ ]*/logs/[^ ]*\.log#LOG#g')
+    expect_eq "post-bash: bash and TS hooks give the same text ($k)" "$vt" "$vb"
+  done
+  printf '{"hooks":{"digest_timeout_seconds":0}}' > "$OFFLOAD_CONFIG"
+  j=$(jq -nc --arg c "$P" --rawfile o big.log '{cwd: $c, tool_name: "Bash", tool_input: {command: "make"}, tool_response: {stdout: $o, stderr: ""}}')
+  ts_hook post-bash "$j" > "$T/tb1" & ts_hook post-bash "$j" > "$T/tb2" & wait
+  rm -f "$OFFLOAD_CONFIG"
+  l1=$(jq -r '.hookSpecificOutput.updatedToolOutput.stdout' "$T/tb1" | sed -n 's/.*full log: \([^ ]*\.log\).*/\1/p' | head -1)
+  l2=$(jq -r '.hookSpecificOutput.updatedToolOutput.stdout' "$T/tb2" | sed -n 's/.*full log: \([^ ]*\.log\).*/\1/p' | head -1)
+  expect_eq "post-bash (TS hook bundle): two identical commands at once keep separate logs" "$([ -n "$l1" ] && [ -f "$l1" ] && [ -f "$l2" ] && [ "$l1" != "$l2" ] && echo separate || echo "same: $l1 $l2")" separate
 fi
 # config cache: an edit applies on the very next hook, even within the same second
 big_read=$(jq -nc --arg c "$P" '{cwd: $c, tool_name: "Read", tool_input: {file_path: "big.ts"}}')

@@ -1,8 +1,9 @@
 // `offload hook <host> <event>` — reads the host's hook JSON on stdin and
 // answers in that host's dialect. Every failure path prints nothing and exits
 // 0, which every host treats as "no opinion" (fail open).
-import { bashGuard, available, firstSession, Host, PAUSED_MESSAGE, postBash, readGuard, sessionGuide, Verdict, welcomeMessage } from "../hooks/logic.ts";
+import { autowrap, bashGuard, available, firstSession, Host, PAUSED_MESSAGE, postBash, readGuard, sessionGuide, Verdict, welcomeMessage } from "../hooks/logic.ts";
 import { readFileSync } from "node:fs";
+import { seenForget } from "../state.ts";
 import { setProjectDir } from "../paths.ts";
 import { cfgBool } from "../config.ts";
 
@@ -60,6 +61,8 @@ async function handle(host: Host, event: string, input: J): Promise<J | undefine
   const tool: string = input.tool_name ?? "";
 
   // Crush's SessionStart output is ignored (the guide goes in via context paths)
+  // after a compaction or /clear the agent no longer has the digests it saw
+  if (event === "session-start" && (input.source === "compact" || input.source === "clear")) seenForget(input.session_id);
   if (event === "session-start" && host === "crush") return undefined;
   if (event === "session-start") {
     const guide = sessionGuide(host);
@@ -93,6 +96,11 @@ async function handle(host: Host, event: string, input: J): Promise<J | undefine
       v = readGuard(host, cwd, file, offset, limit);
     } else if (isShell) {
       v = bashGuard(host, ti.working_directory || cwd, ti.command);
+      // opt-in: noisy commands run through `offload run` (Claude Code can rewrite the command)
+      if (!v && host === "claude") {
+        const w = autowrap(ti.command, ti.run_in_background === true);
+        if (w) return { hookSpecificOutput: { hookEventName: "PreToolUse", updatedInput: { ...ti, command: w } } };
+      }
     }
     return v ? preToolOut(host, v) : undefined;
   }
@@ -101,7 +109,7 @@ async function handle(host: Host, event: string, input: J): Promise<J | undefine
     if (host === "cursor") return undefined; // Cursor cannot replace shell output
     const resp = input.tool_response;
     const output = host === "gemini" ? text(resp?.llmContent ?? resp?.returnDisplay) : host === "codex" || host === "crush" ? text(resp) : [text(resp?.stdout), resp?.stderr ? `[stderr]\n${text(resp.stderr)}` : ""].filter(Boolean).join("\n");
-    const d = await postBash({ command: ti.command, output, persistedPath: resp?.persistedOutputPath, description: ti.description, background: ti.run_in_background === true || ti.is_background === true, interrupted: resp?.interrupted === true });
+    const d = await postBash({ command: ti.command, output, persistedPath: resp?.persistedOutputPath, description: ti.description, background: ti.run_in_background === true || ti.is_background === true, interrupted: resp?.interrupted === true, session: typeof input.session_id === "string" ? input.session_id : undefined });
     if (!d) return undefined;
     switch (host) {
       case "codex":

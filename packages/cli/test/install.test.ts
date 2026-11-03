@@ -149,7 +149,7 @@ describe("offload install with no agent named: asks, or is told", () => {
     const log = readFileSync(join(s.dir, "calls.log"), "utf8");
     // run from this checkout, the agents point at it (edits apply live)
     expect(log).toMatch(/claude plugin marketplace add \/.+ --scope user\nclaude plugin install harness-offload@harness-offload --scope user/);
-    expect(log).not.toContain("levgiorg/harness-offload");
+    expect(log).not.toMatch(/marketplace add levgiorg\/harness-offload/); // (the checkout's own path may contain the name)
   });
   test("each agent reads with its own model, never another agent's", () => {
     const s = withStubs();

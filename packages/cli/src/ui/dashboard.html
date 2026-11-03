@@ -297,7 +297,8 @@ footer { padding-block: 0 2.5rem; font-size: 0.76rem; color: var(--text-3); }
   const kindName = (r) => (r.kind === "digest" && r.source ? `${KIND.digest} (${r.source})` : KIND[r.kind] || r.kind);
   const worker = (r) => (Number(r.worker_tokens_in) || 0) + (Number(r.worker_tokens_out) || 0);
   const kept = (r) => Math.max(0, Number(r.saved_tokens) || 0);
-  const failed = (r) => r.model_ok === false;
+  // a failure is a model that was tried and failed (search views, repeats and no-model digests never try one)
+  const failed = (r) => r.model_ok === false && r.model_tried !== false;
 
   document.getElementById("meta").textContent = `${DATA.sample ? "example data" : DATA.source || "stats"} · generated ${new Date(DATA.generated * 1000).toLocaleString()}`;
   document.getElementById("sample").hidden = !DATA.sample;

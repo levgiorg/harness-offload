@@ -1,15 +1,15 @@
 // Host-neutral hook decisions — the TypeScript twin of the bash hooks in the
 // Claude Code plugin. Host adapters translate their JSON in and out.
-import { existsSync, readFileSync, statSync } from "node:fs";
-import { basename, delimiter, isAbsolute, join, resolve } from "node:path";
+import { existsSync, mkdirSync, readFileSync, statSync } from "node:fs";
+import { basename, delimiter, dirname, isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { cfgBool, cfgInt, cfgList, cfgStr, loadConfig } from "../config.ts";
-import { digest } from "../digest.ts";
+import { digest, searchView } from "../digest.ts";
 import { parseRef, backendFor } from "../backends/registry.ts";
 import { modelChain } from "../engine.ts";
-import { isSecretTarget, matchesAny } from "../secrets.ts";
-import { appendStats, cooling, newLogPath } from "../state.ts";
-import { outline } from "../outline.ts";
+import { isSecretTarget, matchesAny, redact } from "../secrets.ts";
+import { appendStats, cooling, newLogPath, seenFile } from "../state.ts";
+import { outline, posixToJs } from "../outline.ts";
 import { taskSummary } from "../tasks.ts";
 import { estTokens, fileBytes, fileLines, fmtInt, isText, shquote } from "../text.ts";
 import { writeFileSync } from "node:fs";
@@ -165,15 +165,31 @@ export function readGuard(host: Host, cwd: string, file: string | undefined, off
     let span = limit !== undefined ? limit : remaining;
     if (span > remaining) span = remaining;
     if (span <= chunk) return undefined;
-    appendStats({ kind: "hook", event: "read_slice_blocked", host, lines: span });
+    appendStats({ kind: "hook", event: "read_slice_blocked", host, lines: span, file });
     return guard(`offload: that read slice is ${fmtInt(span)} lines of ${file}; keep slices to at most ${chunk} lines, or ask: ${callStyle(host) === "mcp" ? "offload_read" : `${cliCommand()} read`} -q "<question>" ${shquote(file)}:${start}-${start + span - 1}`);
   }
   if (lines <= cfgInt("hooks.read_threshold_lines", 600) && tokens <= cfgInt("hooks.read_threshold_tokens", 6000)) return undefined;
-  appendStats({ kind: "hook", event: "read_blocked", host, lines, tokens });
+  appendStats({ kind: "hook", event: "read_blocked", host, lines, tokens, file });
   return guard(bigFileMessage(host, file, lines, tokens, "A full read"));
 }
 
 /** cat/nl/bat/less/more/head/tail/sed -n dumps of big files. */
+/** hooks.autowrap (opt-in): a noisy command matching hooks.autowrap_pattern runs through
+ *  `offload run`. Returns the wrapped command. Twin: section 2 of hooks/pre-bash. */
+export function autowrap(command: string | undefined, background: boolean): string | undefined {
+  if (!enabled() || !command || background || !cfgBool("hooks.autowrap", false)) return undefined;
+  const pat = cfgStr("hooks.autowrap_pattern");
+  if (!pat) return undefined;
+  try {
+    const re = new RegExp(posixToJs(pat));
+    if (!command.split("\n").some((l) => re.test(l))) return undefined;
+  } catch {
+    return undefined;
+  }
+  appendStats({ kind: "hook", event: "autowrap", command: redact(command) });
+  return `${cliCommand()} run -c ${shquote(command)}`;
+}
+
 export function bashGuard(host: Host, cwd: string, command: string | undefined): Verdict | undefined {
   if (!enabled() || !command || !cfgBool("hooks.bash_read_guard", true) || cfgStr("hooks.read_guard", "block") === "off") return undefined;
   if (/^OFFLOAD_RAW=1/.test(command) || /offload /.test(command)) return undefined;
@@ -223,21 +239,32 @@ export function bashGuard(host: Host, cwd: string, command: string | undefined):
       if (span <= chunk) continue;
     } else if (lines <= maxLines && tokens <= maxTokens) continue;
     if (span <= maxLines && lines <= maxLines && tokens <= maxTokens) continue;
-    appendStats({ kind: "hook", event: "bash_read_blocked", host, lines, tokens, prog });
+    appendStats({ kind: "hook", event: "bash_read_blocked", host, lines, tokens, prog, file: f });
     return guard(bigFileMessage(host, f, lines, tokens, `\`${prog}\``));
   }
   return undefined;
 }
 
 /** Digest for a large successful command output; undefined = leave it alone. */
-export async function postBash(opts: { command?: string; output: string; persistedPath?: string; description?: string; background?: boolean; interrupted?: boolean }): Promise<string | undefined> {
+export async function postBash(opts: { command?: string; output: string; persistedPath?: string; description?: string; background?: boolean; interrupted?: boolean; session?: string }): Promise<string | undefined> {
   if (!enabled() || !cfgBool("hooks.summarize_bash_output", true)) return undefined;
   const cmd = opts.command ?? "";
   if (!cmd || /^OFFLOAD_RAW=1/.test(cmd) || opts.background || opts.interrupted) return undefined;
   const lastLine = cmd.trim().split("\n").pop() ?? "";
   const last = lastLine.split(/\|\||&&|;|\|/).pop() ?? "";
+  // a huge search (grep/rg/find…) gets the search view instead of a summary that loses matches
+  let search = false;
+  const sre = cfgBool("hooks.search_view", true) ? cfgStr("hooks.search_commands") : "";
+  if (sre) {
+    try {
+      const { posixToJs } = await import("../outline.ts");
+      search = new RegExp(posixToJs(sre)).test(last);
+    } catch {
+      search = false;
+    }
+  }
   const never = cfgStr("hooks.bash_never_summarize");
-  if (never) {
+  if (never && !search) {
     try {
       const { posixToJs } = await import("../outline.ts");
       if (new RegExp(posixToJs(never)).test(last)) return undefined;
@@ -257,11 +284,46 @@ export async function postBash(opts: { command?: string; output: string; persist
   // options, not process.env: in-process hosts (OpenCode, Pi) live on.
   // The agent waits for this hook: the model gets hooks.digest_timeout_seconds
   // in all; 0 = no model in hooks (the digest is then instant).
+  // the same output again in this session (a re-run with nothing changed): one line
+  // instead of a second digest and worker call. Twin: post-bash.
+  const seen = opts.session ? seenFile(opts.session, text) : "";
+  if (seen && existsSync(seen)) {
+    const m = /^(\d+) (\S+) (.*)$/.exec(readFileSync(seen, "utf8").replace(/\n$/, ""));
+    // byte for byte against the earlier run's log, so a checksum clash can't mislead
+    if (m && Math.floor(Date.now() / 1000) - Number(m[1]) <= 3600 && existsSync(m[3]) && readFileSync(m[3]).equals(Buffer.from(text))) {
+      const label = redact(cmd);
+      const bytes = Buffer.byteLength(text);
+      const note = `[offload] \`${label.slice(0, 120)}\` · ${fmtInt(lines)} lines / ${Math.ceil(bytes / 1024)} KB · same output as at ${m[2]}, shown then · full log: ${m[3]} · its digest again: offload summarize ${shquote(m[3])}`;
+      appendStats({ kind: "digest", source: "repeat", label, log: m[3], model: "", bytes_in: bytes, bytes_out: Buffer.byteLength(note), saved_tokens: Math.max(0, Math.floor((bytes - Buffer.byteLength(note)) / 4)), seconds: 0, model_ok: false, model_tried: false, worker_tokens_in: 0, worker_tokens_out: 0 });
+      return note;
+    }
+  }
+  const markSeen = (log: string) => {
+    if (!seen) return;
+    try {
+      mkdirSync(dirname(seen), { recursive: true });
+      const d = new Date();
+      const p = (n: number) => String(n).padStart(2, "0");
+      writeFileSync(seen, `${Math.floor(d.getTime() / 1000)} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())} ${log}\n`);
+    } catch {
+      /* best-effort */
+    }
+  };
+  if (search) {
+    const log = newLogPath(cmd);
+    writeFileSync(log, text);
+    const v = searchView(log, cmd).replace(/\n$/, "");
+    markSeen(log);
+    return v;
+  }
   const budgetSec = cfgInt("hooks.digest_timeout_seconds", 20);
   const noModel = budgetSec === 0 || !(await available());
   const log = newLogPath(cmd);
   writeFileSync(log, text);
-  return digest(log, cmd, "0", opts.description ?? "", "hook", undefined, { noModel, compact, budgetSec });
+  // no final newline, as the bash hook returns it
+  const d = (await digest(log, cmd, "0", opts.description ?? "", "hook", undefined, { noModel, compact, budgetSec })).replace(/\n$/, "");
+  if (d) markSeen(log);
+  return d;
 }
 
 /** Usage guidance injected at session start. */

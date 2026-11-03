@@ -1,27 +1,15 @@
 import {
-  banner,
-  color
-} from "./chunk-qgy5b9xq.js";
-import {
-  ExitError
-} from "./chunk-19hkxh7w.js";
-import {
-  UsageError
-} from "./chunk-dbc9hheg.js";
-import {
-  killChildrenOnSignals
-} from "./chunk-p3kr88ed.js";
-import {
-  VERSION
-} from "./chunk-gaybtz2x.js";
-import"./chunk-z2qytrf7.js";
-import {
-  __require
-} from "./chunk-d1gt213s.js";
+  VERSION,
+  killChildrenOnSignals2,
+  UsageError2,
+  ExitError2,
+  color,
+  banner
+} from "./chunk-x0pmyrax.js";
 
 // src/cli.ts
-var core = () => import("./chunk-h5msv4kc.js");
-var admin = () => import("./chunk-1pxyxev8.js");
+var core = () => import("./chunk-zve2s6zf.js");
+var admin = () => import("./chunk-60rxnw72.js");
 var SELF = () => process.env.npm_command === "exec" ? "npx harness-offload" : "offload";
 var HELP = () => `${banner()}
   ${color.bold("Get started")}
@@ -55,6 +43,7 @@ var HELP = () => `${banner()}
     offload models [BACKEND...]             list models your backends offer
     offload config [show|path|init|set KEY VALUE|get|trust] [--project]
     offload stats [--days N] [--json]       delegations and estimated tokens saved
+    offload explain [N]                     what the hooks did lately, why, and how to change it
     offload statusline                      one short line for status bars
     offload mcp                             run as an MCP server (stdio)
 
@@ -69,7 +58,7 @@ var HELP = () => `${banner()}
 `;
 async function main(argv) {
   if (argv[0] !== "hook")
-    killChildrenOnSignals();
+    killChildrenOnSignals2();
   const [cmd = "help", ...rest] = argv;
   switch (cmd) {
     case "help":
@@ -109,21 +98,24 @@ async function main(argv) {
       (await core()).cmdTasks();
       return 0;
     case "model":
-      return (await import("./chunk-892qshjq.js")).cmdModel(rest);
+      return (await import("./chunk-nv7fhpgd.js")).cmdModel(rest);
     case "key":
-      return (await import("./chunk-5zrxj2vq.js")).cmdKey(rest);
+      return (await import("./chunk-39tmrkxs.js")).cmdKey(rest);
     case "outline":
       (await core()).cmdOutline(rest);
       return 0;
     case "dashboard":
-      return (await import("./chunk-pfb4h9ym.js")).cmdDashboard(rest);
+      return (await import("./chunk-a62dxpyd.js")).cmdDashboard(rest);
     case "doctor":
       return (await admin()).cmdDoctor(rest);
     case "stats":
       (await admin()).cmdStats(rest);
       return 0;
+    case "explain":
+      (await admin()).cmdExplain(rest);
+      return 0;
     case "demo":
-      return (await import("./chunk-thsmm51a.js")).cmdDemo();
+      return (await import("./chunk-14pegmd4.js")).cmdDemo();
     case "statusline":
       (await admin()).cmdStatusline();
       return 0;
@@ -134,18 +126,18 @@ async function main(argv) {
       await (await admin()).cmdModels(rest);
       return 0;
     case "setup":
-      return (await import("./chunk-8rs324eq.js")).cmdSetup(rest);
+      return (await import("./chunk-8jvqjp71.js")).cmdSetup(rest);
     case "install":
     case "uninstall":
-      return (await import("./chunk-0x0xvn75.js")).cmdInstall(cmd, rest);
+      return (await import("./chunk-m78gxvqk.js")).cmdInstall(cmd, rest);
     case "sync":
-      return (await import("./chunk-0x0xvn75.js")).cmdSync(rest);
+      return (await import("./chunk-m78gxvqk.js")).cmdSync(rest);
     case "mcp":
-      return (await import("./chunk-0y6wkg08.js")).cmdMcp(rest);
+      return (await import("./chunk-8220ad5y.js")).cmdMcp(rest);
     case "hook":
-      return (await import("./chunk-c0wf5x5q.js")).cmdHook(rest);
+      return (await import("./chunk-eysszwqe.js")).cmdHook(rest);
     case "worker":
-      return (await import("./chunk-2pdw7dz6.js")).cmdWorker(rest);
+      return (await import("./chunk-djyyvazf.js")).cmdWorker(rest);
   }
   process.stderr.write(`offload: unknown command: ${cmd}
 `);
@@ -155,9 +147,9 @@ async function main(argv) {
 main(process.argv.slice(2)).then((code) => {
   process.exitCode = code;
 }, (e) => {
-  if (e instanceof ExitError)
+  if (e instanceof ExitError2)
     process.exitCode = e.code;
-  else if (e instanceof UsageError) {
+  else if (e instanceof UsageError2) {
     process.stderr.write(`offload: ${e.message}
 `);
     process.exitCode = 2;

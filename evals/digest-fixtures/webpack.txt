@@ -1,0 +1,7 @@
+# keep: ERROR in ./src/app.tsx 12:0-34
+# keep: Module not found: Error: Can't resolve './Header' in '/work/src'
+# keep: webpack 5.99.0 compiled with 1 error in 9123 ms
+@@noise 300 asset chunk-{i}.js {i}.2 KiB [emitted] [minimized]@@
+ERROR in ./src/app.tsx 12:0-34
+Module not found: Error: Can't resolve './Header' in '/work/src'
+webpack 5.99.0 compiled with 1 error in 9123 ms

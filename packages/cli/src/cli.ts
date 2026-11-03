@@ -45,6 +45,7 @@ const HELP = () => `${banner()}
     offload models [BACKEND...]             list models your backends offer
     offload config [show|path|init|set KEY VALUE|get|trust] [--project]
     offload stats [--days N] [--json]       delegations and estimated tokens saved
+    offload explain [N]                     what the hooks did lately, why, and how to change it
     offload statusline                      one short line for status bars
     offload mcp                             run as an MCP server (stdio)
 
@@ -111,6 +112,9 @@ async function main(argv: string[]): Promise<number> {
       return (await admin()).cmdDoctor(rest);
     case "stats":
       (await admin()).cmdStats(rest);
+      return 0;
+    case "explain":
+      (await admin()).cmdExplain(rest);
       return 0;
     case "demo":
       return (await import("./commands/demo.ts")).cmdDemo();

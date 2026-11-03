@@ -1,0 +1,10 @@
+# keep: --- FAIL: TestReserve/expired (0.00s)
+# keep: inventory_test.go:58: reserve() = nil, want ErrExpired
+# keep: FAIL	example.com/shop/inventory	0.412s
+@@noise 280 === RUN   TestCase{i}@@
+--- FAIL: TestReserve (0.00s)
+    --- FAIL: TestReserve/expired (0.00s)
+        inventory_test.go:58: reserve() = nil, want ErrExpired
+FAIL
+FAIL	example.com/shop/inventory	0.412s
+@@noise 20 ok  	example.com/shop/pkg{i}	0.0{i}s@@

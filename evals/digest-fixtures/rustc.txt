@@ -1,0 +1,12 @@
+# keep: error[E0382]: borrow of moved value: `order`
+# keep: --> src/orders.rs:41:20
+# keep: error: could not compile `shop` (lib) due to 1 previous error
+@@noise 280    Compiling dep{i} v0.{i}.0@@
+error[E0382]: borrow of moved value: `order`
+  --> src/orders.rs:41:20
+   |
+39 |     let sent = ship(order);
+   |                     ----- value moved here
+41 |     println!("{}", order.id);
+   |                    ^^^^^^^^ value borrowed here after move
+error: could not compile `shop` (lib) due to 1 previous error

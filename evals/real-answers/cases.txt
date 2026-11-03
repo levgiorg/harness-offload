@@ -1,0 +1,11 @@
+# Real worker answers (claude:haiku, 2026-11-02) and the citation counts the verifier must give.
+# The two "unverified" flags left are real model slips (see docs/autopilot/EXPERIMENTS.md E1).
+# name | command | folder (under the fixture dir) | paths (space-separated) | verified unverified
+bench-bash-large | read | proj | {{DIR}}/fx/ledger.ts | 6 1
+bench-ts-large | read | proj | {{DIR}}/fx/ledger.ts | 8 0
+bench-bash-cross | read | proj | {{DIR}}/fx/warehouse/inventory.ts {{DIR}}/fx/warehouse/inventory.test.ts | 11 0
+bench-ts-cross | read | proj | {{DIR}}/fx/warehouse/inventory.ts {{DIR}}/fx/warehouse/inventory.test.ts | 11 0
+task-bash-file | read | proj | orders.py | 6 0
+task-ts-file | read | proj | orders.py | 5 0
+task-bash-explore | explore | proj | - | 3 0
+task-ts-explore | explore | proj | - | 3 0

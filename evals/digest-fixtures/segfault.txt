@@ -1,0 +1,4 @@
+# keep: Segmentation fault (core dumped)
+# keep: ./bin/server: line 3: 4242
+@@noise 300 [server] accepted connection {i} from 10.0.0.{i}@@
+./bin/server: line 3: 4242 Segmentation fault (core dumped) ./bin/real-server "$@"

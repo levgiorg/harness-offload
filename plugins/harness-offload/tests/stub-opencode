@@ -15,7 +15,7 @@ ver="${STUB_VERSION:-1.19.5}"
 case "$1" in
   --version|-v) echo "$ver"; exit 0 ;;
   session|debug|agent) exit 0 ;;
-  models) printf 'stub/ok\nstub/multistep\nstub/auth\nstub/retry\nstub/echo\n'; exit 0 ;;
+  models) printf 'stub/ok\nstub/multistep\nstub/auth\nstub/retry\nstub/echo\nstub/toolong\n'; exit 0 ;;
   run) shift ;;
   *) exit 0 ;;
 esac
@@ -56,6 +56,7 @@ case "$mode" in
     printf '{"type":"tool_use","sessionID":"%s","part":{"type":"tool","tool":"grep","state":{"status":"completed"}}}\n' "$sid"
     finish 500; start; text "$(answer)"; finish 2000 ;;
   auth) start; err provider.auth "invalid api key" APIError; exit 1 ;;
+  toolong) start; err provider.error "prompt is too long: 230000 tokens > 200000 maximum (context limit reached)" APIError; exit 1 ;;
   nomodel) err provider.no-route "Model unavailable: $model" ProviderModelNotFoundError; exit 1 ;;
   retry)
     start

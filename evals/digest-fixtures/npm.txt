@@ -1,0 +1,6 @@
+# keep: npm error code E404
+# keep: npm error 404 Not Found - GET https://registry.npmjs.org/@acme%2fmissing - Not found
+@@noise 300 npm http fetch GET 200 https://registry.npmjs.org/pkg{i} {i}ms (cache hit)@@
+npm error code E404
+npm error 404 Not Found - GET https://registry.npmjs.org/@acme%2fmissing - Not found
+npm error 404 '@acme/missing@^1.0.0' is not in this registry.

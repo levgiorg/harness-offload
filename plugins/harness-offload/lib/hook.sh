@@ -74,6 +74,7 @@ HK_FIELDS='
     | [utf8bytelength, (split("\n") | length) - 1]) catch [-1, -1]) as $sz
   | @sh "HK_CWD=\(g(.cwd))",
     @sh "HK_AGENT_ID=\(g(.agent_id))",
+    @sh "HK_SESSION=\(g(.session_id))",
     @sh "HK_SOURCE=\(g(.source))",
     @sh "HK_FILE=\(g(.tool_input.file_path))",
     @sh "HK_OFFSET=\(g(.tool_input.offset))",
@@ -85,7 +86,7 @@ HK_FIELDS='
     @sh "HK_IS_IMAGE=\(g(.tool_response.isImage))",
     @sh "HK_PERSISTED=\(g(.tool_response.persistedOutputPath))",
     "HK_OUT_BYTES=\($sz[0])", "HK_OUT_LINES=\($sz[1])"'
-HK_CWD="" HK_AGENT_ID="" HK_SOURCE="" HK_FILE="" HK_OFFSET="" HK_LIMIT="" HK_COMMAND="" HK_DESCRIPTION=""
+HK_CWD="" HK_AGENT_ID="" HK_SESSION="" HK_SOURCE="" HK_FILE="" HK_OFFSET="" HK_LIMIT="" HK_COMMAND="" HK_DESCRIPTION=""
 HK_BACKGROUND="" HK_INTERRUPTED="" HK_IS_IMAGE="" HK_PERSISTED="" HK_OUT_BYTES=-1 HK_OUT_LINES=-1
 eval "$(printf '%s' "$HK_INPUT" | jq -r "$HK_FIELDS" 2>/dev/null)"
 

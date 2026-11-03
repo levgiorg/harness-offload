@@ -1,0 +1,4 @@
+# keep: src/pay/charge.ts:88:5 - error TS2345: Argument of type 'string' is not assignable to parameter of type 'number'.
+@@noise 400 warning: deprecated API useLegacy() in src/mod{i}.ts:{i}:3@@
+src/pay/charge.ts:88:5 - error TS2345: Argument of type 'string' is not assignable to parameter of type 'number'.
+@@noise 300 warning: deprecated API useLegacy() in src/late{i}.ts:{i}:3@@

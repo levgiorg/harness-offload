@@ -48,6 +48,7 @@ offload — keep big reads, long logs and repo-wide searches out of your coding 
   offload models [BACKEND]              List the models your backends offer.
   offload doctor [--ping] [--reset]     Check setup; --ping makes a tiny live call per model.
   offload stats [--days N] [--json]     Delegations and estimated tokens saved (14-day sparkline).
+  offload explain [N]                   What the hooks did lately (blocked reads, replaced output), why, how to change it.
   offload dashboard [--open] [--sample] HTML report of the same (needs Node 18+).
   offload install                       Asks which agents and where, shows what will change, installs on yes.
   offload uninstall                     The same, in reverse (--yes / --agents / --all to skip the questions).
@@ -82,6 +83,7 @@ report_failure() {
     "$CO_E_AUTH")  co_err "hint: log the backend in (its own CLI login, or \`opencode auth login\`) or set its API key with \`offload setup\`; \`offload doctor\` shows which." ;;
     "$CO_E_MODEL") co_err "hint: check the model id (\`offload models BACKEND\` lists them) and switch with \`offload model BACKEND:MODEL\`; some providers also say \"model not found\" when the API key is wrong." ;;
     "$CO_E_TIMEOUT") co_err "hint: raise opencode.timeout_seconds or send less input." ;;
+    "$CO_E_TOO_LARGE") co_err "hint: send less at once — fewer files, a range (path:START-END) — or pick a model with a bigger context window (\`offload model …\`)." ;;
   esac
 }
 
@@ -127,10 +129,10 @@ cmd_read() {
   [ -n "$question" ] || die 'read: -q "QUESTION" is required'
   [ ${#items[@]} -gt 0 ] || die "read: give at least one file or directory"
 
-  local max_bytes max_files prompt answer
+  local max_bytes max_files prompt answer sentf
   max_bytes=$(co_cfg_int '.read.max_input_bytes' 1500000)
   max_files=$(co_cfg_int '.read.max_files' 60)
-  co_tmp prompt; co_tmp answer
+  co_tmp prompt; co_tmp answer; co_tmp sentf
 
   local item path from to total nfiles=0 nlines=0 skipped="" f
   for item in "${items[@]}"; do
@@ -151,6 +153,7 @@ cmd_read() {
         [ "$nfiles" -ge "$max_files" ] && { skipped="$skipped (+more: max_files=$max_files)"; break; }
         total=$(co_file_lines "$f")
         emit_file "$f" 1 "$total" "$total" >> "$prompt"
+        printf '%s\n' "$f" >> "$sentf"
         nfiles=$((nfiles + 1)); nlines=$((nlines + total))
       done <<EOF
 $(list_dir_files "$path")
@@ -167,6 +170,7 @@ EOF
     [ -z "$to" ] && to=$total
     [ "$to" -gt "$total" ] && to=$total
     emit_file "$path" "$from" "$to" "$total" >> "$prompt"
+    printf '%s\n' "$path" >> "$sentf"
     nfiles=$((nfiles + 1)); nlines=$((nlines + to - from + 1))
   done
   [ "$nfiles" -gt 0 ] || die "read: no readable text files to send${skipped:+ (skipped:$skipped)}" "$CO_E_REFUSED"
@@ -186,7 +190,8 @@ EOF
   local cite="" ok=0 bad=0 rep
   if $verify && co_cfg_bool '.read.verify_citations' true; then
     co_tmp rep
-    awk -v root="$PWD" -v report="$rep" -f "$CO_ROOT/lib/verify.awk" "$answer" > "$answer.v" && mv "$answer.v" "$answer"
+    # files sent from outside this folder (a log in /tmp, another repo) are checked too
+    awk -v root="$PWD" -v report="$rep" -v sent="$sentf" -f "$CO_ROOT/lib/verify.awk" "$answer" > "$answer.v" && mv "$answer.v" "$answer"
     read -r ok bad < "$rep" 2>/dev/null || { ok=0; bad=0; }
     cite=" · citations: $ok verified, $bad unverified"
   fi
@@ -238,7 +243,11 @@ cmd_explore() {
   local cite="" ok=0 bad=0 rep
   if $verify; then
     co_tmp rep
-    awk -v root="$dir" -v report="$rep" -f "$CO_ROOT/lib/verify.awk" "$answer" > "$answer.v" && mv "$answer.v" "$answer"
+    # the project's files, so a citation with a shortened path still finds its file
+    local knownf
+    co_tmp knownf
+    ( cd "$dir" 2>/dev/null && { git ls-files --cached --others --exclude-standard 2>/dev/null || find . -type f ! -path './.git/*' ! -path '*/node_modules/*' 2>/dev/null; } | head -n 50000 ) > "$knownf"
+    awk -v root="$dir" -v report="$rep" -v known="$knownf" -f "$CO_ROOT/lib/verify.awk" "$answer" > "$answer.v" && mv "$answer.v" "$answer"
     read -r ok bad < "$rep" 2>/dev/null || { ok=0; bad=0; }
     cite=" · citations: $ok verified, $bad unverified"
   fi
@@ -1006,6 +1015,49 @@ EOF
 
 # ----------------------------------------------------------------- stats
 
+# offload explain [N] — what the hooks did lately (blocked reads, replaced outputs), each
+# with the rule, its current value and how to change it. Twin: cmdExplain in admin.ts.
+cmd_explain() {
+  local n=10 f
+  case "${1:-}" in ''|*[!0-9]*) ;; *) n=$1 ;; esac
+  f="$(co_state_dir)/stats.jsonl"
+  if [ ! -s "$f" ]; then
+    printf 'Nothing yet: offload'"'"'s hooks have not blocked or replaced anything (%s).\n' "$f"
+    return 0
+  fi
+  jq -rs --argjson n "$n" --arg rl "$(co_cfg '.hooks.read_threshold_lines' 600)" --arg rt "$(co_cfg '.hooks.read_threshold_tokens' 6000)" \
+    --arg ch "$(co_cfg '.hooks.read_max_chunk_lines' 600)" --arg bl "$(co_cfg '.hooks.bash_output_threshold_lines' 250)" \
+    --arg bb "$(co_cfg '.hooks.bash_output_threshold_bytes' 20000)" --arg f "$f" '
+    def fmt: tostring | if length <= 3 then . else (.[:-3] | fmt) + "," + .[-3:] end;
+    def kb: (((. // 0) + 1023) / 1024 | floor | tostring) + " KB";
+    def file: if (.file // "") == "" then "a file (not recorded)" else .file end;
+    def full: "over hooks.read_threshold_lines (\($rl)) or hooks.read_threshold_tokens (\($rt))";
+    def out: "over hooks.bash_output_threshold_lines (\($bl)) or hooks.bash_output_threshold_bytes (\($bb))";
+    map(select(.kind == "hook" or (.kind == "digest" and ((.source // "") as $s | $s == "hook" or $s == "search" or $s == "repeat"))))
+    | if length == 0 then "Nothing yet: offload'"'"'s hooks have not blocked or replaced anything (\($f))." else
+      length as $all | reverse | .[:$n] |
+      "offload explain — what the hooks did, newest first (\(length) of \($all))",
+      (.[] | "  \(.ts | strflocaltime("%m-%d %H:%M"))  " + (
+        if .kind == "hook" and .event == "read_blocked" then
+          "blocked a full Read of \(file) (\(.lines // 0 | fmt) lines, ~\(.tokens // 0 | fmt) tokens)\n               why: \(full)\n               change: offload config set hooks.read_threshold_lines N · off: offload config set hooks.read_guard off"
+        elif .kind == "hook" and .event == "read_slice_blocked" then
+          "blocked a Read slice of \(.lines // 0 | fmt) lines of \(file)\n               why: over hooks.read_max_chunk_lines (\($ch))\n               change: offload config set hooks.read_max_chunk_lines N"
+        elif .kind == "hook" and .event == "bash_read_blocked" then
+          "blocked `\(.prog // "?")` of \(file) (\(.lines // 0 | fmt) lines, ~\(.tokens // 0 | fmt) tokens)\n               why: \(full)\n               change: offload config set hooks.read_threshold_lines N · off: offload config set hooks.bash_read_guard false"
+        elif .kind == "hook" and .event == "autowrap" then
+          "ran `\(.command // "a command")` through offload run\n               why: hooks.autowrap is on and the command matched hooks.autowrap_pattern\n               off: offload config set hooks.autowrap false"
+        elif .kind == "hook" then
+          "hook event \(.event // "?")"
+        elif .source == "search" then
+          "showed a search view of `\(.label // "?")` (\(.bytes_in | kb) → \(.bytes_out | kb))\n               why: a search \(out)\n               all of it: \(.log // "(log not recorded)") · off: offload config set hooks.search_view false"
+        elif .source == "repeat" then
+          "said `\(.label // "?")` printed the same output as before (\(.bytes_in | kb))\n               why: the same output again in this session\n               all of it: \(.log // "(log not recorded)")"
+        else
+          "digested the output of `\(.label // "?")` (\(.bytes_in | kb) → \(.bytes_out | kb))\n               why: \(out)\n               all of it: \(.log // "(log not recorded)") · off: offload config set hooks.summarize_bash_output false"
+        end))
+      end' "$f"
+}
+
 cmd_stats() {
   local days=0 json=false
   while [ $# -gt 0 ]; do
@@ -1023,10 +1075,12 @@ cmd_stats() {
     # same shape as the TypeScript engine's --json
     jq -s --argjson days "$days" '
       (now - ($days * 86400)) as $since
-      | map(select($days == 0 or .ts >= $since) | select(.kind != "hook"))
+      | map(select($days == 0 or .ts >= $since))
+      | ([.[] | select(.kind == "hook" and ((.event // "") | endswith("blocked")))] | length) as $blocked
+      | map(select(.kind != "hook"))
       | def sum(f): map(f // 0) | add // 0;
         {delegations: length, saved_tokens: sum(.saved_tokens), worker_tokens_in: sum(.worker_tokens_in),
-         worker_tokens_out: sum(.worker_tokens_out),
+         worker_tokens_out: sum(.worker_tokens_out), blocked_reads: $blocked,
          by_kind: (group_by(.kind + (if .source then ":" + .source else "" end))
            | map({key: (.[0].kind + (if .[0].source then ":" + .[0].source else "" end)), value: {count: length, saved_tokens: sum(.saved_tokens)}})
            | from_entries)}' "$f"
@@ -1041,11 +1095,11 @@ cmd_stats() {
       ($all | map(select(.kind != "hook"))) as $del
     | "offload stats" + (if $days > 0 then " (last \($days) days)" else " (all time)" end),
       "  delegations: \($del | length)   est. Claude tokens kept out of context: \($del | sum(.saved_tokens) | floor | fmt)",
-      "  worker tokens used: in \($del | sum(.worker_tokens_in) | fmt) / out \($del | sum(.worker_tokens_out) | fmt)",
+      "  worker tokens used (as the workers reported them): in \($del | sum(.worker_tokens_in) | fmt) / out \($del | sum(.worker_tokens_out) | fmt)",
       "",
-      "  kind           count   saved≈tok   avg s   model-failures",
+      "  kind               count   saved≈tok   avg s   model-failures",
       ($del | group_by(.kind + (if .source then ":" + .source else "" end))[] |
-        "  \((.[0].kind + (if .[0].source then ":" + .[0].source else "" end)) | .[0:13] | . + (" " * (13 - length)))  \(length | tostring | (" " * (6 - length)) + .)   \(sum(.saved_tokens) | floor | fmt | (" " * (9 - length)) + .)   \((sum(.seconds) / length * 10 | floor) / 10 | tostring | (" " * (5 - length)) + .)   \(map(select(.model_ok == false)) | length)"),
+        "  \((.[0].kind + (if .[0].source then ":" + .[0].source else "" end)) | .[0:17] | . + (" " * (17 - length)))  \(length | tostring | (" " * (6 - length)) + .)   \(sum(.saved_tokens) | floor | fmt | (" " * (9 - length)) + .)   \((sum(.seconds) / length * 10 | floor) / 10 | tostring | (" " * (5 - length)) + .)   \(map(select(.model_ok == false and .model_tried != false)) | length)"),
       "",
       ((now / 86400 | floor) as $today
         | [range(13; -1; -1) as $i | ($today - $i) as $d | $del | map(select((.ts / 86400 | floor) == $d)) | sum(.saved_tokens)] as $per
@@ -1053,9 +1107,10 @@ cmd_stats() {
         | "  last 14 days  " + ($per | map(if . == 0 then "·" else ([9601 + ([7, (. / $max * 7.999 | floor)] | min)] | implode) end) | join("")) + "  (today \($per[13] | floor | fmt) tok)"),
       "",
       "  hook events: \($all | map(select(.kind == "hook")) | group_by(.event) | map("\(.[0].event)=\(length)") | join("  "))",
-      "  citations: \($del | sum(.cites_ok)) verified, \($del | sum(.cites_bad)) unverified"
+      "  citations: \($del | sum(.cites_ok)) verified, \($del | sum(.cites_bad)) unverified",
+      "  blocked reads: \($all | map(select(.kind == "hook" and ((.event // "") | endswith("blocked")))) | length) (each costs the agent one more turn; not subtracted above)"
   ' "$f"
-  echo "  (estimates: bytes/4 of what was kept out of context; extra turns and cache effects are not counted)"
+  echo "  (estimates: bytes/4 of what was kept out of context; cache effects are not counted)"
 }
 
 cmd_statusline() {
@@ -1161,6 +1216,7 @@ main() {
     outline)         [ "${1:-}" = "--" ] && shift; [ -f "${1:-}" ] || die "outline: give a file"; co_outline "$1" "${2:-80}" ;;
     doctor)          cmd_doctor "$@" ;;
     stats)           cmd_stats "$@" ;;
+    explain)         cmd_explain "$@" ;;
     statusline)      cmd_statusline ;;
     dashboard)       co_ts_run dashboard "$@" || die "dashboard needs Node.js 18+ (the report is built by the bundled TypeScript CLI)" "$CO_E_NOOC" ;;
     config)          cmd_config "$@" ;;

@@ -1,17 +1,20 @@
 #!/usr/bin/env bash
 # Token-savings benchmark with a REAL model (uses your configured backend/model).
-#   evals/benchmark.sh [-m provider/model] [--cli PATH_TO_OFFLOAD]
+#   evals/benchmark.sh [-m provider/model] [--cli PATH_TO_OFFLOAD] [--save-answers PREFIX]
+# --save-answers PREFIX writes each read answer into evals/real-answers as PREFIX-<scenario>.md
+# (paths as {{DIR}}) and prints the cases.txt lines to add once the unverified ones are checked.
 # chars/4 of what the agent would have read vs. what offload returned, plus a
 # quality check: each scenario lists facts the answer must mention.
 set -u
 HERE="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$(cd "$HERE/.." && pwd)"
 CLI="$ROOT/plugins/harness-offload/bin/offload"
-model=""
+model="" save=""
 while [ $# -gt 0 ]; do
   case "$1" in
     -m) model="$2"; shift 2 ;;
     --cli) CLI="$2"; shift 2 ;;
+    --save-answers) save="$2"; shift 2 ;;
     *) shift ;;
   esac
 done
@@ -57,6 +60,17 @@ $(jq -r ".scenarios[$i].must_mention[]" "$B")
 EOF2
   without=$(tok "$T/$name.corpus"); with=$(tok "$out")
   printf '%-22s %9s %7s %7s%% %6s  %s/%s facts\n' "$name" "$without" "$with" $(( (without - with) * 100 / (without > 0 ? without : 1) )) "$secs" "$hits" "$total"
+  if [ -n "$save" ] && [ "$kind" = read ]; then
+    # the corpus format: offload's own footer lines dropped, the fixture folder as {{DIR}}
+    sed -e "s#$T/#{{DIR}}/#g" -e '/^\[offload /d' -e '/^⚠unverified = /d' -e 's/ ⚠unverified$//' "$out" > "$HERE/real-answers/$save-$name.md"
+    counts=$(sed -n 's/.*citations: \([0-9]*\) verified, \([0-9]*\) unverified.*/\1 \2/p' "$out" | tail -n 1)
+    # shellcheck disable=SC2086
+    cases="${cases:-}$save-$name | read | proj | $(echo $paths | sed "s#$T/#{{DIR}}/#g") | ${counts:-? ?}
+"
+  fi
   i=$((i + 1))
 done
 echo "outputs: $T"
+if [ -n "$save" ] && [ -n "${cases:-}" ]; then
+  printf '\nSaved answers in evals/real-answers. Check every unverified citation by hand (a real model slip, or a\nverifier bug to fix?), then add these lines to evals/real-answers/cases.txt:\n%s' "$cases"
+fi

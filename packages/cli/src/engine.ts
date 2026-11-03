@@ -106,5 +106,6 @@ export async function invoke(task: Task, prompt: string, cwd: string, override?:
   if (tried === 0 && lastCode !== E.USAGE && lastCode !== E.TIMEOUT) {
     throw new WorkerError(E.QUOTA, `every configured model is cooling down after errors:\n${errors.join("\n")}\n(\`offload doctor --reset\` clears cooldowns)`);
   }
-  throw new WorkerError(lastCode, `no model succeeded:\n${errors.join("\n")}`);
+  const hint = lastCode === E.TOO_LARGE ? "\n(the input is larger than the model can take: ask about fewer files or a range, path:START-END, or use a model with a bigger context window)" : "";
+  throw new WorkerError(lastCode, `no model succeeded:\n${errors.join("\n")}${hint}`);
 }

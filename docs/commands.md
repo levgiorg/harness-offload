@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **`offload read`** | Answers questions about big files, directories or `file:START-END` ranges. Files go to the worker line-numbered; answers must cite `path:Lx-Ly` with a verbatim quote, and every quote is verified locally (`⚠unverified` otherwise). |
+| **`offload read`** | Answers questions about big files, directories or `file:START-END` ranges. Files go to the worker line-numbered; answers must cite `path:Lx-Ly` with a verbatim quote, and every quote is verified locally (`⚠unverified` otherwise). A path the worker shortened (`fx/ledger.ts`, a bare file name) is matched to the one sent file it means and rewritten, so the agent can open it; a quote shortened with `...` is checked piece by piece. |
 | **`offload explore`** | A read-only cheap agent (read/grep/glob, never secrets) searches the repo itself: "where/how is X done?" |
 | **`offload run -- CMD`** | Runs noisy commands. Short output passes through; long output becomes a digest — model summary + **verbatim error lines picked by a script** + tail + full-log path. Exit code preserved. |
 | **`offload summarize`** | The same digest for stdin or a file: `git log -p \| offload summarize -q "what changed in auth?"` |
@@ -11,8 +11,9 @@
 | **`offload model`** | Shows which model does each kind of work and changes it in one step: `offload model groq:llama-3.3-70b`, `offload model read claude:haiku`, `offload model --reset`. Typos are caught before anything is saved (`opnerouter` → "did you mean openrouter?"), and you are told when a key or CLI is missing. |
 | **`offload key NAME`** | Stores an API key (hidden prompt or stdin; file mode 600) and lists which backends have one. With `offload model fallback @host-api @default` it becomes the backup if your agent's own route stops working. |
 | **Read guard** (hooks) | Blocks a *full* read of a file over 600 lines / ~6K tokens — Read tool and `cat`/`head`/`sed -n` dumps alike — and answers with a **symbol outline** plus ready-to-run options, so the agent jumps straight to a targeted slice. |
-| **Output digest** (hooks) | When a successful command prints more than 250 lines, the agent gets the digest instead (full output kept in a log). |
+| **Output digest** (hooks) | When a successful command prints more than 250 lines, the agent gets the digest instead (full output kept in a log). A huge search (`grep`, `rg`, `find`…) gets a **search view** instead: matches per file or folder, the first matches of the busiest ones, how to narrow it. The same output again in one session (a re-run with nothing changed) is one line pointing at the first run's log, until a compaction or `/clear`. |
 | **MCP server** | `offload mcp` exposes `offload_read`, `offload_explore`, `offload_run`, `offload_summarize`, `offload_write`, `offload_ask`, `offload_outline` — and `offload_task` when you have tasks — to any MCP client. |
+| **`offload explain`** | What the hooks did lately, newest first: which Read or `cat` was blocked (file, size), which output was digested or shown as a search view (with its full log), the rule and its current value, and the exact command to change it or turn it off. `offload explain 30` shows more. |
 | **Report** | `offload dashboard --open` writes an offline HTML report: tokens kept out of context per day, by kind and model, failures, and every delegation with its citation check. |
 
 ## Reference
@@ -65,7 +66,7 @@ sets the default, `offload model TASK REF` one kind of work (`fallback` takes se
 back to the default, `--project` writes the repo's file. `offload models BACKEND` lists model ids.
 
 Exit codes: `0` ok · `2` usage · `10` quota · `11` auth · `12` timeout · `13` unknown model ·
-`14` worker error · `15` backend missing · `16` refused (secrets/size). `offload run` returns the
+`14` worker error · `15` backend missing · `16` refused (secrets/size) · `17` input larger than the model's context window (no cooldown; the next model in the chain is tried). `offload run` returns the
 command's own code; `offload write --check` returns `1` when the check fails.
 
 ## Troubleshooting

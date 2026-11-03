@@ -3,6 +3,27 @@
 Mock-based suites run in CI on every push (conformance ×2 engines, routing table ×2, TS unit/adapter/MCP/installer tests).
 Real-model runs are recorded here.
 
+## 2026-11-02 — every task with a real model (Haiku via `claude -p`), both engines
+
+- `evals/benchmark.sh -m claude:haiku` (bash, then `--cli` TypeScript), after the fixes: all facts found in all
+  four scenarios on both engines — `read` of a 919-line module 4/4, `read` across two files 3/3, `summarize` of a
+  2,323-line CI log 3/3, `write` of tests from a reference 2/2; savings 95% / 56–61% / 97–98% / 93%. Citations: bash
+  cross-file 11/0, large-module 6/1 (the flag is right: L6 cited for a quote that is on L418); TypeScript 11/0
+  and 8/0 (was 0/10 before path repair). Tests written by `write`: TS 30/30 pass under pytest; bash 24/26, with the two failures
+  Haiku's arithmetic (expected the discount rate as the amount), which is why `write` asks for a review.
+- `explore` ("where is the full-read threshold defined and enforced?"): both answers correct (600 lines / 6000
+  tokens in `config/defaults.json`, enforced by `hooks/pre-read`, mirrored in `hooks/logic.ts`); the TS footer now
+  says ~52,550 tokens read (was ~0). The same answers re-checked with the final verifier: bash 10/1, TS 8/1 — awk,
+  mawk, original-awk (BSD) and the TS verifier agree.
+- `ask`: correct, ~3 s, both engines (earlier run). `task` (custom, `claude:haiku`): on a file → both found the two
+  N+1 loops and the unbounded queries, 6/0 and 5/0 citations; on a `git diff` via `--stdin` → both said the
+  function body was not in the material instead of guessing; `tools: "read"` → both found all three query sites
+  (bash's model wrote `orders.py:4` without `L`, so nothing was checked; TS 3/0 after the repeated-citation fix).
+- post-bash hook on a 2,323-line / 129 KB CI log: ~3 KB digest in 6–7 s on both engines with both failures, their
+  verbatim lines and the tail; Haiku also noticed that "exit 0" contradicted the 2 failed tests.
+- OpenCode harness (stub OpenCode, both engines): `@host` → OpenCode's default model; `offload model provider/model`,
+  `offload model ask provider/model` and `-m` each change the model that runs (shown in the footer).
+
 ## 2026-11-02 — the installer that asks
 
 - In a real terminal (pty, `test/pty-run.py`, in CI): agents → where → plan → "Install?" → receipt; unticking

@@ -71,3 +71,67 @@
 - CI: concurrency cancel, job timeouts, strict `claude plugin validate`, shellcheck warning level for scripts, single required `ci-ok` gate, merge-queue trigger; hosts-e2e also on PRs touching hooks/connectors/hosts (Node on PATH for runners). CODEOWNERS, `scripts/protect-main.sh`, CONTRIBUTING with the check matrix, PR checklist, set-owner made word-safe (CODEOWNERS), npm README links rewritten to absolute at release.
 - CLAUDE.md (auto-loaded project notes) + docs/HANDOFF.md.
 - Local CI-equivalent green: shellcheck (error + warning), typecheck, bun 52/52, conformance 252/252 ×2, routing 49/49 ×2, dist current, plugin validate; real-harness e2e 16/16.
+
+## 2026-11-02 ~22:40 UTC — autonomous R&D loop starts (branch autopilot/rd)
+- Set up: MASTER-BACKLOG (66 items + 14 from research), EXPERIMENTS, RESEARCH (34 sources, subagent), `.claude/loop.md`,
+  one session cron every 30 min (13,43).
+- A1 search view (both engines): huge grep/rg/find output → counts per file/folder + first matches + log path.
+  Measured: 164 KB rg → 3.5 KB (116 ms bash / 68 ms TS); 529 KB find → 3.4 KB. Byte-identical across gawk/mawk/BSD awk and TS.
+- Also: TS hook digests no longer end with an extra newline (parity with bash).
+- Checks: conformance 423/423 bash, 420/420 TS (+14), routing 49×2, bun 70/70, hooks under budget, dist fresh, shellcheck.
+- Next: R1 near-duplicate collapse in digests; R9 verify hooks.json `if` filter support.
+
+## 2026-11-02 ~23:00 UTC — R1: real errors no longer hidden by warning floods
+- Baseline (both engines): 600 near-identical warnings filled the 30 key-line slots; a TS error and a failing test were not shown.
+- Now kinds (digits masked) with error-like kinds first; both errors shown; 3,705 → 1,674 B; CI-log fixture unchanged;
+  identical across gawk/mawk/BSD awk and TS.
+- Checks: conformance 428/425 (+5, fail on old code), bun 70, routing 49×2, hooks under budget, dist fresh, shellcheck.
+- Next: R9 (hooks.json filters → fewer hook processes) — verify support first; R2 must_keep fixtures.
+
+## 2026-11-02 ~23:15 UTC — B1: `path:N` citations into known files are checked
+- Both engines: `name:N` counts as a citation only when `name` is a sent/known file; a second backtick span is tried.
+- Real answers re-verified: bash custom task 0/0 → 3/0; explore 10/1 and 8/1 unchanged; awk and TS agree.
+- Checks: conformance 430/427 (+2; the positive one fails on the old verifier), bun 70, dist fresh.
+- Incident: one manual `offload read` outside the test harness used the real `@host` worker (one tiny Haiku call) because
+  the session runs inside Claude Code. From now on manual tries set `OFFLOAD_MODEL=stub/ok` or run via the suite.
+- Next: J1 real-answer regression fixtures; R4 seen-output dedup; R5 honest ledger.
+
+## 2026-11-02 ~23:35 UTC — J1: real-answer corpus
+- `evals/real-answers/`: 8 real Haiku answers (benchmark read ×4, custom task read ×2, explore-type task ×2) with the
+  counts both engines must give; the fixture files are regenerated (`evals/fixtures/generate.sh`) plus `orders.py`.
+  The benchmark cases read files from outside the current folder, as the real runs did.
+- Conformance runs them: bash 438/438, TS 435/435. Against the verifier from before today's fixes (f581f37): 6/8 fail.
+- Next: N3 (doc), R4 seen-output dedup, R5 honest ledger.
+
+## 2026-11-02 ~23:50 UTC — R4: an identical re-run is one line
+- Both engines: post-bash keeps a per-session marker of outputs it digested or search-viewed; the same output again →
+  one line pointing at the first log; compaction or /clear forgets; checked byte for byte against the log.
+- Measured on the 129 KB CI log: repeat 86 ms (bash) / 58 ms (TS), 377 B, no worker call.
+- Checks: conformance 452/449 (+14), bun 70, routing 49×2, backends 464, hooks under budget, dist fresh, shellcheck.
+- Next: R5 honest ledger (stats: metered vs estimated; repeats/search views as their own rows in the report), N3 doc.
+
+## 2026-11-02 ~23:55 UTC — loop: R5 slice 1, honest failure counts
+- Both engines + report: model failures = a model was tried and failed (`model_tried`); before, 2 of 2 rows in a
+  no-model session read as failures. Bash stats table no longer truncates `digest:summarize`.
+- Checks: conformance 455/452 (+3), bun 70, routing 49×2, hooks under budget, dist fresh, shellcheck.
+- Next: R5 slice 2 (blocked reads = extra agent turns, shown next to savings), N3 doc.
+
+## 2026-11-03 — goal: finish the whole backlog. R5 done, N3 done
+- R5 slice 2 (both engines): `offload stats` shows blocked reads as extra agent turns and `--json` has `blocked_reads`.
+- N3: docs/development.md explains free hand-tries with the stub worker; verified.
+- Checks: conformance 458/455, bun 70, dist fresh, shellcheck.
+- Handoff: the order of work is P1 → P2 → P3 in MASTER-BACKLOG; each item gets `done (sha)`, `rejected (reason)` or
+  `blocked (exact blocker)`. Resume by reading this file's tail and the first `todo` in priority order.
+
+## 2026-11-03 — G2 and A3
+- G2: the state folder (logs, stats) is 0700, existing installs included (was 755/644, world-readable).
+- A3: library/runtime stack frames (node_modules, site-packages, java.base, junit, go runtime…) are counted, not shown
+  in key lines; fixture 2,549 → 1,673 B with every failure kept.
+- Checks: conformance 464/461, bun 70, dist fresh, shellcheck, hooks within budget.
+
+## 2026-11-03 — E1 `offload explain`
+- Both engines, identical text: last N hook decisions (blocked Read/`cat`/slice, digest, search view, repeat, autowrap)
+  with file or log, the rule and its current value, and the command to change or turn it off.
+- Stats rows: hook events carry `file`; digest rows carry `log`. Doc recipe fixed (TS warned on OFFLOAD_CONFIG=/dev/null).
+- Found: TS engine has no autowrap → N4.
+- Checks: conformance 471/468, bun 70, routing 49×2, hooks within budget, dist fresh, shellcheck.

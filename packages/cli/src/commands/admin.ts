@@ -1,4 +1,5 @@
 import { existsSync } from "node:fs";
+import { join } from "node:path";
 import { parseFlags, str } from "../args.ts";
 import { TASKS } from "../assets.ts";
 import { cfgStr, ignoredProjectKeys, loadConfig, readConfigFile, setConfigValue, warnings, writeConfigFile } from "../config.ts";
@@ -169,17 +170,19 @@ export function cmdStats(argv: string[]): void {
     const k = r.kind + (r.source ? `:${r.source}` : "");
     groups.set(k, [...(groups.get(k) ?? []), r]);
   }
+  // a blocked read saves context but costs the agent one more turn
+  const blocked = all.filter((r) => r.kind === "hook" && String(r.event ?? "").endsWith("blocked")).length;
   if (opts.json) {
-    process.stdout.write(JSON.stringify({ delegations: del.length, saved_tokens: sum(del, "saved_tokens"), worker_tokens_in: sum(del, "worker_tokens_in"), worker_tokens_out: sum(del, "worker_tokens_out"), by_kind: Object.fromEntries([...groups].map(([k, v]) => [k, { count: v.length, saved_tokens: sum(v, "saved_tokens") }])) }, null, 2) + "\n");
+    process.stdout.write(JSON.stringify({ delegations: del.length, saved_tokens: sum(del, "saved_tokens"), worker_tokens_in: sum(del, "worker_tokens_in"), worker_tokens_out: sum(del, "worker_tokens_out"), blocked_reads: blocked, by_kind: Object.fromEntries([...groups].map(([k, v]) => [k, { count: v.length, saved_tokens: sum(v, "saved_tokens") }])) }, null, 2) + "\n");
     return;
   }
   const hooks = new Map<string, number>();
   for (const r of all.filter((r) => r.kind === "hook")) hooks.set(r.event, (hooks.get(r.event) ?? 0) + 1);
   let s = `offload stats${days ? ` (last ${days} days)` : " (all time)"}\n`;
   s += `  delegations: ${del.length}   est. Claude tokens kept out of context: ${color.bold(color.green(fmtInt(sum(del, "saved_tokens"))))}\n`;
-  s += `  worker tokens used: in ${fmtInt(sum(del, "worker_tokens_in"))} / out ${fmtInt(sum(del, "worker_tokens_out"))}\n\n`;
+  s += `  worker tokens used (as the workers reported them): in ${fmtInt(sum(del, "worker_tokens_in"))} / out ${fmtInt(sum(del, "worker_tokens_out"))}\n\n`;
   s += table(
-    [...groups].sort().map(([k, v]) => [k, String(v.length), fmtInt(sum(v, "saved_tokens")), String(Math.round((sum(v, "seconds") / v.length) * 10) / 10), String(v.filter((r) => r.model_ok === false).length)]),
+    [...groups].sort().map(([k, v]) => [k, String(v.length), fmtInt(sum(v, "saved_tokens")), String(Math.round((sum(v, "seconds") / v.length) * 10) / 10), String(v.filter((r) => r.model_ok === false && r.model_tried !== false).length)]),
     ["kind", "count", "saved≈tok", "avg s", "model-failures"],
   );
   // last 14 days of saved tokens as a sparkline
@@ -191,7 +194,8 @@ export function cmdStats(argv: string[]): void {
   s += `\n  last 14 days  ${color.cyan(perDay.map((v) => (v === 0 ? "·" : bars[Math.min(7, Math.floor((v / max) * 7.999))])).join(""))}  (today ${fmtInt(perDay[13])} tok)\n`;
   s += `\n  hook events: ${[...hooks].map(([k, v]) => `${k}=${v}`).join("  ")}\n`;
   s += `  citations: ${sum(del, "cites_ok")} verified, ${sum(del, "cites_bad")} unverified\n`;
-  s += "  (estimates: bytes/4 of what was kept out of context; extra turns and cache effects are not counted)\n";
+  s += `  blocked reads: ${blocked} (each costs the agent one more turn; not subtracted above)\n`;
+  s += "  (estimates: bytes/4 of what was kept out of context; cache effects are not counted)\n";
   process.stdout.write(s);
 }
 
@@ -294,4 +298,51 @@ export function cmdStatusline(): void {
   const saved = rows.reduce((s, r) => s + (Number(r.saved_tokens) || 0), 0);
   const k = saved >= 1000 ? `${Math.floor(saved / 100) / 10}k` : String(saved);
   process.stdout.write(`${color.cyan("▌")}offload ${rows.length} · ~${k} saved today\n`);
+}
+
+/** offload explain [N] — what the hooks did lately, each with the rule, its current value
+ *  and how to change it. Twin: cmd_explain in bin/offload (same text). */
+export function cmdExplain(argv: string[]): void {
+  const n = /^\d+$/.test(argv[0] ?? "") ? Number(argv[0]) : 10;
+  const f = join(stateDir(), "stats.jsonl");
+  const rows = readStats().filter((r) => r.kind === "hook" || (r.kind === "digest" && ["hook", "search", "repeat"].includes(r.source)));
+  if (!rows.length) {
+    process.stdout.write(`Nothing yet: offload's hooks have not blocked or replaced anything (${f}).\n`);
+    return;
+  }
+  const rl = cfgStr("hooks.read_threshold_lines");
+  const rt = cfgStr("hooks.read_threshold_tokens");
+  const full = `over hooks.read_threshold_lines (${rl}) or hooks.read_threshold_tokens (${rt})`;
+  const out = `over hooks.bash_output_threshold_lines (${cfgStr("hooks.bash_output_threshold_lines")}) or hooks.bash_output_threshold_bytes (${cfgStr("hooks.bash_output_threshold_bytes")})`;
+  const kb = (b: unknown) => `${Math.floor(((Number(b) || 0) + 1023) / 1024)} KB`;
+  const file = (r: any) => (r.file ? String(r.file) : "a file (not recorded)");
+  const log = (r: any) => r.log ?? "(log not recorded)";
+  const pad = (x: number) => String(x).padStart(2, "0");
+  const when = (ts: number) => {
+    const d = new Date(ts * 1000);
+    return `${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  };
+  const I = "\n               ";
+  const shown = rows.slice().reverse().slice(0, n);
+  let s = `offload explain — what the hooks did, newest first (${shown.length} of ${rows.length})\n`;
+  for (const r of shown) {
+    let t: string;
+    if (r.kind === "hook" && r.event === "read_blocked")
+      t = `blocked a full Read of ${file(r)} (${fmtInt(r.lines ?? 0)} lines, ~${fmtInt(r.tokens ?? 0)} tokens)${I}why: ${full}${I}change: offload config set hooks.read_threshold_lines N · off: offload config set hooks.read_guard off`;
+    else if (r.kind === "hook" && r.event === "read_slice_blocked")
+      t = `blocked a Read slice of ${fmtInt(r.lines ?? 0)} lines of ${file(r)}${I}why: over hooks.read_max_chunk_lines (${cfgStr("hooks.read_max_chunk_lines")})${I}change: offload config set hooks.read_max_chunk_lines N`;
+    else if (r.kind === "hook" && r.event === "bash_read_blocked")
+      t = `blocked \`${r.prog ?? "?"}\` of ${file(r)} (${fmtInt(r.lines ?? 0)} lines, ~${fmtInt(r.tokens ?? 0)} tokens)${I}why: ${full}${I}change: offload config set hooks.read_threshold_lines N · off: offload config set hooks.bash_read_guard false`;
+    else if (r.kind === "hook" && r.event === "autowrap")
+      t = `ran \`${r.command ?? "a command"}\` through offload run${I}why: hooks.autowrap is on and the command matched hooks.autowrap_pattern${I}off: offload config set hooks.autowrap false`;
+    else if (r.kind === "hook") t = `hook event ${r.event ?? "?"}`;
+    else if (r.source === "search")
+      t = `showed a search view of \`${r.label ?? "?"}\` (${kb(r.bytes_in)} → ${kb(r.bytes_out)})${I}why: a search ${out}${I}all of it: ${log(r)} · off: offload config set hooks.search_view false`;
+    else if (r.source === "repeat")
+      t = `said \`${r.label ?? "?"}\` printed the same output as before (${kb(r.bytes_in)})${I}why: the same output again in this session${I}all of it: ${log(r)}`;
+    else
+      t = `digested the output of \`${r.label ?? "?"}\` (${kb(r.bytes_in)} → ${kb(r.bytes_out)})${I}why: ${out}${I}all of it: ${log(r)} · off: offload config set hooks.summarize_bash_output false`;
+    s += `  ${when(r.ts)}  ${t}\n`;
+  }
+  process.stdout.write(s);
 }

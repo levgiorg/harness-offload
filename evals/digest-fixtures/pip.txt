@@ -1,0 +1,5 @@
+# keep: ERROR: Could not find a version that satisfies the requirement torch==9.9.9
+# keep: ERROR: No matching distribution found for torch==9.9.9
+@@noise 300 Requirement already satisfied: pkg{i}>=1.0 in ./venv/lib/python3.12/site-packages (from app) (1.{i})@@
+ERROR: Could not find a version that satisfies the requirement torch==9.9.9 (from versions: 2.4.0, 2.5.1)
+ERROR: No matching distribution found for torch==9.9.9

@@ -29,6 +29,21 @@ them at the checkout) and `… uninstall` to undo. Installs from npm/npx copy th
 `~/.local/share/harness-offload` first (the npx cache can vanish) and install Claude Code, Codex and Copilot from
 GitHub.
 
+## Trying a command by hand without spending anything
+
+Inside Claude Code (or any harness `offload` knows), a hand-run `offload read …` uses the real worker: `@host`
+resolves to the harness's own model, so it is a real, billed call. To try commands for free, use the stub
+worker the tests use:
+
+```bash
+export OFFLOAD_OPENCODE_BIN=$PWD/plugins/harness-offload/tests/stub-opencode OFFLOAD_HOST=opencode \
+       OFFLOAD_STATE_DIR=$(mktemp -d) OFFLOAD_CONFIG=$(mktemp -d)/config.json
+STUB_ANSWER='fn3 — big.ts:L3 `export function fn3`' offload read -q "what does fn3 do?" big.ts
+```
+
+`STUB_ANSWER` is what the "worker" says; the stub never calls a model. Real-model runs are for validation only
+(`evals/benchmark.sh`, recorded in `docs/VALIDATION.md`).
+
 ## The installer
 
 `offload install` with no agent named asks which agents (the ones found are ticked) and, when Claude Code is

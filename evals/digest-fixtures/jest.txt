@@ -1,0 +1,22 @@
+# keep: FAIL src/cart/total.test.ts
+# keep: ● cart › total › adds VAT once
+# keep: Expected: 119
+# keep: Tests:       1 failed, 412 passed, 413 total
+@@noise 300 PASS src/mod{i}/mod.test.ts (0.{i}s)@@
+FAIL src/cart/total.test.ts
+  ● cart › total › adds VAT once
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: 119
+    Received: 138
+
+      12 |   it("adds VAT once", () => {
+    > 13 |     expect(total([100])).toBe(119);
+         |                          ^
+      at Object.<anonymous> (src/cart/total.test.ts:13:26)
+
+@@noise 100 PASS src/late{i}/late.test.ts (0.{i}s)@@
+Test Suites: 1 failed, 401 passed, 402 total
+Tests:       1 failed, 412 passed, 413 total
+Time:        38.2 s

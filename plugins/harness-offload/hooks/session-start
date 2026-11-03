@@ -3,6 +3,8 @@
 case "$0" in */*) . "${0%/*}/../lib/hook.sh" ;; *) . ../lib/hook.sh ;; esac
 
 co_cfg_bool '.enabled' true || exit 0
+# after a compaction or /clear the agent no longer has the digests it saw
+case "$HK_SOURCE" in compact|clear) co_seen_forget ;; esac
 if ! co_backend_present; then
   [ "$HK_SOURCE" = "startup" ] || exit 0
   jq -nc --arg m "Harness Offload is paused: it found no model to hand work to, so your tools work as usual. /harness-offload:setup sets one up (or run: offload doctor)." \

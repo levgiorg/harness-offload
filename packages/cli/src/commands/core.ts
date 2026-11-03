@@ -44,6 +44,7 @@ function reportFailure(what: string, e: unknown): never {
     [E.AUTH]: "hint: log the backend in (its own CLI login, or `opencode auth login`) or set its API key with `offload setup`; `offload doctor` shows which.",
     [E.MODEL]: "hint: check the model id (`offload models BACKEND` lists them) and switch with `offload model BACKEND:MODEL`; some providers also say \"model not found\" when the API key is wrong.",
     [E.TIMEOUT]: "hint: raise opencode.timeout_seconds or send less input.",
+    [E.TOO_LARGE]: "hint: send less at once — fewer files, a range (path:START-END) — or pick a model with a bigger context window (`offload model …`).",
   };
   if (hints[w.code]) err(hints[w.code]);
   throw new ExitError(w.code);
@@ -108,6 +109,7 @@ export async function cmdRead(argv: string[]): Promise<void> {
   let nfiles = 0;
   let nlines = 0;
   const skipped: string[] = [];
+  const sent: string[] = []; // paths as written in the prompt (citations may point at them)
   for (const item of rest) {
     let path = item;
     let from = 0;
@@ -138,6 +140,7 @@ export async function cmdRead(argv: string[]): Promise<void> {
         }
         const total = fileLines(f);
         prompt += fileBlock(f, 1, total, total);
+        sent.push(f);
         nfiles++;
         nlines += total;
       }
@@ -150,6 +153,7 @@ export async function cmdRead(argv: string[]): Promise<void> {
     if (!from) from = 1;
     if (!to || to > total) to = total;
     prompt += fileBlock(path, from, to, total);
+    sent.push(path);
     nfiles++;
     nlines += to - from + 1;
   }
@@ -164,7 +168,7 @@ export async function cmdRead(argv: string[]): Promise<void> {
   let ok = 0;
   let bad = 0;
   if (!opts["no-verify"] && cfgBool("read.verify_citations", true)) {
-    const v = verifyCitations(answer, process.cwd());
+    const v = verifyCitations(answer, process.cwd(), 3, sent);
     answer = v.text;
     ok = v.ok;
     bad = v.bad;
@@ -199,7 +203,9 @@ export async function cmdExplore(argv: string[]): Promise<void> {
   let ok = 0;
   let bad = 0;
   if (!opts["no-verify"]) {
-    const v = verifyCitations(answer, dir);
+    // the project's files, so a citation with a shortened path still finds its file
+    const known = listDirFiles(dir).map((f) => relative(dir, f));
+    const v = verifyCitations(answer, dir, 3, [], known);
     answer = v.text;
     ok = v.ok;
     bad = v.bad;

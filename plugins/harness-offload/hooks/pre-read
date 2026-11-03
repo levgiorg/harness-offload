@@ -47,7 +47,7 @@ if [ -n "$offset" ] || [ -n "$limit" ]; then
   [ "$span" -gt "$remaining" ] && span=$remaining
   [ "$span" -le "$chunk" ] && exit 0
   may_stop || exit 0
-  hk_event read_slice_blocked "{\"lines\":$span}"
+  hk_event read_slice_blocked "$(jq -nc --argjson l "$span" --arg f "$file" '{lines: $l, file: $f}')"
   hk_guard "offload: that Read slice is $(co_fmt_int "$span") lines of $file; keep slices to at most $chunk lines (use offset/limit), or ask: $HK_CLI read -q \"<question>\" $(co_shquote "$file"):$start-$(( start + span - 1 ))"
 fi
 
@@ -56,5 +56,5 @@ tokens=$(co_est_tokens "$bytes")
 may_stop || exit 0
 
 . "$CO_ROOT/lib/outline.sh"
-hk_event read_blocked "{\"lines\":$lines,\"tokens\":$tokens}"
+hk_event read_blocked "$(jq -nc --argjson l "$lines" --argjson t "$tokens" --arg f "$file" '{lines: $l, tokens: $t, file: $f}')"
 hk_guard "$(hk_big_file_message "$file" "$lines" "$tokens" "A full Read")"
