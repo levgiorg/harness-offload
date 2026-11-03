@@ -14,7 +14,7 @@ var __esm = (fn, res, err) => () => {
 // src/generated/assets.ts
 var DEFAULTS_JSON, OUTLINE_JSON, CONNECTORS_JSON, PROMPT_TEXT;
 var init_assets = __esm(() => {
-  DEFAULTS_JSON = { enabled: true, backend: "opencode", endpoints: {}, agents: {}, hosts: { codex: { call: "mcp" }, cursor: { call: "mcp" } }, models: { default: "@host", read: "", explore: "", summarize: "", write: "", ask: "", fallback: ["@default"] }, variants: { read: "", explore: "", summarize: "", write: "", ask: "" }, opencode: { bin: "opencode", timeout_seconds: 180, max_stream_errors: 2, keep_sessions: false, disable_claude_code_compat: true }, read: { max_input_bytes: 1500000, max_files: 60, verify_citations: true }, explore: { max_steps: 40 }, digest: { threshold_lines: 150, threshold_bytes: 12000, use_model: true, max_model_input_bytes: 400000, key_lines: 30, tail_lines: 15 }, hooks: { read_guard: "block", read_threshold_lines: 600, read_threshold_tokens: 6000, read_max_chunk_lines: 600, bash_read_guard: true, summarize_bash_output: true, bash_output_threshold_lines: 250, bash_output_threshold_bytes: 20000, digest_timeout_seconds: 20, search_view: true, search_commands: "^[[:space:]]*(sudo[[:space:]]+)?(grep|egrep|fgrep|rg|ag|ack|git[[:space:]]+grep|find|fd)([[:space:]]|$)", bash_never_summarize: "^[[:space:]]*(sudo[[:space:]]+)?(cat|bat|nl|head|tail|less|more|sed|awk|grep|egrep|fgrep|rg|ag|ack|jq|yq|diff|wc|ls|tree|find|fd|stat|file|echo|printf|offload|git[[:space:]]+(diff|show|blame|status|log))([[:space:]]|$)", autowrap: false, autowrap_pattern: "^[[:space:]]*((npm|pnpm|yarn|bun)[[:space:]]+(run[[:space:]]+)?(test|build|lint|install|ci|typecheck)|npx[[:space:]]+(jest|vitest|tsc|eslint|playwright)|(jest|vitest|pytest|tox|tsc|eslint|ruff|mypy)([[:space:]]|$)|go[[:space:]]+(test|build|vet)|cargo[[:space:]]+(test|build|check|clippy)|(mvn|mvnw|\\./mvnw|gradle|\\./gradlew)([[:space:]]|$)|make([[:space:]]|$)|pip[[:space:]]+install|docker[[:space:]]+(build|compose[[:space:]]+build)|terraform[[:space:]]+plan)", subagents: true, ignore_globs: [] }, privacy: { secret_globs: [".env", ".env.*", "*.pem", "*.key", "*.p12", "*.pfx", "*.jks", "*.keystore", "id_rsa*", "id_ecdsa*", "id_ed25519*", ".npmrc", ".pypirc", ".netrc", "credentials", "credentials.*", "secrets.*", "*.tfvars", "*.tfstate"], secret_allow_globs: ["*.example", "*.sample", "*.template", "*.dist"], redact: true }, state_dir: "", log_retention_days: 7 };
+  DEFAULTS_JSON = { enabled: true, backend: "opencode", endpoints: {}, agents: {}, hosts: { codex: { call: "mcp" }, cursor: { call: "mcp" } }, models: { default: "@host", read: "", explore: "", summarize: "", write: "", ask: "", fallback: ["@default"] }, variants: { read: "", explore: "", summarize: "", write: "", ask: "" }, opencode: { bin: "opencode", timeout_seconds: 180, max_stream_errors: 2, keep_sessions: false, disable_claude_code_compat: true }, read: { max_input_bytes: 1500000, max_files: 60, verify_citations: true, retry_unverified: true }, explore: { max_steps: 40 }, digest: { threshold_lines: 150, threshold_bytes: 12000, use_model: true, max_model_input_bytes: 400000, key_lines: 30, tail_lines: 15 }, hooks: { read_guard: "block", read_threshold_lines: 600, read_threshold_tokens: 6000, read_max_chunk_lines: 600, context_tight_tokens: 0, bash_read_guard: true, summarize_bash_output: true, bash_output_threshold_lines: 250, bash_output_threshold_bytes: 20000, digest_timeout_seconds: 20, search_view: true, search_commands: "^[[:space:]]*(sudo[[:space:]]+)?(grep|egrep|fgrep|rg|ag|ack|git[[:space:]]+grep|find|fd)([[:space:]]|$)", bash_never_summarize: "^[[:space:]]*(sudo[[:space:]]+)?(cat|bat|nl|head|tail|less|more|sed|awk|grep|egrep|fgrep|rg|ag|ack|jq|yq|diff|wc|ls|tree|find|fd|stat|file|echo|printf|offload|git[[:space:]]+(diff|show|blame|status|log))([[:space:]]|$)", autowrap: false, autowrap_pattern: "^[[:space:]]*((npm|pnpm|yarn|bun)[[:space:]]+(run[[:space:]]+)?(test|build|lint|install|ci|typecheck)|npx[[:space:]]+(jest|vitest|tsc|eslint|playwright)|(jest|vitest|pytest|tox|tsc|eslint|ruff|mypy)([[:space:]]|$)|go[[:space:]]+(test|build|vet)|cargo[[:space:]]+(test|build|check|clippy)|(mvn|mvnw|\\./mvnw|gradle|\\./gradlew)([[:space:]]|$)|make([[:space:]]|$)|pip[[:space:]]+install|docker[[:space:]]+(build|compose[[:space:]]+build)|terraform[[:space:]]+plan)", subagents: true, ignore_globs: [] }, privacy: { secret_globs: [".env", ".env.*", "*.pem", "*.key", "*.p12", "*.pfx", "*.jks", "*.keystore", "id_rsa*", "id_ecdsa*", "id_ed25519*", ".npmrc", ".pypirc", ".netrc", "credentials", "credentials.*", "secrets.*", "*.tfvars", "*.tfstate"], secret_allow_globs: ["*.example", "*.sample", "*.template", "*.dist"], redact: true }, state_dir: "", log_retention_days: 7 };
   OUTLINE_JSON = { _comment: "Symbol-outline regexes (POSIX ERE), shared by the bash and TypeScript engines. Matched with grep -E / converted to JS RegExp.", languages: [{ exts: ["ts", "tsx", "js", "jsx", "mjs", "cjs", "mts", "cts", "vue", "svelte"], regex: "^[[:space:]]*(export[[:space:]]+)?(default[[:space:]]+)?(declare[[:space:]]+)?(abstract[[:space:]]+)?(async[[:space:]]+)?(function\\*?|class|interface|type|enum|namespace|module)[[:space:]]+[A-Za-z_$]|^[[:space:]]*(export[[:space:]]+)?(const|let|var)[[:space:]]+[A-Za-z_$][A-Za-z0-9_$]*[[:space:]]*(:[^=]*)?=[[:space:]]*(async[[:space:]]+)?(\\(|function|[A-Za-z_$][A-Za-z0-9_$]*[[:space:]]*=>)|^[[:space:]]{2,4}((public|private|protected|static|async|readonly|override|get|set)[[:space:]]+)*[A-Za-z_$#][A-Za-z0-9_$]*[[:space:]]*(<[^>]*>)?\\([^;]*\\)[[:space:]]*(:[^=;{]*)?\\{|^[[:space:]]*(describe|it|test)(\\.[a-z]+)?\\(" }, { exts: ["py", "pyi"], regex: "^[[:space:]]*(async[[:space:]]+)?def[[:space:]]+[A-Za-z_]|^[[:space:]]*class[[:space:]]+[A-Za-z_]" }, { exts: ["go"], regex: "^func[[:space:]]|^type[[:space:]]+[A-Za-z_][A-Za-z0-9_]*[[:space:]]|^(var|const)[[:space:]]+\\(" }, { exts: ["rs"], regex: "^[[:space:]]*(pub(\\([^)]*\\))?[[:space:]]+)?(async[[:space:]]+)?(unsafe[[:space:]]+)?(fn|struct|enum|trait|impl|mod|macro_rules!|type)[[:space:]<]" }, { exts: ["java", "kt", "kts", "scala", "cs", "groovy", "swift", "dart"], regex: "^[[:space:]]*(@[A-Za-z]+[[:space:]]+)*((public|private|protected|internal|open|override|abstract|final|static|sealed|data|suspend|async|virtual|partial)[[:space:]]+)*(class|interface|enum|record|struct|object|fun|func|extension|protocol)[[:space:]]+[A-Za-z_]|^[[:space:]]*((public|private|protected|internal|static|final|abstract|synchronized|override|async|virtual)[[:space:]]+)+[][A-Za-z_<>,.?[:space:]]+[[:space:]]+[A-Za-z_][A-Za-z0-9_]*[[:space:]]*\\(" }, { exts: ["rb", "rake"], regex: "^[[:space:]]*(def|class|module)[[:space:]]" }, { exts: ["php"], regex: "^[[:space:]]*((public|private|protected|static|abstract|final)[[:space:]]+)*(function|class|interface|trait|enum)[[:space:]]+[A-Za-z_]" }, { exts: ["c", "h", "cc", "cpp", "cxx", "hpp", "hh", "m", "mm"], regex: "^[A-Za-z_][A-Za-z0-9_:<>,*&[:space:]]*[[:space:]*&]+[A-Za-z_~][A-Za-z0-9_:~]*[[:space:]]*\\([^;]*$|^(typedef[[:space:]]+)?(struct|class|enum|union|namespace)[[:space:]]+[A-Za-z_]|^#define[[:space:]]+[A-Z_]" }, { exts: ["sh", "bash", "zsh"], regex: "^[[:space:]]*(function[[:space:]]+)?[A-Za-z_][A-Za-z0-9_:-]*[[:space:]]*\\(\\)[[:space:]]*\\{?|^[[:space:]]*function[[:space:]]+[A-Za-z_]" }, { exts: ["md", "mdx", "markdown", "rst", "adoc"], regex: "^#{1,4}[[:space:]]" }, { exts: ["yml", "yaml"], regex: "^[A-Za-z_][A-Za-z0-9_.-]*:|^  [A-Za-z_][A-Za-z0-9_.-]*:[[:space:]]*$" }, { exts: ["toml", "ini", "cfg"], regex: "^\\[" }, { exts: ["sql"], regex: "^[[:space:]]*(create|alter|CREATE|ALTER)[[:space:]]+" }, { exts: ["json"], regex: '^  "[^"]+"[[:space:]]*:' }], default: "^[[:space:]]*(export[[:space:]]+)?(pub[[:space:]]+)?(async[[:space:]]+)?(def|fn|func|function|class|interface|struct|enum|trait|impl|module|type)[[:space:]]+[A-Za-z_]|^#{1,3}[[:space:]]" };
   CONNECTORS_JSON = { _comment: "HTTP endpoint presets, the default cheap model per harness for the @host model ref, and the API-key backup per harness for @host-api. Shared by the bash and TypeScript engines; override with `endpoints` / `host_models` / `host_api_models` in your config.", endpoints: { openai: { type: "openai", base_url: "https://api.openai.com/v1", api_key_env: "OPENAI_API_KEY", label: "OpenAI API" }, openrouter: { type: "openai", base_url: "https://openrouter.ai/api/v1", api_key_env: "OPENROUTER_API_KEY", label: "OpenRouter" }, anthropic: { type: "anthropic", base_url: "https://api.anthropic.com", api_key_env: "ANTHROPIC_API_KEY", label: "Anthropic API" }, google: { type: "openai", base_url: "https://generativelanguage.googleapis.com/v1beta/openai", api_key_env: "GEMINI_API_KEY", label: "Google AI Studio (Gemini API)" }, groq: { type: "openai", base_url: "https://api.groq.com/openai/v1", api_key_env: "GROQ_API_KEY", label: "Groq" }, deepseek: { type: "openai", base_url: "https://api.deepseek.com/v1", api_key_env: "DEEPSEEK_API_KEY", label: "DeepSeek" }, mistral: { type: "openai", base_url: "https://api.mistral.ai/v1", api_key_env: "MISTRAL_API_KEY", label: "Mistral" }, together: { type: "openai", base_url: "https://api.together.xyz/v1", api_key_env: "TOGETHER_API_KEY", label: "Together AI" }, fireworks: { type: "openai", base_url: "https://api.fireworks.ai/inference/v1", api_key_env: "FIREWORKS_API_KEY", label: "Fireworks" }, cerebras: { type: "openai", base_url: "https://api.cerebras.ai/v1", api_key_env: "CEREBRAS_API_KEY", label: "Cerebras" }, xai: { type: "openai", base_url: "https://api.x.ai/v1", api_key_env: "XAI_API_KEY", label: "xAI" }, zai: { type: "openai", base_url: "https://api.z.ai/api/paas/v4", api_key_env: "ZAI_API_KEY", label: "Z.ai (GLM)" }, moonshot: { type: "openai", base_url: "https://api.moonshot.ai/v1", api_key_env: "MOONSHOT_API_KEY", label: "Moonshot (Kimi)" }, ollama: { type: "openai", base_url: "http://127.0.0.1:11434/v1", label: "Ollama (local)" }, lmstudio: { type: "openai", base_url: "http://127.0.0.1:1234/v1", label: "LM Studio (local)" }, vllm: { type: "openai", base_url: "http://127.0.0.1:8000/v1", label: "vLLM (local)" }, dashscope: { type: "openai", base_url: "https://dashscope-intl.aliyuncs.com/compatible-mode/v1", api_key_env: "DASHSCOPE_API_KEY", label: "Alibaba Model Studio (Qwen)" }, github: { type: "openai", base_url: "https://models.github.ai/inference", api_key_env: "GITHUB_TOKEN", label: "GitHub Models" } }, host_models: { claude: "claude:haiku", codex: "codex:gpt-6-luna", gemini: "gemini:flash-lite", cursor: "cursor:", pi: "pi:", opencode: "@default", kilo: "@default", devin: "claude:haiku", copilot: "copilot:", qwen: "qwen:", crush: "crush:", amp: "@default" }, host_api_models: { claude: "anthropic:claude-haiku-5-5", devin: "anthropic:claude-haiku-5-5", codex: "openai:gpt-6-luna", gemini: "google:gemini-flash-lite-latest", qwen: "dashscope:qwen-flash", copilot: "github:openai/gpt-4.1-mini" }, worker_names: { _comment: 'How offload names a worker for the user, e.g. "Haiku on your Claude plan".', plans: { claude: "your Claude plan", codex: "your ChatGPT plan", gemini: "your Google account", cursor: "your Cursor plan", copilot: "your Copilot plan", qwen: "your Qwen Code login", pi: "Pi's own login", crush: "Crush's own setup" }, models: { haiku: "Haiku", sonnet: "Sonnet", opus: "Opus", "flash-lite": "Gemini Flash-Lite", flash: "Gemini Flash" } } };
   PROMPT_TEXT = {
@@ -479,7 +479,7 @@ var QUOTED_SQ = /((?:token|password|passphrase|secret)'?\s*[:=]\s*')[^']{6,}'/gi
 function redact(text) {
   if (!cfgBool("privacy.redact", true))
     return text;
-  return text.replace(/(?:AKIA|ASIA)[0-9A-Z]{16}/g, "[REDACTED-AWS-KEY]").replace(/(gh[pousr]_)[A-Za-z0-9]{30,}/g, "$1[REDACTED]").replace(/github_pat_[A-Za-z0-9_]{30,}/g, "github_pat_[REDACTED]").replace(/glpat-[A-Za-z0-9_-]{20,}/g, "glpat-[REDACTED]").replace(/npm_[A-Za-z0-9]{36}/g, "npm_[REDACTED]").replace(/hf_[A-Za-z0-9]{30,}/g, "hf_[REDACTED]").replace(/((?:sk|rk)_(?:live|test)_)[A-Za-z0-9]{10,}/g, "$1[REDACTED]").replace(/(sk-(?:proj-|ant-)?)[A-Za-z0-9_-]{20,}/g, "$1[REDACTED]").replace(/xox[abprs]-[A-Za-z0-9-]{10,}/g, "xox-[REDACTED]").replace(/AIza[0-9A-Za-z_-]{35}/g, "[REDACTED-GOOGLE-KEY]").replace(/eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}/g, "[REDACTED-JWT]").replace(/(bearer[ \t]+)[A-Za-z0-9._~+/=-]{16,}/gi, "$1[REDACTED]").replace(/(basic[ \t]+)[A-Za-z0-9+/=]{16,}/gi, "$1[REDACTED]").replace(/([A-Za-z][A-Za-z0-9+.-]*:\/\/[^/\s:@]+:)[^@\s/]+@/g, "$1[REDACTED]@").replace(QUOTED_DQ, '$1[REDACTED]"').replace(QUOTED_SQ, "$1[REDACTED]'").replace(KEY_NAME, "$1[REDACTED]").replace(/-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?(?:-----END [A-Z ]*PRIVATE KEY-----\n?|$)/g, `[REDACTED PRIVATE KEY]
+  return text.replace(/(?:AKIA|ASIA)[0-9A-Z]{16}/g, "[REDACTED-AWS-KEY]").replace(/(gh[pousr]_)[A-Za-z0-9]{30,}/g, "$1[REDACTED]").replace(/github_pat_[A-Za-z0-9_]{30,}/g, "github_pat_[REDACTED]").replace(/glpat-[A-Za-z0-9_-]{20,}/g, "glpat-[REDACTED]").replace(/npm_[A-Za-z0-9]{36}/g, "npm_[REDACTED]").replace(/hf_[A-Za-z0-9]{30,}/g, "hf_[REDACTED]").replace(/((?:sk|rk)_(?:live|test)_)[A-Za-z0-9]{10,}/g, "$1[REDACTED]").replace(/(sk-(?:proj-|ant-)?)[A-Za-z0-9_-]{20,}/g, "$1[REDACTED]").replace(/xox[abprs]-[A-Za-z0-9-]{10,}/g, "xox-[REDACTED]").replace(/AIza[0-9A-Za-z_-]{35}/g, "[REDACTED-GOOGLE-KEY]").replace(/eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}/g, "[REDACTED-JWT]").replace(/(bearer[ \t]+)[A-Za-z0-9._~+/=-]{16,}/gi, "$1[REDACTED]").replace(/(basic[ \t]+)[A-Za-z0-9+/=]{16,}/gi, "$1[REDACTED]").replace(/(?<![A-Za-z0-9+.-])([A-Za-z][A-Za-z0-9+.-]*:\/\/[^/\s:@]+:)[^@\s/]+@/g, "$1[REDACTED]@").replace(QUOTED_DQ, '$1[REDACTED]"').replace(QUOTED_SQ, "$1[REDACTED]'").replace(KEY_NAME, "$1[REDACTED]").replace(/-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?(?:-----END [A-Z ]*PRIVATE KEY-----\n?|$)/g, `[REDACTED PRIVATE KEY]
 `);
 }
 
@@ -1289,6 +1289,7 @@ function cksum(buf) {
 }
 var seenSession = (s) => s.replace(/[^A-Za-z0-9_-]/g, "_").slice(0, 64);
 var seenFile = (session, text) => import_node_path6.join(stateDir(), "seen", `${seenSession(session)}-${cksum(Buffer.from(text))}`);
+var seenCmdFile = (session, cmd) => import_node_path6.join(stateDir(), "seen", `${seenSession(session)}-cmd-${cksum(Buffer.from(cmd))}`);
 function seenForget(session) {
   if (!session)
     return;
@@ -2175,6 +2176,46 @@ function keyLines(text, max) {
     out.push(`... ${libFrames} stack frames in libraries and the runtime left out`);
   return { lines: out, distinct: seen.size };
 }
+function keyTexts(text) {
+  const seen = new Set;
+  for (const raw of splitLines(text)) {
+    const l = raw.toLowerCase();
+    if (!KEY_RE.test(l) || ZERO_RE.test(l))
+      continue;
+    if (FRAME_RE.test(raw) && LIBFRAME_RE.test(raw))
+      continue;
+    const t = truncate(stripAnsi(raw).replace(/[ \t\r]+$/, ""), 240);
+    if (t)
+      seen.add(t);
+  }
+  return [...seen];
+}
+function keyChanges(shown, text, prevText, at) {
+  const cur = new Set(keyTexts(text));
+  const prev = keyTexts(prevText);
+  const P = new Set(prev);
+  const fresh = [];
+  let same = 0;
+  for (const l of shown) {
+    if (!/^L\d+: /.test(l))
+      continue;
+    const t = l.replace(/^L\d+: /, "").replace(/  \(x\d+\)$/, "").replace(/  \(\d+ similar lines\)$/, "");
+    if (P.has(t))
+      same++;
+    else
+      fresh.push(l);
+  }
+  const gone = prev.filter((t) => !cur.has(t));
+  const out = [`── key lines since the run at ${at}: ${fresh.length} new, ${same} unchanged, ${gone.length} gone ──`, ...fresh];
+  if (!fresh.length)
+    out.push("(no new error-like lines)");
+  if (gone.length) {
+    out.push("gone since then:", ...gone.slice(0, 5).map((t) => `  - ${t}`));
+    if (gone.length > 5)
+      out.push(`  … ${gone.length - 5} more`);
+  }
+  return out;
+}
 function logExcerpt(text) {
   const lines = splitLines(text);
   const total = lines.length;
@@ -2261,7 +2302,7 @@ async function digest(log, rawLabel, code, focus, source, modelOverride, opts = 
   const out = [];
   out.push(`[offload] \`${label.slice(0, 120)}\`${code ? ` → exit ${code}` : ""} · ${fmtInt(lines)} lines / ${kb} KB · full log: ${log}`);
   const sumSection = summary ? [`── summary by ${note} (cheap model; trust the verbatim lines over it) ──`, summary] : note ? [`── model summary ${note} ──`] : [];
-  const keySection = key.distinct > 0 ? [`── key lines, verbatim (${key.distinct} distinct) ──`, ...key.lines.map((l) => l.slice(0, width))] : ["── no error-like lines found ──"];
+  const keySection = opts.prev && import_node_fs11.existsSync(opts.prev.log) ? keyChanges(key.lines, text, import_node_fs11.readFileSync(opts.prev.log, "utf8"), opts.prev.at).map((l) => l.slice(0, width)) : key.distinct > 0 ? [`── key lines, verbatim (${key.distinct} distinct) ──`, ...key.lines.map((l) => l.slice(0, width))] : ["── no error-like lines found ──"];
   if (compact)
     out.push(...keySection, ...sumSection);
   else
@@ -2537,7 +2578,33 @@ Pick the cheapest option:
 ${out}`;
   return m;
 }
-function readGuard(host, cwd, file, offset, limit) {
+function contextUsed(transcript) {
+  if (!transcript || !import_node_fs13.existsSync(transcript))
+    return;
+  try {
+    const size = import_node_fs13.statSync(transcript).size;
+    const len = Math.min(size, 400000);
+    const buf = Buffer.alloc(len);
+    const fd = import_node_fs13.openSync(transcript, "r");
+    try {
+      import_node_fs13.readSync(fd, buf, 0, len, size - len);
+    } finally {
+      import_node_fs13.closeSync(fd);
+    }
+    const line = buf.toString("utf8").split(`
+`).filter((l) => l.includes('"usage"')).pop();
+    if (!line)
+      return;
+    const j = JSON.parse(line);
+    const u = j.message?.usage ?? j.usage;
+    if (!u)
+      return;
+    return (u.input_tokens ?? 0) + (u.cache_creation_input_tokens ?? 0) + (u.cache_read_input_tokens ?? 0);
+  } catch {
+    return;
+  }
+}
+function readGuard(host, cwd, file, offset, limit, transcript) {
   if (!enabled() || cfgStr("hooks.read_guard", "block") === "off" || !file)
     return;
   const p = import_node_path10.isAbsolute(file) ? file : import_node_path10.resolve(cwd, file);
@@ -2559,10 +2626,26 @@ function readGuard(host, cwd, file, offset, limit) {
     appendStats({ kind: "hook", event: "read_slice_blocked", host, lines: span, file });
     return guard(`offload: that read slice is ${fmtInt(span)} lines of ${file}; keep slices to at most ${chunk} lines, or ask: ${callStyle(host) === "mcp" ? "offload_read" : `${cliCommand()} read`} -q "<question>" ${shquote(file)}:${start}-${start + span - 1}`);
   }
-  if (lines <= cfgInt("hooks.read_threshold_lines", 600) && tokens <= cfgInt("hooks.read_threshold_tokens", 6000))
-    return;
-  appendStats({ kind: "hook", event: "read_blocked", host, lines, tokens, file });
-  return guard(bigFileMessage(host, file, lines, tokens, "A full read"));
+  let maxLines = cfgInt("hooks.read_threshold_lines", 600);
+  let maxTokens = cfgInt("hooks.read_threshold_tokens", 6000);
+  let note = "";
+  let used;
+  if (lines <= maxLines && tokens <= maxTokens) {
+    const tight = cfgInt("hooks.context_tight_tokens", 0);
+    if (!(tight > 0 && (lines > maxLines / 2 || tokens > maxTokens / 2)))
+      return;
+    used = contextUsed(transcript);
+    if (used === undefined || used < tight)
+      return;
+    maxLines = Math.floor(maxLines / 2);
+    maxTokens = Math.floor(maxTokens / 2);
+    if (lines <= maxLines && tokens <= maxTokens)
+      return;
+    note = `
+(Your context is nearly full: ~${fmtInt(used)} tokens in use, at or above hooks.context_tight_tokens, so the limit is halved.)`;
+  }
+  appendStats({ kind: "hook", event: "read_blocked", host, lines, tokens, file, ...used !== undefined ? { context: used } : {} });
+  return guard(bigFileMessage(host, file, lines, tokens, "A full read") + note);
 }
 function autowrap(command, background) {
   if (!enabled() || !command || background || !cfgBool("hooks.autowrap", false))
@@ -2704,6 +2787,13 @@ async function postBash(opts) {
       return note;
     }
   }
+  const cmdSeen = opts.session ? seenCmdFile(opts.session, cmd) : "";
+  let prev;
+  if (cmdSeen && import_node_fs13.existsSync(cmdSeen)) {
+    const c = /^(\d+) (\S+) (.*)$/.exec(import_node_fs13.readFileSync(cmdSeen, "utf8").replace(/\n$/, ""));
+    if (c && Math.floor(Date.now() / 1000) - Number(c[1]) <= 3600 && import_node_fs13.existsSync(c[3]))
+      prev = { log: c[3], at: c[2] };
+  }
   const markSeen = (log) => {
     if (!seen)
       return;
@@ -2711,8 +2801,11 @@ async function postBash(opts) {
       import_node_fs13.mkdirSync(import_node_path10.dirname(seen), { recursive: true });
       const d = new Date;
       const p = (n) => String(n).padStart(2, "0");
-      import_node_fs14.writeFileSync(seen, `${Math.floor(d.getTime() / 1000)} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())} ${log}
-`);
+      const line = `${Math.floor(d.getTime() / 1000)} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())} ${log}
+`;
+      import_node_fs14.writeFileSync(seen, line);
+      if (cmdSeen)
+        import_node_fs14.writeFileSync(cmdSeen, line);
     } catch {}
   };
   if (search) {
@@ -2726,7 +2819,7 @@ async function postBash(opts) {
   const noModel = budgetSec === 0 || !await available();
   const log = newLogPath(cmd);
   import_node_fs14.writeFileSync(log, text);
-  const d = (await digest(log, cmd, "0", opts.description ?? "", "hook", undefined, { noModel, compact, budgetSec })).replace(/\n$/, "");
+  const d = (await digest(log, cmd, "0", opts.description ?? "", "hook", undefined, { noModel, compact, budgetSec, prev })).replace(/\n$/, "");
   if (d)
     markSeen(log);
   return d;
@@ -2776,7 +2869,9 @@ function preToolOut(host, v) {
         return { agent_message: v.message };
       return v.action === "ask" ? { permission: "ask", agent_message: v.message, user_message: "offload suggests keeping this large read out of the agent's context." } : { permission: "deny", agent_message: v.message, user_message: "offload kept a large read out of the agent's context (see its options)." };
     case "gemini":
-      return v.action === "deny" ? { decision: "deny", reason: v.message } : { hookSpecificOutput: { hookEventName: "BeforeTool", additionalContext: v.message } };
+      if (v.action === "deny")
+        return { decision: "deny", reason: v.message };
+      return v.action === "ask" ? { decision: "ask", systemMessage: v.message } : undefined;
     case "codex":
       return v.action === "deny" ? { hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision: "deny", permissionDecisionReason: v.message } } : { hookSpecificOutput: { hookEventName: "PreToolUse", additionalContext: v.message } };
     default:
@@ -2826,9 +2921,9 @@ async function handle(host, event, input) {
       }
       if (host === "crush" && offset !== undefined)
         offset += 1;
-      v = readGuard(host, cwd, file, offset, limit);
+      v = readGuard(host, cwd, file, offset, limit, typeof input.transcript_path === "string" ? input.transcript_path : undefined);
     } else if (isShell) {
-      v = bashGuard(host, ti.working_directory || cwd, ti.command);
+      v = bashGuard(host, ti.dir_path || ti.working_directory || cwd, ti.command);
       if (!v && host === "claude") {
         const w = autowrap(ti.command, ti.run_in_background === true);
         if (w)

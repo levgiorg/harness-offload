@@ -204,3 +204,40 @@ export function writeConfigFile(file: string, value: Obj, mode = 0o600): void {
 export function readConfigFile(file: string): Obj {
   return readJsonFile(file) ?? {};
 }
+
+// ---- config check: keys offload doesn't know (typos are otherwise silently ignored)
+const OPEN_MAPS = ["tasks", "endpoints", "agents", "hosts", "host_models", "host_api_models", "trusted_projects"];
+function leaves(v: unknown, p: string[] = [], out: string[] = []): string[] {
+  if (v && typeof v === "object" && !Array.isArray(v)) for (const [k, x] of Object.entries(v)) leaves(x, [...p, k], out);
+  else out.push(p.join("."));
+  return out;
+}
+function lev(a: string, b: string): number {
+  const d = Array.from({ length: a.length + 1 }, (_, i) => [i, ...Array(b.length).fill(0)]);
+  for (let j = 0; j <= b.length; j++) d[0][j] = j;
+  for (let i = 1; i <= a.length; i++)
+    for (let j = 1; j <= b.length; j++) d[i][j] = Math.min(d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+  return d[a.length][b.length];
+}
+/** Keys in a config object offload doesn't know, each with the closest known key (or "").
+ *  Twin: co_config_unknown in common.sh. */
+export function unknownConfigKeys(obj: unknown): { key: string; suggest: string }[] {
+  const known = leaves(DEFAULTS);
+  const set = new Set(known);
+  const out: { key: string; suggest: string }[] = [];
+  for (const k of leaves(obj)) {
+    const top = k.split(".")[0];
+    if (set.has(k) || OPEN_MAPS.includes(top) || top.startsWith("_")) continue;
+    let best = "";
+    let bd = 4;
+    for (const c of known) {
+      const e = lev(k, c);
+      if (e < bd) {
+        bd = e;
+        best = c;
+      }
+    }
+    out.push({ key: k, suggest: best });
+  }
+  return out;
+}

@@ -45,6 +45,8 @@ err() {
   fi
 }
 answer() {
+  # a retry (the prompt carries the previous answer) can get its own answer
+  case "$input" in *"<previous_answer>"*) [ -n "${STUB_ANSWER_RETRY:-}" ] && { printf '%s' "$STUB_ANSWER_RETRY"; return; } ;; esac
   if [ -n "${STUB_ANSWER_FILE:-}" ]; then cat "$STUB_ANSWER_FILE"; else printf '%s' "${STUB_ANSWER:-stub answer}"; fi
 }
 

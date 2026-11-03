@@ -2,7 +2,7 @@ import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { parseFlags, str } from "../args.ts";
 import { TASKS } from "../assets.ts";
-import { cfgStr, ignoredProjectKeys, loadConfig, readConfigFile, setConfigValue, warnings, writeConfigFile } from "../config.ts";
+import { cfgStr, ignoredProjectKeys, loadConfig, readConfigFile, setConfigValue, unknownConfigKeys, warnings, writeConfigFile } from "../config.ts";
 import { modelChain } from "../engine.ts";
 import { allBackendNames, backendFor, detectHost, hostModel, parseRef } from "../backends/registry.ts";
 import { opencodeConfig, opencodeMajor } from "../backends/opencode.ts";
@@ -30,8 +30,11 @@ export async function cmdDoctor(argv: string[]): Promise<number> {
   check(true, `node ${process.version}`, process.platform + "/" + process.arch);
   for (const w of warnings) check(false, w);
   for (const f of [userConfigPath(), projectConfigPath()]) {
-    if (existsSync(f)) check(true, "config", f);
-    else check("warn", "config not present", f);
+    if (existsSync(f)) {
+      check(true, "config", f);
+      // a mistyped key is silently ignored by everything else: say so here
+      for (const u of unknownConfigKeys(readConfigFile(f))) check("warn", `unknown key ${u.key}${u.suggest ? ` (did you mean ${u.suggest}?)` : ""} — ignored`);
+    } else check("warn", "config not present", f);
   }
   loadConfig();
   const ign = ignoredProjectKeys();
@@ -155,12 +158,19 @@ export async function cmdDoctor(argv: string[]): Promise<number> {
 }
 
 export function cmdStats(argv: string[]): void {
-  const { opts } = parseFlags(argv, { days: { value: true }, json: {} });
+  const { opts } = parseFlags(argv, { days: { value: true }, json: {}, csv: {} });
   const days = Number(str(opts.days)) || 0;
   const since = Math.floor(Date.now() / 1000) - days * 86400;
   const all = readStats().filter((r) => !days || r.ts >= since);
   if (!all.length) {
     process.stdout.write(`No offload activity recorded yet (${stateDir()}/stats.jsonl).\n`);
+    return;
+  }
+  if (opts.csv) {
+    // every record, one row each, fixed columns; quoting as jq's @csv (the bash engine)
+    const cols = ["ts", "kind", "source", "event", "model", "files", "bytes_in", "bytes_out", "saved_tokens", "seconds", "cites_ok", "cites_bad", "worker_tokens_in", "worker_tokens_out", "model_tried", "model_ok", "label", "file", "log"];
+    const cell = (v: unknown) => (v === undefined || v === null ? "" : typeof v === "string" ? `"${v.replace(/"/g, '""')}"` : String(v));
+    process.stdout.write(cols.join(",") + "\n" + all.map((r) => cols.map((c) => cell(r[c])).join(",")).join("\n") + "\n");
     return;
   }
   const del = all.filter((r) => r.kind !== "hook");
@@ -170,10 +180,20 @@ export function cmdStats(argv: string[]): void {
     const k = r.kind + (r.source ? `:${r.source}` : "");
     groups.set(k, [...(groups.get(k) ?? []), r]);
   }
+  // per model: latency (nearest rank) and citation health, for rows a model answered
+  const byModel = () => {
+    const m = new Map<string, any[]>();
+    for (const r of del) if (r.model) m.set(r.model, [...(m.get(r.model) ?? []), r]);
+    const rank = (s: number[], q: number) => s[Math.ceil(s.length * q) - 1];
+    return Object.fromEntries([...m].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)).map(([k, v]) => {
+      const s = v.map((r) => Number(r.seconds) || 0).sort((a, b) => a - b);
+      return [k, { count: v.length, p50_seconds: rank(s, 0.5), p95_seconds: rank(s, 0.95), cites_ok: sum(v, "cites_ok"), cites_bad: sum(v, "cites_bad") }];
+    }));
+  };
   // a blocked read saves context but costs the agent one more turn
   const blocked = all.filter((r) => r.kind === "hook" && String(r.event ?? "").endsWith("blocked")).length;
   if (opts.json) {
-    process.stdout.write(JSON.stringify({ delegations: del.length, saved_tokens: sum(del, "saved_tokens"), worker_tokens_in: sum(del, "worker_tokens_in"), worker_tokens_out: sum(del, "worker_tokens_out"), blocked_reads: blocked, by_kind: Object.fromEntries([...groups].map(([k, v]) => [k, { count: v.length, saved_tokens: sum(v, "saved_tokens") }])) }, null, 2) + "\n");
+    process.stdout.write(JSON.stringify({ delegations: del.length, saved_tokens: sum(del, "saved_tokens"), worker_tokens_in: sum(del, "worker_tokens_in"), worker_tokens_out: sum(del, "worker_tokens_out"), blocked_reads: blocked, by_model: byModel(), by_kind: Object.fromEntries([...groups].map(([k, v]) => [k, { count: v.length, saved_tokens: sum(v, "saved_tokens") }])) }, null, 2) + "\n");
     return;
   }
   const hooks = new Map<string, number>();
@@ -243,6 +263,31 @@ export function cmdConfig(argv: string[]): void {
       }
       const file = setConfigValue(args[1], args[2], project);
       process.stdout.write(`set ${args[1]} = ${args[2]} in ${file}\n`);
+      // warn (still saved: maps like endpoints.NAME are open) when the key is not a known setting
+      const probe: Record<string, unknown> = {};
+      let at = probe;
+      const parts = args[1].split(".");
+      parts.forEach((p, i) => (at = (at[p] = i === parts.length - 1 ? 0 : {}) as Record<string, unknown>));
+      const u = unknownConfigKeys(probe)[0];
+      if (u) process.stderr.write(`offload: warning: ${args[1]} is not a known setting${u.suggest ? ` (did you mean ${u.suggest}?)` : ""}; it was saved, but nothing reads it\n`);
+      return;
+    }
+    case "validate": {
+      let n = 0;
+      const checked: string[] = [];
+      for (const f of [userConfigPath(), projectConfigPath()]) {
+        if (!existsSync(f)) continue;
+        checked.push(f);
+        for (const u of unknownConfigKeys(readConfigFile(f))) {
+          n++;
+          process.stdout.write(`unknown key in ${f}: ${u.key}${u.suggest ? ` (did you mean ${u.suggest}?)` : ""}\n`);
+        }
+      }
+      if (n > 0) {
+        process.stdout.write(`${n} unknown key(s): offload ignores them (a typo is not applied)\n`);
+        throw new ExitError(1);
+      }
+      process.stdout.write(`config ok: every key is known (${checked.length ? checked.join(", ") : "no config files yet"})\n`);
       return;
     }
     case "get": {
@@ -251,7 +296,7 @@ export function cmdConfig(argv: string[]): void {
       return;
     }
   }
-  process.stderr.write(`offload: config: unknown subcommand ${sub} (show|path|init|set|get|trust)\n`);
+  process.stderr.write(`offload: config: unknown subcommand ${sub} (show|path|init|get|set|validate|trust)\n`);
   throw new ExitError(2);
 }
 

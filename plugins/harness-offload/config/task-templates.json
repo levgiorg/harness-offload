@@ -1,0 +1,33 @@
+{
+  "_comment": "Starting points for your own tasks: `offload tasks templates` lists them, `offload tasks add NAME --from TEMPLATE` copies one into your config.",
+  "review-diff": {
+    "description": "Review a code change for real problems",
+    "prompt": "You review a code change given as a unified diff. List real problems only: bugs, unhandled errors, security issues, missing or broken tests, docs that no longer match. For each: the file and line from the diff, the problem in one sentence, the fix in one sentence. If there are none, say \"no problems found\". No style nits.",
+    "tools": "none",
+    "usage": "git diff | offload task review-diff --stdin"
+  },
+  "review-sql": {
+    "description": "Find N+1 queries and unbounded queries",
+    "prompt": "You review data-access code for N+1 query patterns (a query inside a loop over earlier results) and queries without a LIMIT that can return unbounded rows. List each problem with its location and the query, and suggest the single-query or batched alternative.",
+    "tools": "none",
+    "usage": "offload task review-sql src/db/"
+  },
+  "find-todos": {
+    "description": "List TODO / FIXME / HACK comments by file",
+    "prompt": "List every TODO, FIXME, HACK and XXX comment in the material, grouped by file, each with its location and a one-line summary. Mark the ones that look risky (security, data loss, wrong results) with RISK at the start.",
+    "tools": "none",
+    "usage": "offload task find-todos src/"
+  },
+  "security-review": {
+    "description": "Look through the repository for common security problems",
+    "prompt": "Look through the repository for common security problems: credentials in code, injection (SQL, shell, path), unsafe deserialization, missing authorization checks on routes, user input reaching the file system. Report only what you can cite; for each, the location, the risk in one sentence and the fix in one sentence.",
+    "tools": "read",
+    "usage": "offload task security-review -q \"focus on the HTTP handlers\""
+  },
+  "explain-failure": {
+    "description": "Explain why a test or build failed",
+    "prompt": "You are given the output of a failing test run or build. Name each failure, the line in the output that shows it, the most likely cause, and the file to look at first. Separate what the output proves from what you infer.",
+    "tools": "none",
+    "usage": "npm test 2>&1 | offload task explain-failure --stdin"
+  }
+}

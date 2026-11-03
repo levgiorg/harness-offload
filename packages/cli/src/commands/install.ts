@@ -294,13 +294,21 @@ Or run it in a terminal to choose step by step.
   // install, then the receipt: one line per agent, words next to every symbol
   const before = previousVersions();
   let failed = 0;
+  const failedHosts: HostName[] = [];
   const receipt: string[] = [];
   const w = Math.max(...targets.map((h) => HOST_LABELS[h].length)) + 2;
   for (const h of targets) {
-    const steps = await install(h, { scope });
+    // one agent failing (even by throwing) never stops the others
+    let steps: Awaited<ReturnType<typeof install>>;
+    try {
+      steps = await install(h, { scope });
+    } catch (e) {
+      steps = [{ ok: false, text: String((e as Error)?.message ?? e).split("\n")[0] }];
+    }
     const bad = steps.filter((s) => !s.ok);
     if (bad.length) {
       failed++;
+      failedHosts.push(h);
       receipt.push(`${sym.bad} ${pad(HOST_LABELS[h], w)}${color.red("not installed:")} ${bad.map((s) => s.text).join("; ")}`);
       continue;
     }
@@ -311,7 +319,12 @@ Or run it in a terminal to choose step by step.
     for (const n of steps.filter((s) => s.note && !/^restart |^start a new /.test(s.text))) receipt.push(`${sym.warn} ${pad(HOST_LABELS[h], w)}${color.yellow("to do:")} ${n.text}`);
   }
   const end = [
-    failed ? `${failed} of ${targets.length} not installed (see above).` : "Done. Restart your agents to load it.",
+    ...(failed
+      ? [
+          `${failed} of ${targets.length} not installed (see above).${failed < targets.length ? " The others are installed: restart them to load it." : ""}`,
+          `Retry: ${self} install --yes --agents ${failedHosts.join(",")}${scope === "project" ? " --scope project" : ""}`,
+        ]
+      : ["Done. Restart your agents to load it."]),
     `Check: ${self} doctor`,
     `Undo:  ${undo}`,
   ];

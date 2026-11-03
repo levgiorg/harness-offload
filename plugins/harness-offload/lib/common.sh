@@ -617,3 +617,38 @@ co_backend_present() {
   done
   return 1
 }
+
+# ------------------------------------------------------------------ config check
+
+# co_config_unknown FILE — one line per key in FILE that offload doesn't know:
+# "KEY<TAB>SUGGESTION" (the closest known key, or empty). Known keys are the leaves of
+# config/defaults.json; maps of your own (tasks, endpoints, agents, hosts, host_models,
+# host_api_models, trusted_projects) take any key. Twin: unknownConfigKeys() in config.ts.
+co_config_unknown() {
+  local f="$1" leaves='def lp(p): if type == "object" then to_entries[] as $e | ($e.value | lp(p + [$e.key])) else (p | join(".")) end; lp([])'
+  [ -f "$f" ] || return 0
+  { jq -r "$leaves" "$CO_ROOT/config/defaults.json" 2>/dev/null | sed 's/^/K /'
+    jq -r "$leaves" "$f" 2>/dev/null | sed 's/^/A /'; } | LC_ALL=C awk '
+    function lev(a, b,    i, j, la, lb, d, c, x, y) {
+      la = length(a); lb = length(b)
+      for (j = 0; j <= lb; j++) d[0, j] = j
+      for (i = 1; i <= la; i++) {
+        d[i, 0] = i
+        for (j = 1; j <= lb; j++) {
+          c = (substr(a, i, 1) == substr(b, j, 1)) ? 0 : 1
+          x = d[i - 1, j] + 1; y = d[i, j - 1] + 1; if (y < x) x = y
+          y = d[i - 1, j - 1] + c; if (y < x) x = y
+          d[i, j] = x
+        }
+      }
+      return d[la, lb]
+    }
+    $1 == "K" { known[$2] = 1; nk++; kl[nk] = $2; next }
+    $1 == "A" {
+      k = $2; top = k; sub(/\..*/, "", top)
+      if (k in known || top ~ /^(tasks|endpoints|agents|hosts|host_models|host_api_models|trusted_projects)$/ || top ~ /^_/) next
+      best = ""; bd = 4
+      for (i = 1; i <= nk; i++) { e = lev(k, kl[i]); if (e < bd) { bd = e; best = kl[i] } }
+      printf "%s\t%s\n", k, best
+    }'
+}

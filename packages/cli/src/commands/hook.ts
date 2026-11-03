@@ -28,7 +28,7 @@ async function readStdin(): Promise<string> {
 const num = (v: unknown): number | undefined => (typeof v === "number" && Number.isFinite(v) ? v : typeof v === "string" && /^\d+$/.test(v) ? Number(v) : undefined);
 const text = (v: unknown): string => (typeof v === "string" ? v : Array.isArray(v) ? v.map((p: any) => (typeof p === "string" ? p : (p?.text ?? ""))).join("") : v == null ? "" : JSON.stringify(v));
 
-function preToolOut(host: Host, v: Verdict): J {
+function preToolOut(host: Host, v: Verdict): J | undefined {
   switch (host) {
     // Crush: flat decision; no "ask" — advice is appended to the tool result instead
     case "crush":
@@ -39,9 +39,12 @@ function preToolOut(host: Host, v: Verdict): J {
       return v.action === "ask"
         ? { permission: "ask", agent_message: v.message, user_message: "offload suggests keeping this large read out of the agent's context." }
         : { permission: "deny", agent_message: v.message, user_message: "offload kept a large read out of the agent's context (see its options)." };
-    // Gemini and Codex hooks cannot ask the user: "ask" degrades to advice, not a block
+    // Gemini's BeforeTool can deny or ask (the message is shown with the question); it
+    // ignores additionalContext, so a plain note has no way to reach the model there
     case "gemini":
-      return v.action === "deny" ? { decision: "deny", reason: v.message } : { hookSpecificOutput: { hookEventName: "BeforeTool", additionalContext: v.message } };
+      if (v.action === "deny") return { decision: "deny", reason: v.message };
+      return v.action === "ask" ? { decision: "ask", systemMessage: v.message } : undefined;
+    // Codex hooks cannot ask the user: "ask" degrades to advice, not a block
     case "codex":
       return v.action === "deny"
         ? { hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision: "deny", permissionDecisionReason: v.message } }
@@ -93,9 +96,10 @@ async function handle(host: Host, event: string, input: J): Promise<J | undefine
       }
       // Crush's view takes a 0-based offset (default limit 200 lines)
       if (host === "crush" && offset !== undefined) offset += 1;
-      v = readGuard(host, cwd, file, offset, limit);
+      v = readGuard(host, cwd, file, offset, limit, typeof input.transcript_path === "string" ? input.transcript_path : undefined);
     } else if (isShell) {
-      v = bashGuard(host, ti.working_directory || cwd, ti.command);
+      // the shell's own folder: Gemini says dir_path, Cursor working_directory
+      v = bashGuard(host, ti.dir_path || ti.working_directory || cwd, ti.command);
       // opt-in: noisy commands run through `offload run` (Claude Code can rewrite the command)
       if (!v && host === "claude") {
         const w = autowrap(ti.command, ti.run_in_background === true);

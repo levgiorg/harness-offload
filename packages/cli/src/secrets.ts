@@ -79,7 +79,9 @@ export function redact(text: string): string {
     .replace(/eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}/g, "[REDACTED-JWT]")
     .replace(/(bearer[ \t]+)[A-Za-z0-9._~+/=-]{16,}/gi, "$1[REDACTED]")
     .replace(/(basic[ \t]+)[A-Za-z0-9+/=]{16,}/gi, "$1[REDACTED]")
-    .replace(/([A-Za-z][A-Za-z0-9+.-]*:\/\/[^/\s:@]+:)[^@\s/]+@/g, "$1[REDACTED]@")
+    // the scheme starts where a run of scheme characters starts (as sed's leftmost match does):
+    // without the lookbehind every letter of a long run was a start, quadratic on 100 KB of text
+    .replace(/(?<![A-Za-z0-9+.-])([A-Za-z][A-Za-z0-9+.-]*:\/\/[^/\s:@]+:)[^@\s/]+@/g, "$1[REDACTED]@")
     .replace(QUOTED_DQ, '$1[REDACTED]"')
     .replace(QUOTED_SQ, "$1[REDACTED]'")
     .replace(KEY_NAME, "$1[REDACTED]")

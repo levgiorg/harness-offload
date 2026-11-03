@@ -1,4 +1,4 @@
-import { readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { cfgBool, cfgInt } from "./config.ts";
 import { invoke } from "./engine.ts";
 import { WorkerError } from "./backends/types.ts";
@@ -82,6 +82,44 @@ export function keyLines(text: string, max: number): { lines: string[]; distinct
   return { lines: out, distinct: seen.size };
 }
 
+/** Every distinct key-line text (same filters and truncation as keyLines), in log order:
+ *  what a later run is compared with. Twin: co_key_texts. */
+export function keyTexts(text: string): string[] {
+  const seen = new Set<string>();
+  for (const raw of splitLines(text)) {
+    const l = raw.toLowerCase();
+    if (!KEY_RE.test(l) || ZERO_RE.test(l)) continue;
+    if (FRAME_RE.test(raw) && LIBFRAME_RE.test(raw)) continue;
+    const t = truncate(stripAnsi(raw).replace(/[ \t\r]+$/, ""), 240);
+    if (t) seen.add(t);
+  }
+  return [...seen];
+}
+
+/** The key-line section of a re-run: only lines new since the previous run, with counts of
+ *  unchanged and gone ones (the first gone ones: what was fixed). Twin: co_key_changes. */
+export function keyChanges(shown: string[], text: string, prevText: string, at: string): string[] {
+  const cur = new Set(keyTexts(text));
+  const prev = keyTexts(prevText);
+  const P = new Set(prev);
+  const fresh: string[] = [];
+  let same = 0;
+  for (const l of shown) {
+    if (!/^L\d+: /.test(l)) continue;
+    const t = l.replace(/^L\d+: /, "").replace(/  \(x\d+\)$/, "").replace(/  \(\d+ similar lines\)$/, "");
+    if (P.has(t)) same++;
+    else fresh.push(l);
+  }
+  const gone = prev.filter((t) => !cur.has(t));
+  const out = [`── key lines since the run at ${at}: ${fresh.length} new, ${same} unchanged, ${gone.length} gone ──`, ...fresh];
+  if (!fresh.length) out.push("(no new error-like lines)");
+  if (gone.length) {
+    out.push("gone since then:", ...gone.slice(0, 5).map((t) => `  - ${t}`));
+    if (gone.length > 5) out.push(`  … ${gone.length - 5} more`);
+  }
+  return out;
+}
+
 export function logExcerpt(text: string): string {
   const lines = splitLines(text);
   const total = lines.length;
@@ -115,6 +153,8 @@ export interface DigestOptions {
   compact?: boolean;
   /** Total seconds the model summary may take (fallbacks included). */
   budgetSec?: number;
+  /** The same command's previous log in this session (a re-run shows what changed). */
+  prev?: { log: string; at: string };
 }
 
 export async function digest(log: string, rawLabel: string, code: string, focus: string, source: string, modelOverride?: string, opts: DigestOptions = {}): Promise<string> {
@@ -172,7 +212,10 @@ export async function digest(log: string, rawLabel: string, code: string, focus:
     : note
       ? [`── model summary ${note} ──`]
       : [];
-  const keySection = key.distinct > 0 ? [`── key lines, verbatim (${key.distinct} distinct) ──`, ...key.lines.map((l) => l.slice(0, width))] : ["── no error-like lines found ──"];
+  // a re-run of the same command in this session: only what changed
+  const keySection = opts.prev && existsSync(opts.prev.log)
+    ? keyChanges(key.lines, text, readFileSync(opts.prev.log, "utf8"), opts.prev.at).map((l) => l.slice(0, width))
+    : key.distinct > 0 ? [`── key lines, verbatim (${key.distinct} distinct) ──`, ...key.lines.map((l) => l.slice(0, width))] : ["── no error-like lines found ──"];
   if (compact) out.push(...keySection, ...sumSection);
   else out.push(...sumSection, ...keySection);
   if (!summary && !compact) tailN += 10;

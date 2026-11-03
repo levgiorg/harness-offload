@@ -151,6 +151,16 @@ describe("offload install with no agent named: asks, or is told", () => {
     expect(log).toMatch(/claude plugin marketplace add \/.+ --scope user\nclaude plugin install harness-offload@harness-offload --scope user/);
     expect(log).not.toMatch(/marketplace add levgiorg\/harness-offload/); // (the checkout's own path may contain the name)
   });
+  test("one agent failing: the others still install, and the receipt says how to retry just that one", () => {
+    const s = withStubs();
+    writeFileSync(join(s.dir, "bin", "codex"), "#!/bin/sh\necho 'codex: marketplace unreachable' >&2\nexit 1\n");
+    const r = cli(["install", "--yes", "--agents", "claude,codex"], { env: plain(s.env) });
+    expect(r.code).toBe(1);
+    expect(r.stdout).toMatch(/✓ Claude Code\s+installed/);
+    expect(r.stdout).toMatch(/✗ OpenAI Codex CLI\s+not installed:/);
+    expect(r.stdout).toContain("1 of 2 not installed (see above). The others are installed: restart them to load it.");
+    expect(r.stdout).toMatch(/Retry: (offload|npx harness-offload) install --yes --agents codex\n/);
+  });
   test("each agent reads with its own model, never another agent's", () => {
     const s = withStubs();
     const r = cli(["install", "--yes", "--agents", "codex,gemini"], { env: plain(s.env) });
@@ -310,5 +320,31 @@ describe.skipIf(!canPty)("offload install in a real terminal", () => {
     expect(r.out).toMatch(/✓ Gemini CLI\s+removed/);
     expect(r.out).toContain("Kept your settings, keys and stats");
     expect(existsSync(join(s.dir, "state"))).toBe(true);
+  });
+});
+
+// The plan a person approves, what really runs, and docs/hosts.md must say the same thing.
+describe("install audit: plan = what runs = docs", () => {
+  test("every agent: the command or file in the plan is the one used and the one documented", () => {
+    const s = withStubs();
+    const docs = readFileSync(join(import.meta.dir, "..", "..", "..", "docs", "hosts.md"), "utf8");
+    const plan = cli(["install", "--dry-run", "--yes"], { env: plain(s.env) }).stdout;
+    const rows = [...plan.matchAll(/^  (\S.*?)\s{2,}(runs .+|[+~] ~\/\S+)$/gm)].map((m) => ({ agent: m[1].trim(), what: m[2] }));
+    expect(rows.length).toBeGreaterThanOrEqual(10);
+    const problems: string[] = [];
+    for (const { agent, what } of rows) {
+      if (what.startsWith("runs ")) {
+        // "runs devin plugins install harness-offload" → "devin plugins install"
+        const cmd = what.slice(5).split(" harness-offload")[0];
+        const host = cmd.split(" ")[0];
+        const real = cli(["install", host, "--dry-run"], { env: plain(s.env) }).stdout;
+        if (!real.includes(cmd)) problems.push(`${agent}: plan says "${cmd}", dry run does not`);
+        if (!docs.includes(cmd)) problems.push(`${agent}: docs/hosts.md never mentions "${cmd}"`);
+      } else {
+        const path = what.slice(4).replace(/\/$/, "");
+        if (!docs.includes(path)) problems.push(`${agent}: docs/hosts.md never mentions ${path}`);
+      }
+    }
+    expect(problems).toEqual([]);
   });
 });

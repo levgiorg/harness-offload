@@ -1,6 +1,6 @@
 // Host-neutral hook decisions — the TypeScript twin of the bash hooks in the
 // Claude Code plugin. Host adapters translate their JSON in and out.
-import { existsSync, mkdirSync, readFileSync, statSync } from "node:fs";
+import { closeSync, existsSync, mkdirSync, openSync, readFileSync, readSync, statSync } from "node:fs";
 import { basename, delimiter, dirname, isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { cfgBool, cfgInt, cfgList, cfgStr, loadConfig } from "../config.ts";
@@ -8,7 +8,7 @@ import { digest, searchView } from "../digest.ts";
 import { parseRef, backendFor } from "../backends/registry.ts";
 import { modelChain } from "../engine.ts";
 import { isSecretTarget, matchesAny, redact } from "../secrets.ts";
-import { appendStats, cooling, newLogPath, seenFile } from "../state.ts";
+import { appendStats, cooling, newLogPath, seenCmdFile, seenFile } from "../state.ts";
 import { outline, posixToJs } from "../outline.ts";
 import { taskSummary } from "../tasks.ts";
 import { estTokens, fileBytes, fileLines, fmtInt, isText, shquote } from "../text.ts";
@@ -151,7 +151,32 @@ Pick the cheapest option:
 }
 
 /** Full-file read guard. offset/limit are 1-based lines; undefined = not given. */
-export function readGuard(host: Host, cwd: string, file: string | undefined, offset?: number, limit?: number): Verdict | undefined {
+/** Tokens in the agent's context at its last turn, from the usage Claude Code records in the
+ *  transcript (input + cache creation + cache read); undefined when it can't tell. Twin: hk_context_used. */
+export function contextUsed(transcript: string | undefined): number | undefined {
+  if (!transcript || !existsSync(transcript)) return undefined;
+  try {
+    const size = statSync(transcript).size;
+    const len = Math.min(size, 400000);
+    const buf = Buffer.alloc(len);
+    const fd = openSync(transcript, "r");
+    try {
+      readSync(fd, buf, 0, len, size - len);
+    } finally {
+      closeSync(fd);
+    }
+    const line = buf.toString("utf8").split("\n").filter((l) => l.includes('"usage"')).pop();
+    if (!line) return undefined;
+    const j = JSON.parse(line);
+    const u = j.message?.usage ?? j.usage;
+    if (!u) return undefined;
+    return (u.input_tokens ?? 0) + (u.cache_creation_input_tokens ?? 0) + (u.cache_read_input_tokens ?? 0);
+  } catch {
+    return undefined;
+  }
+}
+
+export function readGuard(host: Host, cwd: string, file: string | undefined, offset?: number, limit?: number, transcript?: string): Verdict | undefined {
   if (!enabled() || cfgStr("hooks.read_guard", "block") === "off" || !file) return undefined;
   const p = isAbsolute(file) ? file : resolve(cwd, file);
   if (!existsSync(p) || !statSync(p).isFile()) return undefined;
@@ -168,9 +193,24 @@ export function readGuard(host: Host, cwd: string, file: string | undefined, off
     appendStats({ kind: "hook", event: "read_slice_blocked", host, lines: span, file });
     return guard(`offload: that read slice is ${fmtInt(span)} lines of ${file}; keep slices to at most ${chunk} lines, or ask: ${callStyle(host) === "mcp" ? "offload_read" : `${cliCommand()} read`} -q "<question>" ${shquote(file)}:${start}-${start + span - 1}`);
   }
-  if (lines <= cfgInt("hooks.read_threshold_lines", 600) && tokens <= cfgInt("hooks.read_threshold_tokens", 6000)) return undefined;
-  appendStats({ kind: "hook", event: "read_blocked", host, lines, tokens, file });
-  return guard(bigFileMessage(host, file, lines, tokens, "A full read"));
+  let maxLines = cfgInt("hooks.read_threshold_lines", 600);
+  let maxTokens = cfgInt("hooks.read_threshold_tokens", 6000);
+  let note = "";
+  let used: number | undefined;
+  if (lines <= maxLines && tokens <= maxTokens) {
+    // opt-in (hooks.context_tight_tokens): when the agent's context is nearly full, a read over
+    // half the limit could force a compaction, so the limit is halved. Twin: hooks/pre-read.
+    const tight = cfgInt("hooks.context_tight_tokens", 0);
+    if (!(tight > 0 && (lines > maxLines / 2 || tokens > maxTokens / 2))) return undefined;
+    used = contextUsed(transcript);
+    if (used === undefined || used < tight) return undefined;
+    maxLines = Math.floor(maxLines / 2);
+    maxTokens = Math.floor(maxTokens / 2);
+    if (lines <= maxLines && tokens <= maxTokens) return undefined;
+    note = `\n(Your context is nearly full: ~${fmtInt(used)} tokens in use, at or above hooks.context_tight_tokens, so the limit is halved.)`;
+  }
+  appendStats({ kind: "hook", event: "read_blocked", host, lines, tokens, file, ...(used !== undefined ? { context: used } : {}) });
+  return guard(bigFileMessage(host, file, lines, tokens, "A full read") + note);
 }
 
 /** cat/nl/bat/less/more/head/tail/sed -n dumps of big files. */
@@ -298,13 +338,22 @@ export async function postBash(opts: { command?: string; output: string; persist
       return note;
     }
   }
+  // the last run of this same command in the session: a re-run's digest shows what changed
+  const cmdSeen = opts.session ? seenCmdFile(opts.session, cmd) : "";
+  let prev: { log: string; at: string } | undefined;
+  if (cmdSeen && existsSync(cmdSeen)) {
+    const c = /^(\d+) (\S+) (.*)$/.exec(readFileSync(cmdSeen, "utf8").replace(/\n$/, ""));
+    if (c && Math.floor(Date.now() / 1000) - Number(c[1]) <= 3600 && existsSync(c[3])) prev = { log: c[3], at: c[2] };
+  }
   const markSeen = (log: string) => {
     if (!seen) return;
     try {
       mkdirSync(dirname(seen), { recursive: true });
       const d = new Date();
       const p = (n: number) => String(n).padStart(2, "0");
-      writeFileSync(seen, `${Math.floor(d.getTime() / 1000)} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())} ${log}\n`);
+      const line = `${Math.floor(d.getTime() / 1000)} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())} ${log}\n`;
+      writeFileSync(seen, line);
+      if (cmdSeen) writeFileSync(cmdSeen, line);
     } catch {
       /* best-effort */
     }
@@ -321,7 +370,7 @@ export async function postBash(opts: { command?: string; output: string; persist
   const log = newLogPath(cmd);
   writeFileSync(log, text);
   // no final newline, as the bash hook returns it
-  const d = (await digest(log, cmd, "0", opts.description ?? "", "hook", undefined, { noModel, compact, budgetSec })).replace(/\n$/, "");
+  const d = (await digest(log, cmd, "0", opts.description ?? "", "hook", undefined, { noModel, compact, budgetSec, prev })).replace(/\n$/, "");
   if (d) markSeen(log);
   return d;
 }

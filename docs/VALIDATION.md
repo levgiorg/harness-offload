@@ -7,7 +7,9 @@ Real-model runs are recorded here.
 
 - `evals/benchmark.sh -m claude:haiku` (bash, then `--cli` TypeScript), after the fixes: all facts found in all
   four scenarios on both engines — `read` of a 919-line module 4/4, `read` across two files 3/3, `summarize` of a
-  2,323-line CI log 3/3, `write` of tests from a reference 2/2; savings 95% / 56–61% / 97–98% / 93%. Citations: bash
+  2,323-line CI log 3/3, `write` of tests from a reference 2/2; savings 95% / 56–61% / 97–98% / 93%.
+  Tokens (chars/4) without → with, bash / TS: module 9,666 → 402 / 412; two files 1,230 → 469 / 529; CI log
+  32,771 → 665 / 651; tests 759 → 52 / 52. (These are the README's "What it saves" numbers.) Citations: bash
   cross-file 11/0, large-module 6/1 (the flag is right: L6 cited for a quote that is on L418); TypeScript 11/0
   and 8/0 (was 0/10 before path repair). Tests written by `write`: TS 30/30 pass under pytest; bash 24/26, with the two failures
   Haiku's arithmetic (expected the discount rate as the amount), which is why `write` asks for a review.

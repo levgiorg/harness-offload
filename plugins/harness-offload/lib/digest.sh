@@ -76,6 +76,47 @@ co_key_lines() {
     }' "$1" 2>/dev/null
 }
 
+# co_key_texts <file> — every distinct key-line text (same filters and truncation as
+# co_key_lines), in log order: what a later run is compared with. Twin: keyTexts().
+co_key_texts() {
+  LC_ALL=C awk -v key="$CO_KEY_RE" -v zero="$CO_ZERO_RE" -v frame="$CO_FRAME_RE" -v lib="$CO_LIBFRAME_RE" '
+    {
+      l = tolower($0)
+      if (l !~ key || l ~ zero) next
+      if ($0 ~ frame && $0 ~ lib) next
+      t = $0
+      gsub(/\033\[[0-9;]*[A-Za-z]/, "", t)
+      sub(/[ \t\r]+$/, "", t)
+      if (t == "") next
+      if (length(t) > 240) t = substr(t, 1, 237) "..."
+      if (!(t in seen)) { seen[t] = 1; print t }
+    }' "$1" 2>/dev/null
+}
+
+# co_key_changes <shown-key-lines> <this-log> <previous-log> <HH:MM:SS> — the key-line
+# section of a re-run: only lines that are new since the previous run, with counts of
+# unchanged and gone ones (and the first gone ones: what was fixed). Twin: keyChanges().
+co_key_changes() {
+  local cur prev
+  co_tmp cur; co_tmp prev
+  co_key_texts "$2" > "$cur"; co_key_texts "$3" > "$prev"
+  LC_ALL=C awk -v pf="$prev" -v cf="$cur" -v at="$4" '
+    FILENAME == pf { if (!($0 in P)) { P[$0] = 1; np++; po[np] = $0 }; next }
+    FILENAME == cf { C[$0] = 1; next }
+    /^L[0-9]+: / {
+      t = $0; sub(/^L[0-9]+: /, "", t); sub(/  \(x[0-9]+\)$/, "", t); sub(/  \([0-9]+ similar lines\)$/, "", t)
+      if (t in P) u++; else { n++; nl[n] = $0 }
+      next
+    }
+    END {
+      for (i = 1; i <= np; i++) if (!(po[i] in C)) { g++; if (g <= 5) gl[g] = po[i] }
+      printf "── key lines since the run at %s: %d new, %d unchanged, %d gone ──\n", at, n, u, g
+      for (i = 1; i <= n; i++) print nl[i]
+      if (n == 0) print "(no new error-like lines)"
+      if (g > 0) { print "gone since then:"; for (i = 1; i <= g && i <= 5; i++) print "  - " gl[i]; if (g > 5) printf "  … %d more\n", g - 5 }
+    }' "$prev" "$cur" "$1"
+}
+
 # Excerpt for the model when the log is too large to send whole: head, every
 # key line with a little context, and the tail.
 co_log_excerpt() {
@@ -156,6 +197,11 @@ co_digest() {
     fi
   }
   _sc_key_section() {
+    # a re-run of the same command in this session: only what changed (OFFLOAD_DIGEST_PREV)
+    if [ -n "${OFFLOAD_DIGEST_PREV:-}" ] && [ -f "$OFFLOAD_DIGEST_PREV" ]; then
+      co_key_changes "$keyf" "$log" "$OFFLOAD_DIGEST_PREV" "${OFFLOAD_DIGEST_PREV_AT:-?}" | LC_ALL=C cut -c1-"$width"
+      return
+    fi
     if [ "$keycount" -gt 0 ]; then
       printf -- '── key lines, verbatim (%s distinct) ──\n' "$keycount"
       LC_ALL=C cut -c1-"$width" "$keyf"

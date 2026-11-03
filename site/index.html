@@ -410,7 +410,7 @@ footer .wrap { display: flex; flex-wrap: wrap; gap: 0.5rem 2rem; justify-content
           </dl>
 
           <div class="form-foot">
-            <div class="stamp" id="stamp" aria-live="polite"><span>Kept off the desk</span><b id="kept">9,213</b><span>tokens</span></div>
+            <div class="stamp" id="stamp" aria-live="polite"><span>Kept off the desk</span><b id="kept">9,254</b><span>tokens</span></div>
             <small>Example request. Files, token counts and the facts found come from the benchmark in docs/VALIDATION.md (worker: Claude Haiku); the answer wording is abridged.</small>
           </div>
         </div>
@@ -474,10 +474,10 @@ footer .wrap { display: flex; flex-wrap: wrap; gap: 0.5rem 2rem; justify-content
               <tr><th scope="col">Request</th><th scope="col" class="num">Agent would read</th><th scope="col" class="num">Returned</th><th scope="col" class="num">Kept off the desk</th><th scope="col" class="num">Facts found</th></tr>
             </thead>
             <tbody>
-              <tr><td>Questions about a 919-line module</td><td class="num">9,666</td><td class="num">453</td><td class="num"><span class="saved">95%</span></td><td class="num">4 / 4</td></tr>
-              <tr><td>Digest of a 2,323-line CI log with two failures</td><td class="num">32,771</td><td class="num">659</td><td class="num"><span class="saved">97%</span></td><td class="num">3 / 3</td></tr>
-              <tr><td>Pytest file written from a reference test</td><td class="num">759</td><td class="num">54</td><td class="num"><span class="saved">92%</span></td><td class="num">2 / 2</td></tr>
-              <tr><td>Two small files, one question</td><td class="num">1,230</td><td class="num">665</td><td class="num"><span class="saved">45%</span></td><td class="num">3 / 3</td></tr>
+              <tr><td>Questions about a 919-line module</td><td class="num">9,666</td><td class="num">412</td><td class="num"><span class="saved">96%</span></td><td class="num">4 / 4</td></tr>
+              <tr><td>Digest of a 2,323-line CI log with two failures</td><td class="num">32,771</td><td class="num">651</td><td class="num"><span class="saved">98%</span></td><td class="num">3 / 3</td></tr>
+              <tr><td>Pytest file written from a reference test</td><td class="num">759</td><td class="num">52</td><td class="num"><span class="saved">93%</span></td><td class="num">2 / 2</td></tr>
+              <tr><td>Two small files, one question</td><td class="num">1,230</td><td class="num">529</td><td class="num"><span class="saved">57%</span></td><td class="num">3 / 3</td></tr>
             </tbody>
           </table>
         </div>
@@ -586,22 +586,22 @@ offload setup</pre>
       ask: "Read ledger.ts — 919 lines, about 9,666 tokens",
       held: "An outline of the file and three cheaper options, about 40 lines",
       by: "@host → claude:haiku, on your Claude plan",
-      answer: `MAX_BATCH is 500 ${mark("ledger.ts:L5")} ${ok}. applyLateFee charges 2.5% ${mark("ledger.ts:L6")} ${ok} and carries a TODO to cap the fee at 50.00 ${mark("ledger.ts:L415")} ${ok}. LedgerReconciler starts at ${mark("ledger.ts:L676")}. <span class="dim">453 tokens.</span>`,
-      kept: 9213,
+      answer: `MAX_BATCH is 500 ${mark("ledger.ts:L5")} ${ok}. applyLateFee charges 2.5% ${mark("ledger.ts:L6")} ${ok} and carries a TODO to cap the fee at 50.00 ${mark("ledger.ts:L415")} ${ok}. LedgerReconciler starts at ${mark("ledger.ts:L676")}. <span class="dim">412 tokens.</span>`,
+      kept: 9254,
     },
     log: {
       ask: "npm test — 2,323 lines of output, about 32,771 tokens",
       held: "The command ran; its output became a digest with the full log kept on disk",
       by: "@host → claude:haiku, on your Claude plan",
-      answer: `2 failed, 1,898 passed. ${mark("inventory.test.ts:41")} commit refuses an expired reservation: expected the promise to reject with "expired". ${mark("pricing.test.ts:88")} 10% bulk tier at 100 units: expected 1080.00 to equal 1071.36. <span class="dim">659 tokens, verbatim error lines included.</span>`,
-      kept: 32112,
+      answer: `2 failed, 1,898 passed. ${mark("inventory.test.ts:41")} commit refuses an expired reservation: expected the promise to reject with "expired". ${mark("pricing.test.ts:88")} 10% bulk tier at 100 units: expected 1080.00 to equal 1071.36. <span class="dim">651 tokens, verbatim error lines included.</span>`,
+      kept: 32120,
     },
     two: {
       ask: "Read inventory.ts and inventory.test.ts — 138 lines, about 1,230 tokens",
       held: "Nothing: small files pass straight through. Here the agent asked offload directly",
       by: "@host → claude:haiku, on your Claude plan",
-      answer: `The tests cover reserve and commit ${mark("inventory.test.ts:L17")} ${ok} ${mark("inventory.test.ts:L34")} ${ok}. release, restock, needsReorder and expireStale have none. reserve throws OutOfStockError when free stock is short ${mark("inventory.ts:L43")} ${ok}. <span class="dim">665 tokens.</span>`,
-      kept: 565,
+      answer: `The tests cover reserve and commit ${mark("inventory.test.ts:L17")} ${ok} ${mark("inventory.test.ts:L34")} ${ok}. release, restock, needsReorder and expireStale have none. reserve throws OutOfStockError when free stock is short ${mark("inventory.ts:L43")} ${ok}. <span class="dim">529 tokens.</span>`,
+      kept: 701,
     },
   };
   const fields = document.getElementById("fields");

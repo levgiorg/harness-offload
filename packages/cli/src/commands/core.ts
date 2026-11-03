@@ -172,7 +172,28 @@ export async function cmdRead(argv: string[]): Promise<void> {
     answer = v.text;
     ok = v.ok;
     bad = v.bad;
-    cite = ` · citations: ${ok} verified, ${bad} unverified`;
+    // most citations wrong: ask once more with the failures in view, keep the better answer
+    let retried = "";
+    if (bad >= 2 && bad > ok && cfgBool("read.retry_unverified", true)) {
+      const p2 = `${prompt}<previous_answer>\n${answer}</previous_answer>\n<check>Some citations in your previous answer quote text that is not at the lines they cite (marked ⚠unverified). Answer the question again: copy every quote character for character from the numbered lines it cites, and leave out a claim you cannot cite.</check>\n<question>${question}</question>\n`;
+      try {
+        const t = taskContext();
+        const r2 = await invoke("read", p2, workDir(), str(opts.model) || undefined, t ? { system: t.system, primary: t.model } : {});
+        const v2 = verifyCitations(r2.text.replace(/\n?$/, "\n"), process.cwd(), 3, sent);
+        r.tokensIn += r2.tokensIn;
+        r.tokensOut += r2.tokensOut;
+        if (v2.bad < bad || (v2.bad === bad && v2.ok > ok)) {
+          retried = ` · retried once: ${bad} → ${v2.bad} unverified`;
+          answer = v2.text;
+          ok = v2.ok;
+          bad = v2.bad;
+          r.model = r2.model;
+        } else retried = " · retried once, the first answer was better";
+      } catch {
+        retried = " · a retry failed, first answer kept";
+      }
+    }
+    cite = ` · citations: ${ok} verified, ${bad} unverified${retried}`;
   }
   let out = answer + footer(`${label("read")} · ${r.model} · ${nfiles} file(s), ${fmtInt(nlines)} lines (~${fmtInt(estTokens(bytes))} tokens) kept out of your context · ${secs(t0)}s${cite}`);
   if (bad > 0) out += "⚠unverified = quote not found near the cited lines; confirm with Read(offset/limit) before acting on it.\n";
@@ -382,11 +403,47 @@ export { UsageError };
 
 // ------------------------------------------------------------------ custom tasks
 
-export function cmdTasks(): void {
+/** offload tasks templates | offload tasks add NAME [--from TEMPLATE] [--project]. Twin: cmd_tasks (same text). */
+async function tasksTemplates(argv: string[]): Promise<boolean> {
+  const { TASK_TEMPLATES_JSON: T } = await import("../generated/assets.ts");
+  const names = Object.keys(T).filter((k) => !k.startsWith("_"));
+  if (argv[0] === "templates") {
+    let out = "Task templates (offload tasks add NAME --from TEMPLATE):\n";
+    for (const n of names) out += `  ${n}${" ".repeat(Math.max(0, 20 - n.length))}${T[n].description}\n  ${" ".repeat(20)}e.g. ${T[n].usage}\n`;
+    process.stdout.write(out);
+    return true;
+  }
+  if (argv[0] !== "add") return false;
+  let name = "";
+  let from = "";
+  let project = false;
+  const rest = argv.slice(1);
+  for (let i = 0; i < rest.length; i++) {
+    if (rest[i] === "--from") from = rest[++i] ?? "";
+    else if (rest[i] === "--project") project = true;
+    else if (rest[i].startsWith("-")) return die(`tasks add: unknown option ${rest[i]}`);
+    else name = rest[i];
+  }
+  if (!name) return die("tasks add NAME [--from TEMPLATE] [--project]   (templates: offload tasks templates)");
+  from ||= name;
+  if (!TASK_NAME.test(name)) return die("tasks add: a task name is lowercase letters, digits, - and _ (up to 40)");
+  if (!names.includes(from)) return die(`tasks add: no template "${from}" (offload tasks templates lists them)`);
+  const { readConfigFile, writeConfigFile } = await import("../config.ts");
+  const { projectConfigPath, userConfigPath } = await import("../paths.ts");
+  const target = project ? projectConfigPath() : userConfigPath();
+  const cur = readConfigFile(target) as Record<string, any>;
+  if (cur.tasks?.[name] != null) return die(`tasks add: ${name} already exists in ${target}`);
+  const { description, prompt, tools } = T[from];
+  writeConfigFile(target, { ...cur, tasks: { ...(cur.tasks ?? {}), [name]: { description, prompt, tools } } });
+  process.stdout.write(`added task ${name} (from ${from}) to ${target}\nrun it: ${String(T[from].usage).replace(`task ${from}`, `task ${name}`)}\n`);
+  return true;
+}
+export async function cmdTasks(argv: string[] = []): Promise<void> {
+  if (await tasksTemplates(argv)) return;
   const names = taskNames();
   if (!names.length) {
     process.stdout.write(
-      "No custom tasks yet. Add one to your config, for example:\n" +
+      "No custom tasks yet. Start from a template (offload tasks templates), for example:\n  offload tasks add review-diff\nor write your own:\n" +
         `  offload config set tasks.review-sql '{"description":"Find N+1 queries","prompt":"You review SQL access code for N+1 queries.","tools":"none"}'\n` +
         "then: offload task review-sql src/db/\n",
     );

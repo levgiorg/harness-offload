@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { cli, sandbox } from "./helpers";
 import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -129,5 +130,16 @@ describe("dashboard cooldowns", () => {
     const out = join(s.dir, "d.html");
     expect(cli(["dashboard", "--out", out], { env: s.env }).code).toBe(0);
     expect(readFileSync(out, "utf8")).toContain('"cooldowns":[{"model":"openrouter:qwen/qwen3-coder"');
+  });
+});
+
+describe("NO_COLOR", () => {
+  test("FORCE_COLOR turns colour on; NO_COLOR wins over it, in every command that styles output", () => {
+    const s = sandbox();
+    const env: NodeJS.ProcessEnv = { ...s.env, FORCE_COLOR: "1" };
+    delete env.NO_COLOR;
+    expect(cli(["doctor"], { env }).stdout).toContain("\x1b[");
+    for (const args of [["doctor"], ["stats"], ["model"], ["explain"], ["help"], ["install", "--dry-run", "--yes"]])
+      expect(cli(args, { env: { ...env, NO_COLOR: "1" } }).stdout).not.toContain("\x1b[");
   });
 });

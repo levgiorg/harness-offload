@@ -50,7 +50,7 @@ Copilot CLI, Crush and Qwen Code were verified end to end with their real binari
 - The extension blocks big `read`/`bash` dumps (`tool_call` → `{block, reason}`), digests long `bash` results (`tool_result`), appends the guide (`before_agent_start`) and registers native tools `offload_read`, `offload_explore`, `offload_run`, `offload_write`, `offload_outline`.
 
 ## OpenCode (v1 and v2)
-- **Install:** `offload install opencode` writes `~/.config/opencode/plugins/harness-offload.js` (v2) or `plugin/` (v1): a one-line re-export of the package's `dist/opencode.js`.
+- **Install:** `offload install opencode` writes `~/.config/opencode/plugins/harness-offload.js` (v2) or `~/.config/opencode/plugin/harness-offload.js` (v1): a one-line re-export of the package's `dist/opencode.js`.
 - One default export serves both: v2 uses `{id, setup}` (`tool.hook("execute.before"/"execute.after")`, `session.hook("context")`), v1 calls `server()` (`tool.execute.before/after`, `experimental.chat.system.transform`).
 - When OpenCode itself is the *worker*, offload sets `OFFLOAD_DISABLE=1`, so the plugin stays out of the way.
 - **Which model reads:** by default the model OpenCode itself uses by default (`@host` = `@default` here).

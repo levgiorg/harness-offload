@@ -22,3 +22,8 @@ Hypothesis → method → result → decision. Numbers only from runs that happe
 - Result before: 0 of 2 errors in the key lines ("572 more distinct"). After (kinds = digits masked; error-like kinds
   first, ≤3 each; others 1 each; printed in log order): 2 of 2, 3,705 → 1,674 B; real benchmark CI log byte-identical.
 - Decision: shipped. Masking hex/uuids too was not needed for this fixture; revisit with R2's fixtures.
+
+## E4 · 2026-11-03 · How often would a quality retry fire? (B2)
+- Method: the 8 real Haiku answers in `evals/real-answers` against the retry rule (≥ 2 unverified and more than verified).
+- Result: 0 of 8 would retry (worst: 6 verified / 1 unverified). With the citation fixes, the retry is a safety net for
+  bad models or bad days, not a routine cost. Shipped on by default; one extra call at most.

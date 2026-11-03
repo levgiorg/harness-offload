@@ -26,8 +26,20 @@ read -r nl bytes <<EOF
 $(wc -lc < "$file" 2>/dev/null)
 EOF
 case "$nl$bytes" in ''|*[!0-9]*) exit 0 ;; esac
+ctx_note=""
 if [ -z "$offset" ] && [ -z "$limit" ] && [ $((nl + 1)) -le "$max_lines" ] && [ $(((bytes + 3) / 4)) -le "$max_tokens" ]; then
-  exit 0
+  # opt-in (hooks.context_tight_tokens): when the agent's context is nearly full, a read
+  # over half the limit could force a compaction, so the limit is halved. The transcript
+  # is only looked at for files in that band.
+  tight=0; co_cfgi tight '.hooks.context_tight_tokens' 0
+  if [ "$tight" -gt 0 ] && { [ $((nl + 1)) -gt $((max_lines / 2)) ] || [ $(((bytes + 3) / 4)) -gt $((max_tokens / 2)) ]; } &&
+    used=$(hk_context_used) && [ "$used" -ge "$tight" ]; then
+    max_lines=$((max_lines / 2)); max_tokens=$((max_tokens / 2))
+    ctx_note="
+(Your context is nearly full: ~$(co_fmt_int "$used") tokens in use, at or above hooks.context_tight_tokens, so the limit is halved.)"
+  else
+    exit 0
+  fi
 fi
 lines=$(co_file_lines "$file")
 
@@ -56,5 +68,5 @@ tokens=$(co_est_tokens "$bytes")
 may_stop || exit 0
 
 . "$CO_ROOT/lib/outline.sh"
-hk_event read_blocked "$(jq -nc --argjson l "$lines" --argjson t "$tokens" --arg f "$file" '{lines: $l, tokens: $t, file: $f}')"
-hk_guard "$(hk_big_file_message "$file" "$lines" "$tokens" "A full Read")"
+hk_event read_blocked "$(jq -nc --argjson l "$lines" --argjson t "$tokens" --arg f "$file" --arg c "${used:-}" '{lines: $l, tokens: $t, file: $f} + (if $c == "" then {} else {context: ($c | tonumber)} end)')"
+hk_guard "$(hk_big_file_message "$file" "$lines" "$tokens" "A full Read")$ctx_note"

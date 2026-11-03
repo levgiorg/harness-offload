@@ -44,7 +44,7 @@ const HELP = () => `${banner()}
     offload doctor [--ping] [--reset]       check everything; --ping makes one tiny call per model
     offload models [BACKEND...]             list models your backends offer
     offload config [show|path|init|set KEY VALUE|get|trust] [--project]
-    offload stats [--days N] [--json]       delegations and estimated tokens saved
+    offload stats [--days N] [--json|--csv] delegations and estimated tokens saved
     offload explain [N]                     what the hooks did lately, why, and how to change it
     offload statusline                      one short line for status bars
     offload mcp                             run as an MCP server (stdio)
@@ -63,6 +63,13 @@ async function main(argv: string[]): Promise<number> {
   // a cancelled/timed-out offload must not leave worker trees behind
   if (argv[0] !== "hook") killChildrenOnSignals();
   const [cmd = "help", ...rest] = argv;
+  // per-command help (shared text with the bash engine): `offload help read`, `offload read --help`
+  const { HELP_JSON } = await import("./generated/assets.ts");
+  const topic = cmd === "help" ? rest[0] : rest[0] === "--help" || rest[0] === "-h" ? cmd : undefined;
+  if (topic && typeof HELP_JSON[topic] === "string" && !topic.startsWith("_")) {
+    process.stdout.write(HELP_JSON[topic] + "\n");
+    return 0;
+  }
   switch (cmd) {
     case "help":
     case "-h":
@@ -97,7 +104,7 @@ async function main(argv: string[]): Promise<number> {
       await (await core()).cmdTask(rest);
       return 0;
     case "tasks":
-      (await core()).cmdTasks();
+      await (await core()).cmdTasks(rest);
       return 0;
     case "model":
       return (await import("./commands/model.ts")).cmdModel(rest);

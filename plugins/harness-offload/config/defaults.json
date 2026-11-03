@@ -33,7 +33,8 @@
   "read": {
     "max_input_bytes": 1500000,
     "max_files": 60,
-    "verify_citations": true
+    "verify_citations": true,
+    "retry_unverified": true
   },
   "explore": {
     "max_steps": 40
@@ -52,6 +53,7 @@
     "read_threshold_lines": 600,
     "read_threshold_tokens": 6000,
     "read_max_chunk_lines": 600,
+    "context_tight_tokens": 0,
     "bash_read_guard": true,
     "summarize_bash_output": true,
     "bash_output_threshold_lines": 250,

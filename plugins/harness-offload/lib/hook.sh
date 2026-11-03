@@ -75,6 +75,7 @@ HK_FIELDS='
   | @sh "HK_CWD=\(g(.cwd))",
     @sh "HK_AGENT_ID=\(g(.agent_id))",
     @sh "HK_SESSION=\(g(.session_id))",
+    @sh "HK_TRANSCRIPT=\(g(.transcript_path))",
     @sh "HK_SOURCE=\(g(.source))",
     @sh "HK_FILE=\(g(.tool_input.file_path))",
     @sh "HK_OFFSET=\(g(.tool_input.offset))",
@@ -86,7 +87,7 @@ HK_FIELDS='
     @sh "HK_IS_IMAGE=\(g(.tool_response.isImage))",
     @sh "HK_PERSISTED=\(g(.tool_response.persistedOutputPath))",
     "HK_OUT_BYTES=\($sz[0])", "HK_OUT_LINES=\($sz[1])"'
-HK_CWD="" HK_AGENT_ID="" HK_SESSION="" HK_SOURCE="" HK_FILE="" HK_OFFSET="" HK_LIMIT="" HK_COMMAND="" HK_DESCRIPTION=""
+HK_CWD="" HK_AGENT_ID="" HK_SESSION="" HK_TRANSCRIPT="" HK_SOURCE="" HK_FILE="" HK_OFFSET="" HK_LIMIT="" HK_COMMAND="" HK_DESCRIPTION=""
 HK_BACKGROUND="" HK_INTERRUPTED="" HK_IS_IMAGE="" HK_PERSISTED="" HK_OUT_BYTES=-1 HK_OUT_LINES=-1
 eval "$(printf '%s' "$HK_INPUT" | jq -r "$HK_FIELDS" 2>/dev/null)"
 
@@ -109,6 +110,18 @@ hk_skip_subagent() {
 
 # A hook found something worth acting on (a big read, a long output): may it?
 # Checked late on purpose — most tool calls are small and pass before this.
+# Tokens in the agent's context at its last turn, from the usage Claude Code records in
+# the transcript (input + cache creation + cache read). Fails when it can't tell.
+# Twin: contextUsed() in logic.ts.
+hk_context_used() {
+  local n
+  [ -n "$HK_TRANSCRIPT" ] && [ -f "$HK_TRANSCRIPT" ] || return 1
+  n=$(tail -c 400000 "$HK_TRANSCRIPT" 2>/dev/null | grep '"usage"' | tail -n 1 |
+    jq -r '(.message.usage // .usage) | ((.input_tokens // 0) + (.cache_creation_input_tokens // 0) + (.cache_read_input_tokens // 0))' 2>/dev/null)
+  case "$n" in ''|*[!0-9]*) return 1 ;; esac
+  printf '%s' "$n"
+}
+
 hk_may_act() {
   hk_skip_subagent && return 1
   co_available

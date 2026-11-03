@@ -101,6 +101,8 @@ export function cksum(buf: Buffer): string {
 }
 const seenSession = (s: string) => s.replace(/[^A-Za-z0-9_-]/g, "_").slice(0, 64);
 export const seenFile = (session: string, text: string): string => join(stateDir(), "seen", `${seenSession(session)}-${cksum(Buffer.from(text))}`);
+/** The last run of one command in a session (for a re-run's "what changed" digest). */
+export const seenCmdFile = (session: string, cmd: string): string => join(stateDir(), "seen", `${seenSession(session)}-cmd-${cksum(Buffer.from(cmd))}`);
 /** Forget what a session saw (after a compaction or /clear the agent no longer has it). */
 export function seenForget(session: string | undefined): void {
   if (!session) return;

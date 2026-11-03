@@ -327,6 +327,20 @@ $(sed -n 's/^# keep: //p' "$spec")
 EOF_KEEP
   if [ -z "$miss" ]; then ok "digest keeps what matters: $name"; else bad "digest keeps what matters: $name" "$miss"; fi
 done
+# mostly-unverified answers get one retry with the failures in view; the better answer is kept
+BADA='a — repair/hooks/pre-read:L2 `not this`; b — repair/src/fx/ledger.ts:L1 `nor this`; c — repair/src/fx/ledger.ts:L2 `ledger.push(entry)`'
+GOODA='fixed — repair/src/fx/ledger.ts:L2 `ledger.push(entry)` and repair/src/fx/ledger.ts:L1 `export const ledger = []`'
+out=$(STUB_PROMPT="$T/prompt-retry" STUB_ANSWER="$BADA" STUB_ANSWER_RETRY="$GOODA" "$OFFLOAD" read -q "?" repair 2>&1)
+expect_has "read: mostly unverified → one retry, better answer kept" "$out" "citations: 2 verified, 0 unverified · retried once: 2 → 0 unverified"
+expect_has "read: … the retry saw the failed answer and what to fix" "$(cat "$T/prompt-retry")" "<check>Some citations in your previous answer"
+out=$(STUB_ANSWER="$BADA" "$OFFLOAD" read -q "?" repair 2>&1)
+expect_has "read: a retry that is no better keeps the first answer" "$out" "citations: 1 verified, 2 unverified · retried once, the first answer was better"
+printf '{"read":{"retry_unverified":false}}' > "$OFFLOAD_CONFIG"
+out=$(STUB_ANSWER="$BADA" STUB_ANSWER_RETRY="$GOODA" "$OFFLOAD" read -q "?" repair 2>&1)
+rm -f "$OFFLOAD_CONFIG"
+expect_not "read: read.retry_unverified false: no retry" "$out" "retried"
+out=$(STUB_ANSWER="$GOODA" STUB_ANSWER_RETRY="$BADA" "$OFFLOAD" read -q "?" repair 2>&1)
+expect_not "read: a well-cited answer is never retried" "$out" "retried"
 # real worker answers (evals/real-answers): the verifier must give the recorded counts
 RA="$PLUGIN/../../evals/real-answers"
 if [ -f "$RA/cases.txt" ]; then
@@ -424,6 +438,43 @@ rm -f "$OFFLOAD_CONFIG"; export OFFLOAD_STATE_DIR=$SAVED_STATE
   seq 1 400 | "$OFFLOAD" summarize --no-model >/dev/null 2>&1
   ls -ld "$OFFLOAD_STATE_DIR" | cut -c1-10 ) > "$T/perm.txt"
 expect_eq "state: the state folder (logs, stats) is private, even one that existed" "$(cat "$T/perm.txt")" "drwx------"
+# per-model latency and citations; every record as CSV
+SAVED_STATE=$OFFLOAD_STATE_DIR; export OFFLOAD_STATE_DIR="$T/state-model"; mkdir -p "$OFFLOAD_STATE_DIR"
+for i in 1 2 3 4 5 6 7 8 9 10; do printf '{"ts":%s,"kind":"read","model":"m:a","seconds":%s,"cites_ok":2,"cites_bad":%s,"label":"q \\"x\\", y"}\n' "$(date +%s)" "$i" $((i % 2)); done > "$OFFLOAD_STATE_DIR/stats.jsonl"
+expect_eq "stats --json: p50/p95 seconds per model (nearest rank)" "$("$OFFLOAD" stats --json | jq -c '.by_model["m:a"] | [.count, .p50_seconds, .p95_seconds, .cites_ok, .cites_bad]')" "[10,5,10,20,5]"
+expect_eq "stats --csv: a header and one row per record" "$("$OFFLOAD" stats --csv | wc -l | tr -d ' ')" 11
+expect_has "stats --csv: quotes and commas inside fields are escaped" "$("$OFFLOAD" stats --csv | sed -n 2p)" ',"q ""x"", y",'
+export OFFLOAD_STATE_DIR=$SAVED_STATE
+# task templates: list, add one, run it
+expect_has "tasks templates: lists review-diff with an example" "$("$OFFLOAD" tasks templates)" "e.g. git diff | offload task review-diff --stdin"
+out=$("$OFFLOAD" tasks add pr --from review-diff); rc=$?
+expect_eq "tasks add: exit 0" "$rc" 0
+expect_has "tasks add: says how to run it under its own name" "$out" "run it: git diff | offload task pr --stdin"
+expect_eq "tasks add: the template's prompt is in the config" "$(jq -r '.tasks.pr.tools' "$OFFLOAD_CONFIG")" none
+expect_has "tasks add: the new task runs" "$(printf 'diff --git a/x b/x\n' | STUB_PROMPT="$T/prompt-pr" STUB_ANSWER="no problems found" "$OFFLOAD" task pr --stdin 2>&1)" "no problems found"
+"$OFFLOAD" tasks add pr --from review-diff >/dev/null 2>&1; expect_eq "tasks add: an existing task is not overwritten (exit 2)" "$?" 2
+rm -f "$OFFLOAD_CONFIG"
+# per-command help with examples; config get
+expect_has "help read: usage and examples" "$("$OFFLOAD" help read)" "Examples:"
+expect_eq "read --help = help read" "$("$OFFLOAD" read --help)" "$("$OFFLOAD" help read)"
+expect_has "explain --help" "$("$OFFLOAD" explain --help)" "offload explain [N]"
+expect_has "help without a topic: the overview" "$("$OFFLOAD" help)" "offload read"
+printf '{"hooks":{"read_threshold_lines":900}}' > "$OFFLOAD_CONFIG"
+expect_eq "config get: the file's own settings" "$("$OFFLOAD" config get | jq -c .)" '{"hooks":{"read_threshold_lines":900}}'
+rm -f "$OFFLOAD_CONFIG"
+# doctor --json: the same machine format from both engines
+expect_eq "doctor --json: JSON with checks" "$("$OFFLOAD" doctor --json 2>/dev/null | jq -r 'type')" object
+# a mistyped config key is reported, with the closest real key
+printf '{"hooks":{"read_treshold_lines":2000},"endpoints":{"mine":{"base_url":"http://x"}},"tasks":{"t":{"prompt":"p"}}}' > "$OFFLOAD_CONFIG"
+out=$("$OFFLOAD" config validate 2>&1); rc=$?
+expect_eq "config validate: unknown key → exit 1" "$rc" 1
+expect_has "config validate: … with the closest real key" "$out" "hooks.read_treshold_lines (did you mean hooks.read_threshold_lines?)"
+expect_not "config validate: your own maps (endpoints, tasks) take any key" "$out" "endpoints.mine"
+expect_has "config set: warns about an unknown key" "$("$OFFLOAD" config set hooks.serch_view false 2>&1)" "warning: hooks.serch_view is not a known setting (did you mean hooks.search_view?)"
+expect_not "config set: a known key sets quietly" "$("$OFFLOAD" config set hooks.read_threshold_lines 900 2>&1)" "warning"
+printf '{"hooks":{"read_threshold_lines":900}}' > "$OFFLOAD_CONFIG"
+expect_has "config validate: a clean config is ok" "$("$OFFLOAD" config validate 2>&1)" "config ok: every key is known"
+rm -f "$OFFLOAD_CONFIG"
 # a model failure is a model that was tried and failed — not a digest that never asked one
 SAVED_STATE=$OFFLOAD_STATE_DIR; export OFFLOAD_STATE_DIR="$T/state-fail"
 seq 1 400 | "$OFFLOAD" summarize --no-model >/dev/null 2>&1
@@ -864,6 +915,27 @@ OFFLOAD_RAW=1 cat big.ts @@ none
 tail -n @@ none
 offload read -q x big.ts @@ none
 EOF
+# opt-in: a nearly full context halves the read limit (usage from the transcript)
+seq 1 400 | sed 's/^/const v = 1; \/\/ line /' > mid.ts; seq 1 200 > small200.ts
+printf '{"type":"user","message":{"content":"hi"}}\n{"type":"assistant","message":{"usage":{"input_tokens":5,"cache_creation_input_tokens":1000,"cache_read_input_tokens":149000,"output_tokens":9}}}\n' > "$T/full.jsonl"
+printf '{"type":"assistant","message":{"usage":{"input_tokens":5,"cache_creation_input_tokens":1000,"cache_read_input_tokens":40000,"output_tokens":9}}}\n' > "$T/room.jsonl"
+ctx_read() { hook pre-read "$(jq -nc --arg c "$P" --arg f "$1" --arg t "$2" '{cwd: $c, transcript_path: $t, tool_name: "Read", tool_input: {file_path: $f}}')"; }
+expect_eq "context-aware: off by default (400-line read passes)" "$(decision "$(ctx_read mid.ts "$T/full.jsonl")")" none
+printf '{"hooks":{"context_tight_tokens":100000}}' > "$OFFLOAD_CONFIG"
+r=$(ctx_read mid.ts "$T/full.jsonl")
+expect_eq "context-aware: nearly full context → the 400-line read is held back" "$(decision "$r")" deny
+expect_has "context-aware: … and says why" "$r" "nearly full: ~150,005 tokens in use"
+expect_eq "context-aware: plenty of room → it passes" "$(decision "$(ctx_read mid.ts "$T/room.jsonl")")" none
+expect_eq "context-aware: no transcript → it passes" "$(decision "$(ctx_read mid.ts "$T/none.jsonl")")" none
+expect_eq "context-aware: files under half the limit never look" "$(decision "$(ctx_read small200.ts "$T/full.jsonl")")" none
+if [ -n "${NODE_OK:-}" ] || command -v node >/dev/null 2>&1; then
+  ts_ctx() { printf '%s' "$(jq -nc --arg c "$P" --arg f "$1" --arg t "$2" '{cwd: $c, transcript_path: $t, tool_name: "Read", tool_input: {file_path: $f}}')" | "$PLUGIN/bin/offload-ts" hook claude pre-read 2>/dev/null; }
+  r=$(ts_ctx mid.ts "$T/full.jsonl")
+  expect_eq "context-aware (TS hooks): nearly full → held back" "$(decision "$r")" deny
+  expect_has "context-aware (TS hooks): … same reason" "$r" "nearly full: ~150,005 tokens in use"
+  expect_eq "context-aware (TS hooks): plenty of room → passes" "$(decision "$(ts_ctx mid.ts "$T/room.jsonl")")" none
+fi
+rm -f "$OFFLOAD_CONFIG"
 echo '{"hooks":{"autowrap":true}}' > "$OFFLOAD_CONFIG"
 r=$(pre_bash "npm test")
 expect_eq "pre-bash autowrap: rewrites noisy command" "$(printf '%s' "$r" | jq -r '.hookSpecificOutput.updatedInput.command')" "offload run -c 'npm test'"
@@ -945,6 +1017,16 @@ expect_has "post-bash: another session gets the full digest" "$(posts sess-B "ma
 expect_has "post-bash: changed output gets the full digest" "$(posts sess-A "make test" "$big_out
 one more line")" "── key lines"
 expect_has "post-bash: a repeated search is one line too" "$(posts sess-A "rg -n unit src lib" "$search_out" >/dev/null; posts sess-A "rg -n unit src lib" "$search_out")" "same output as at"
+# a changed re-run of the same command: only the key lines that are new since, and what is gone
+r1=$(awk 'BEGIN { for (i = 1; i <= 300; i++) printf "ok %d (%dms)\n", i, i % 7; print "FAIL cart works"; print "FAIL ledger works" }')
+r2=$(awk 'BEGIN { for (i = 1; i <= 300; i++) printf "ok %d (%dms)\n", i, i % 5; print "FAIL cart works"; print "FAIL shipping works" }')
+posts sess-R "npm test" "$r1" >/dev/null; d=$(posts sess-R "npm test" "$r2")
+expect_has "post-bash: a changed re-run says what is new, unchanged and gone" "$d" ": 1 new, 1 unchanged, 1 gone ──"
+expect_has "post-bash: … shows the new failure" "$d" "FAIL shipping works"
+expect_has "post-bash: … and the fixed one" "$d" "  - FAIL ledger works"
+expect_not "post-bash: … not the unchanged one again" "$(printf '%s' "$d" | sed -n '/key lines since/,/gone since/p')" "FAIL cart works"
+expect_has "post-bash: another command in the session gets a normal digest" "$(posts sess-R "npm run build" "$r2
+build step")" "── key lines, verbatim"
 hook session-start "$(jq -nc --arg c "$P" '{session_id: "sess-A", cwd: $c, source: "compact"}')" >/dev/null
 expect_has "post-bash: after a compaction the digest is shown again" "$(posts sess-A "make test" "$big_out")" "── key lines"
 expect_has "post-bash: without a session id nothing is deduplicated" "$(post "make test" "$big_out" >/dev/null; post "make test" "$big_out" | jq -r '.hookSpecificOutput.updatedToolOutput.stdout')" "── key lines"
@@ -1040,6 +1122,42 @@ if $HAVE_TS_NODE && [ -f "$PLUGIN/dist/hook.cjs" ]; then
   l2=$(jq -r '.hookSpecificOutput.updatedToolOutput.stdout' "$T/tb2" | sed -n 's/.*full log: \([^ ]*\.log\).*/\1/p' | head -1)
   expect_eq "post-bash (TS hook bundle): two identical commands at once keep separate logs" "$([ -n "$l1" ] && [ -f "$l1" ] && [ -f "$l2" ] && [ "$l1" != "$l2" ] && echo separate || echo "same: $l1 $l2")" separate
 fi
+# hostile or broken hook input: every hook, both engines, fails open (exit 0, nothing or valid JSON) and fast
+mkdir -p "$T/fz"; n=0
+while IFS= read -r inp; do n=$((n + 1)); printf '%s' "$inp" > "$T/fz/$n.json"; done <<'EOF_FZ'
+
+{
+null
+[]
+"str"
+42
+{"tool_input":null}
+{"tool_input":{"file_path":123}}
+{"tool_name":"Read","tool_input":{"file_path":["a"]}}
+{"tool_name":"Bash","tool_input":{"command":{"x":1}}}
+{"tool_name":"Bash","tool_input":{"command":"cat a\u0000b"},"tool_response":{"stdout":"x\u0000y"}}
+{"tool_name":"Read","tool_input":{"file_path":"/dev/zero"}}
+{"tool_name":"Read","tool_input":{"file_path":"../../../../etc/shadow"}}
+{"tool_name":"Bash","tool_input":{"command":"ls"},"tool_response":{"stdout":12}}
+{"transcript_path":"/dev/zero","tool_name":"Read","tool_input":{"file_path":"big.ts"}}
+EOF_FZ
+# a 4 MB input (2 MB command, 2 MB output)
+head -c 2000000 /dev/zero | LC_ALL=C tr '\0' 'a' > "$T/fz-a"
+jq -nc --rawfile a "$T/fz-a" '{tool_name: "Bash", tool_input: {command: $a}, tool_response: {stdout: $a}}' > "$T/fz/big.json"
+for h in pre-read pre-bash post-bash session-start; do
+  for eng in bash ts; do
+    for f in "$T"/fz/*.json; do
+      s0=$(date +%s)
+      if [ "$eng" = ts ]; then o=$("$PLUGIN/bin/offload-ts" hook claude "$h" < "$f" 2>/dev/null); rc=$?
+      else o=$("$PLUGIN/hooks/$h" < "$f" 2>/dev/null); rc=$?; fi
+      el=$(( $(date +%s) - s0 ))
+      if [ "$rc" != 0 ] || [ "$el" -gt 3 ] || { [ -n "$o" ] && ! printf '%s' "$o" | jq -e . >/dev/null 2>&1; }; then
+        echo "$eng $h rc=$rc ${el}s input=$(head -c 60 "$f")"
+      fi
+    done
+  done
+done > "$T/fuzz.txt"
+if [ -s "$T/fuzz.txt" ]; then bad "hooks fail open on hostile input (both engines)" "$(head -5 "$T/fuzz.txt")"; else ok "hooks fail open on hostile input (both engines)"; fi
 # config cache: an edit applies on the very next hook, even within the same second
 big_read=$(jq -nc --arg c "$P" '{cwd: $c, tool_name: "Read", tool_input: {file_path: "big.ts"}}')
 printf '{"hooks":{"read_threshold_lines":100000,"read_threshold_tokens":1000000}}' > "$OFFLOAD_CONFIG"

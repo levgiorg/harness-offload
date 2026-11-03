@@ -302,7 +302,7 @@ footer { padding-block: 0 2.5rem; font-size: 0.76rem; color: var(--text-3); }
 
   document.getElementById("meta").textContent = `${DATA.sample ? "example data" : DATA.source || "stats"} · generated ${new Date(DATA.generated * 1000).toLocaleString()}`;
   document.getElementById("sample").hidden = !DATA.sample;
-  document.getElementById("foot").textContent = `Harness Offload ${DATA.version || ""} · estimates are bytes ÷ 4 of what stayed out of context; cache effects and extra turns are not counted.`;
+  document.getElementById("foot").textContent = `Harness Offload ${DATA.version || ""} · estimates are bytes ÷ 4 of what stayed out of context (cache effects not counted); worker tokens are as the workers reported them; each blocked read costs your agent one more turn.`;
 
   const now = DATA.generated || Math.floor(Date.now() / 1000);
   const hasRecent = all.some((r) => r.ts >= now - 30 * 86400);
@@ -326,7 +326,7 @@ footer { padding-block: 0 2.5rem; font-size: 0.76rem; color: var(--text-3); }
     const rows = all.filter((r) => r.ts >= since);
     const del = rows.filter((r) => r.kind !== "hook");
     const hooks = rows.filter((r) => r.kind === "hook");
-    summary(del);
+    summary(del, hooks);
     chart(del);
     byKind(del);
     byModel(del);
@@ -334,15 +334,20 @@ footer { padding-block: 0 2.5rem; font-size: 0.76rem; color: var(--text-3); }
     cool();
   }
 
-  function summary(del) {
+  function summary(del, hooks) {
     const s = document.getElementById("summary");
     s.replaceChildren();
     const ok = del.reduce((a, r) => a + (Number(r.cites_ok) || 0), 0);
     const bad = del.reduce((a, r) => a + (Number(r.cites_bad) || 0), 0);
     const fails = del.filter(failed).length;
+    // a blocked read keeps a file out of context but costs the agent one more turn
+    const blocked = hooks.filter((h) => String(h.event || "").endsWith("blocked")).length;
+    // worker tokens are measured (what the workers reported); deterministic digests call no worker
+    const calls = del.filter((r) => r.model_tried !== false && (r.model || r.kind !== "digest"));
+    const reported = calls.filter((r) => worker(r) > 0).length;
     const items = [
-      ["Kept out of context", compact(del.reduce((a, r) => a + kept(r), 0)), "tokens (estimated)"],
-      ["Worker tokens", compact(del.reduce((a, r) => a + worker(r), 0)), "read and written by cheap models"],
+      ["Kept out of context", compact(del.reduce((a, r) => a + kept(r), 0)), blocked ? `tokens (estimated) · ${nf.format(blocked)} blocked ${blocked === 1 ? "read costs 1 extra turn" : `reads cost ${nf.format(blocked)} extra turns`}` : "tokens (estimated)"],
+      ["Worker tokens", compact(del.reduce((a, r) => a + worker(r), 0)), calls.length ? `measured: ${nf.format(reported)} of ${nf.format(calls.length)} worker calls reported them` : "no worker calls yet"],
       ["Delegations", nf.format(del.length), !del.length ? "none yet" : fails ? `${fails} without a model summary` : "all completed"],
       ["Citations checked", ok + bad ? `${Math.round((ok / (ok + bad)) * 100)}%` : "—", ok + bad ? `${nf.format(ok)} of ${nf.format(ok + bad)} quotes found in the file` : "no cited answers yet"],
     ];
@@ -510,8 +515,27 @@ footer { padding-block: 0 2.5rem; font-size: 0.76rem; color: var(--text-3); }
   }
 
   function byModel(del) {
-    table("by-model", [["Model"], ["Count", "num"], ["Kept", "num"], ["Worker tokens", "num opt"], ["Failures"]],
-      group(del, (r) => r.model || "(no model: deterministic digest)").map((g) => [[modelId(g.k), "mono"], [nf.format(g.n), "num"], [compact(g.kept), "num"], [compact(g.worker), "num opt"], [failCell(g.fails)]]), "No delegations in this period.");
+    // per model: how fast (median and 95th percentile, nearest rank) and how often its quotes were found
+    const rank = (xs, q) => xs[Math.ceil(xs.length * q) - 1];
+    const extra = new Map();
+    for (const r of del) {
+      const k = r.model || "(no model: deterministic digest)";
+      const e = extra.get(k) || { secs: [], ok: 0, bad: 0 };
+      e.secs.push(Number(r.seconds) || 0); e.ok += Number(r.cites_ok) || 0; e.bad += Number(r.cites_bad) || 0;
+      extra.set(k, e);
+    }
+    const speed = (k) => { const s = extra.get(k).secs.sort((a, b) => a - b); return `${rank(s, 0.5)} / ${rank(s, 0.95)} s`; };
+    const cites = (k) => {
+      const e = extra.get(k);
+      if (!(e.ok + e.bad)) return chip("none", "—");
+      const c = chip(e.bad ? "bad" : "ok", `${Math.round((e.ok / (e.ok + e.bad)) * 100)}%`);
+      c.title = `${nf.format(e.ok)} of ${nf.format(e.ok + e.bad)} quotes found in the file`;
+      return c;
+    };
+    // quality: the citation check, plus failures when there were any
+    const quality = (g) => (g.fails ? el("span", { class: "chips" }, [cites(g.k), " ", failCell(g.fails)]) : cites(g.k));
+    table("by-model", [["Model"], ["Count", "num"], ["Kept", "num"], ["Worker tokens", "num opt"], ["p50 / p95", "num opt"], ["Quality"]],
+      group(del, (r) => r.model || "(no model: deterministic digest)").map((g) => [[modelId(g.k), "mono"], [nf.format(g.n), "num"], [compact(g.kept), "num"], [compact(g.worker), "num opt"], [speed(g.k), "num opt"], [quality(g)]]), "No delegations in this period.");
   }
 
   function citeCell(r) {

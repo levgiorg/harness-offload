@@ -135,3 +135,10 @@
 - Stats rows: hook events carry `file`; digest rows carry `log`. Doc recipe fixed (TS warned on OFFLOAD_CONFIG=/dev/null).
 - Found: TS engine has no autowrap → N4.
 - Checks: conformance 471/468, bun 70, routing 49×2, hooks within budget, dist fresh, shellcheck.
+
+## 2026-11-03 — goal run, checkpoint
+Done since the goal started (each in both engines unless docs/tests only; evidence in MASTER-BACKLOG):
+R5, N3, G2, A3, E1, N4, I1, R2/N2, R11/B6, N1, B2, D1, C1, K1, A4/R3, H1–H5, G3, G4 (found + fixed quadratic
+TS redaction: 4 MB post-bash >30 s → 163 ms), K2–K4, E2, C2, C3 (Gemini ask/dir_path fixes from upstream source),
+E5, E6, E4, E3/L6. Conformance 558/555, bun 80, routing 49×2, backends 464, hooks within budget, dist reproducible.
+Resume: `python3 - <<…` list of `todo` items in MASTER-BACKLOG (P2 then P3); mark each with done/rejected/blocked.

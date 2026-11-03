@@ -47,7 +47,7 @@ offload — keep big reads, long logs and repo-wide searches out of your coding 
   offload setup                         Wizard: backends, keys, models, harnesses (needs Node 18+).
   offload models [BACKEND]              List the models your backends offer.
   offload doctor [--ping] [--reset]     Check setup; --ping makes a tiny live call per model.
-  offload stats [--days N] [--json]     Delegations and estimated tokens saved (14-day sparkline).
+  offload stats [--days N] [--json|--csv] Delegations and estimated tokens saved (14-day sparkline).
   offload explain [N]                   What the hooks did lately (blocked reads, replaced output), why, how to change it.
   offload dashboard [--open] [--sample] HTML report of the same (needs Node 18+).
   offload install                       Asks which agents and where, shows what will change, installs on yes.
@@ -193,7 +193,29 @@ EOF
     # files sent from outside this folder (a log in /tmp, another repo) are checked too
     awk -v root="$PWD" -v report="$rep" -v sent="$sentf" -f "$CO_ROOT/lib/verify.awk" "$answer" > "$answer.v" && mv "$answer.v" "$answer"
     read -r ok bad < "$rep" 2>/dev/null || { ok=0; bad=0; }
-    cite=" · citations: $ok verified, $bad unverified"
+    # most citations wrong: ask once more with the failures in view, keep the better answer
+    local retried=""
+    if [ "${bad:-0}" -ge 2 ] && [ "$bad" -gt "$ok" ] && co_cfg_bool '.read.retry_unverified' true; then
+      local p2 a2 r2 ok2 bad2 tin1="${CO_OC_TOKENS_IN:-0}" tout1="${CO_OC_TOKENS_OUT:-0}" m1="$CO_OC_MODEL"
+      co_tmp p2; co_tmp a2; co_tmp r2
+      { cat "$prompt"; printf '<previous_answer>\n'; cat "$answer"; printf '</previous_answer>\n'
+        printf '<check>%s</check>\n' "Some citations in your previous answer quote text that is not at the lines they cite (marked ⚠unverified). Answer the question again: copy every quote character for character from the numbered lines it cites, and leave out a claim you cannot cite."
+        printf '<question>%s</question>\n' "$question"; } > "$p2"
+      if co_oc_invoke read "$p2" "$(co_work_dir)" "$a2" "$model"; then
+        awk -v root="$PWD" -v report="$r2" -v sent="$sentf" -f "$CO_ROOT/lib/verify.awk" "$a2" > "$a2.v" && mv "$a2.v" "$a2"
+        read -r ok2 bad2 < "$r2" 2>/dev/null || { ok2=0; bad2=$bad; }
+        CO_OC_TOKENS_IN=$(( tin1 + ${CO_OC_TOKENS_IN:-0} )); CO_OC_TOKENS_OUT=$(( tout1 + ${CO_OC_TOKENS_OUT:-0} ))
+        if [ "$bad2" -lt "$bad" ] || { [ "$bad2" -eq "$bad" ] && [ "$ok2" -gt "$ok" ]; }; then
+          retried=" · retried once: $bad → $bad2 unverified"; mv "$a2" "$answer"; ok=$ok2; bad=$bad2
+        else
+          retried=" · retried once, the first answer was better"; CO_OC_MODEL=$m1
+        fi
+      else
+        retried=" · a retry failed, first answer kept"; CO_OC_MODEL=$m1
+        CO_OC_TOKENS_IN=$tin1 CO_OC_TOKENS_OUT=$tout1
+      fi
+    fi
+    cite=" · citations: $ok verified, $bad unverified$retried"
   fi
   cat "$answer"
   footer "${CO_CMD_LABEL:-read} · $CO_OC_MODEL · $nfiles file(s), $(co_fmt_int "$nlines") lines (~$(co_fmt_int "$(co_est_tokens "$bytes")") tokens) kept out of your context · $(co_elapsed "$t0")s$cite"
@@ -500,11 +522,49 @@ co_task_prompt() {
   printf '%s\n' "$p"
 }
 
+# offload tasks templates | offload tasks add NAME [--from TEMPLATE] [--project]
+# Twin: cmdTasks in core.ts (same text).
+cmd_tasks_templates() {
+  echo "Task templates (offload tasks add NAME --from TEMPLATE):"
+  jq -r 'to_entries[] | select(.key | startswith("_") | not) | "  \(.key)\(" " * (20 - (.key | length)))\(.value.description)\n  \(" " * 20)e.g. \(.value.usage)"' "$CO_ROOT/config/task-templates.json"
+}
+cmd_tasks_add() {
+  local name="" from="" project=false target cur
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --from) need "$@"; from="$2"; shift 2 ;;
+      --project) project=true; shift ;;
+      -*) die "tasks add: unknown option $1" ;;
+      *) name="$1"; shift ;;
+    esac
+  done
+  [ -n "$name" ] || die "tasks add NAME [--from TEMPLATE] [--project]   (templates: offload tasks templates)"
+  [ -n "$from" ] || from="$name"
+  printf '%s' "$name" | LC_ALL=C grep -Eq '^[a-z0-9_][a-z0-9_-]{0,39}$' || die "tasks add: a task name is lowercase letters, digits, - and _ (up to 40)"
+  jq -e --arg t "$from" '.[$t] | type == "object"' "$CO_ROOT/config/task-templates.json" >/dev/null 2>&1 ||
+    die "tasks add: no template \"$from\" (offload tasks templates lists them)"
+  if $project; then target=$(co_project_config_path); else target=$(co_user_config_path); fi
+  mkdir -p "$(dirname "$target")"
+  cur='{}'; [ -f "$target" ] && cur=$(cat "$target")
+  printf '%s' "$cur" | jq -e 'type == "object"' >/dev/null 2>&1 || die "tasks add: $target is not valid JSON; fix it first"
+  printf '%s' "$cur" | jq -e --arg n "$name" '.tasks[$n] != null' >/dev/null 2>&1 && die "tasks add: $name already exists in $target"
+  (umask 077; printf '%s' "$cur" | jq --arg n "$name" --slurpfile t "$CO_ROOT/config/task-templates.json" --arg f "$from" \
+    '.tasks[$n] = ($t[0][$f] | {description, prompt, tools})' > "$target.tmp") && mv "$target.tmp" "$target"
+  echo "added task $name (from $from) to $target"
+  echo "run it: $(jq -r --arg f "$from" --arg n "$name" '.[$f].usage | sub("task " + $f; "task " + $n)' "$CO_ROOT/config/task-templates.json")"
+}
+
 cmd_tasks() {
+  case "${1:-}" in
+    templates) cmd_tasks_templates; return ;;
+    add) shift; cmd_tasks_add "$@"; return ;;
+  esac
   local names n
   names=$(co_task_names)
   if [ -z "$names" ]; then
-    echo "No custom tasks yet. Add one to your config, for example:"
+    echo "No custom tasks yet. Start from a template (offload tasks templates), for example:"
+    echo "  offload tasks add review-diff"
+    echo "or write your own:"
     echo '  offload config set tasks.review-sql '"'"'{"description":"Find N+1 queries","prompt":"You review SQL access code for N+1 queries.","tools":"none"}'"'"
     echo "then: offload task review-sql src/db/"
     return 0
@@ -892,6 +952,10 @@ cmd_doctor() {
   for f in "$u" "$p"; do
     if [ -f "$f" ]; then
       if jq -e . "$f" >/dev/null 2>&1; then echo "  $ok config $f"; else echo "  $bad config $f is not valid JSON (ignored)"; problems=$((problems + 1)); fi
+      # a mistyped key is silently ignored by everything else: say so here
+      co_config_unknown "$f" | while IFS="$(printf '\t')" read -r k s; do
+        echo "  $warn unknown key $k${s:+ (did you mean $s?)} — ignored"
+      done
     else
       echo "  - config $f (not present)"
     fi
@@ -1059,11 +1123,12 @@ cmd_explain() {
 }
 
 cmd_stats() {
-  local days=0 json=false
+  local days=0 json=false csv=false
   while [ $# -gt 0 ]; do
     case "$1" in
       --days) need "$@"; days="$2"; shift 2 ;;
       --json) json=true; shift ;;
+      --csv) csv=true; shift ;;
       *) die "stats: unknown option $1" ;;
     esac
   done
@@ -1071,6 +1136,13 @@ cmd_stats() {
   local f
   f="$(co_state_dir)/stats.jsonl"
   [ -s "$f" ] || { echo "No offload activity recorded yet ($f)."; return 0; }
+  if $csv; then
+    # every record, one row each, fixed columns (same as the TypeScript engine)
+    echo "ts,kind,source,event,model,files,bytes_in,bytes_out,saved_tokens,seconds,cites_ok,cites_bad,worker_tokens_in,worker_tokens_out,model_tried,model_ok,label,file,log"
+    jq -r --argjson days "$days" '(now - ($days * 86400)) as $since
+      | select($days == 0 or .ts >= $since) | [.ts, .kind, .source, .event, .model, .files, .bytes_in, .bytes_out, .saved_tokens, .seconds, .cites_ok, .cites_bad, .worker_tokens_in, .worker_tokens_out, .model_tried, .model_ok, .label, .file, .log] | @csv' "$f"
+    return 0
+  fi
   if $json; then
     # same shape as the TypeScript engine's --json
     jq -s --argjson days "$days" '
@@ -1081,6 +1153,11 @@ cmd_stats() {
       | def sum(f): map(f // 0) | add // 0;
         {delegations: length, saved_tokens: sum(.saved_tokens), worker_tokens_in: sum(.worker_tokens_in),
          worker_tokens_out: sum(.worker_tokens_out), blocked_reads: $blocked,
+         # per model: latency (nearest rank) and citation health, for rows a model answered
+         by_model: (map(select((.model // "") != "")) | group_by(.model)
+           | map((map(.seconds // 0) | sort) as $s | {key: .[0].model, value: {count: length,
+               p50_seconds: $s[((length * 0.5) | ceil) - 1], p95_seconds: $s[((length * 0.95) | ceil) - 1],
+               cites_ok: sum(.cites_ok), cites_bad: sum(.cites_bad)}}) | from_entries),
          by_kind: (group_by(.kind + (if .source then ":" + .source else "" end))
            | map({key: (.[0].kind + (if .[0].source then ":" + .[0].source else "" end)), value: {count: length, saved_tokens: sum(.saved_tokens)}})
            | from_entries)}' "$f"
@@ -1159,6 +1236,8 @@ cmd_config() {
       echo "trusted $dir: its .harness-offload.json may now set binaries, endpoints and privacy options" ;;
     path)
       echo "$target" ;;
+    get)
+      if [ -f "$target" ]; then jq . "$target"; else echo '{}'; fi ;;
     init)
       if [ -f "$target" ]; then die "config init: $target already exists (edit it, or use: offload config set KEY VALUE)"; fi
       mkdir -p "$(dirname "$target")"
@@ -1190,16 +1269,42 @@ EOF
       printf '%s' "$cur" | jq -e 'type == "object"' >/dev/null 2>&1 || die "config set: $target is not valid JSON; fix it first"
       (umask 077; printf '%s' "$cur" | jq --arg k "$key" --arg v "$val" '
         setpath($k | split("."); ($v | try fromjson catch $v))' > "$target.tmp") && mv "$target.tmp" "$target"
-      echo "set $key = $val in $target" ;;
-    *) die "config: unknown subcommand $sub (show|path|init|set|trust)" ;;
+      echo "set $key = $val in $target"
+      # warn (still saved: maps like endpoints.NAME are open) when the key is not a known setting
+      local chk s1
+      co_tmp chk; jq -n --arg k "$key" 'setpath($k | split("."); 0)' > "$chk"
+      s1=$(co_config_unknown "$chk")
+      [ -n "$s1" ] && co_err "warning: $key is not a known setting$(s=$(printf '%s' "$s1" | cut -f2); [ -n "$s" ] && printf ' (did you mean %s?)' "$s"); it was saved, but nothing reads it" ;;
+    validate)
+      local n=0 checked="" k s f
+      for f in "$(co_user_config_path)" "$(co_project_config_path)"; do
+        [ -f "$f" ] || continue
+        checked="$checked${checked:+, }$f"
+        while IFS="$(printf '\t')" read -r k s; do
+          [ -n "$k" ] || continue
+          n=$((n + 1)); echo "unknown key in $f: $k${s:+ (did you mean $s?)}"
+        done <<EOF2
+$(co_config_unknown "$f")
+EOF2
+      done
+      if [ "$n" -gt 0 ]; then echo "$n unknown key(s): offload ignores them (a typo is not applied)"; return 1; fi
+      echo "config ok: every key is known (${checked:-no config files yet})" ;;
+    *) die "config: unknown subcommand $sub (show|path|init|get|set|validate|trust)" ;;
   esac
 }
 
 # ------------------------------------------------------------------ main
 
 main() {
-  local cmd="${1:-help}"
+  local cmd="${1:-help}" topic=""
   [ $# -gt 0 ] && shift
+  # per-command help (shared text with the TypeScript engine): `offload help read`, `offload read --help`
+  if [ "$cmd" = help ]; then topic="${1:-}"; else case "${1:-}" in --help|-h) topic=$cmd ;; esac; fi
+  case "$topic" in ''|_*) ;; *)
+    if jq -e --arg t "$topic" '.[$t] | type == "string"' "$CO_ROOT/config/help.json" >/dev/null 2>&1; then
+      jq -r --arg t "$topic" '.[$t]' "$CO_ROOT/config/help.json"; return 0
+    fi ;;
+  esac
   case "$cmd" in
     help|-h|--help) usage; return 0 ;;
     version|-v|--version) echo "offload $CO_VERSION"; return 0 ;;
@@ -1214,14 +1319,21 @@ main() {
     write|code-write) cmd_write "$@" ;;
     ask)             cmd_ask "$@" ;;
     outline)         [ "${1:-}" = "--" ] && shift; [ -f "${1:-}" ] || die "outline: give a file"; co_outline "$1" "${2:-80}" ;;
-    doctor)          cmd_doctor "$@" ;;
+    doctor)
+      # --json is the TypeScript doctor's machine format: forward it, so both engines print the same JSON
+      case " $* " in *" --json "*)
+        local rc; co_ts_run doctor "$@"; rc=$?
+        [ "$rc" = "$CO_E_NOOC" ] && ! co_ts_cli >/dev/null && die "doctor --json needs Node.js 18+ (it is part of the bundled TypeScript CLI)" "$CO_E_NOOC"
+        return "$rc" ;;
+      esac
+      cmd_doctor "$@" ;;
     stats)           cmd_stats "$@" ;;
     explain)         cmd_explain "$@" ;;
     statusline)      cmd_statusline ;;
     dashboard)       co_ts_run dashboard "$@" || die "dashboard needs Node.js 18+ (the report is built by the bundled TypeScript CLI)" "$CO_E_NOOC" ;;
     config)          cmd_config "$@" ;;
     task)            cmd_task "$@" ;;
-    tasks)           cmd_tasks ;;
+    tasks)           cmd_tasks "$@" ;;
     model)           cmd_model "$@" ;;
     key)             cmd_key "$@" ;;
     # interactive and host-integration commands live in the bundled TypeScript CLI

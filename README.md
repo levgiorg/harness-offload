@@ -56,11 +56,13 @@ Nothing runs at `npm install` time; only `install` changes anything. Details per
 
 | Your agent asked for | Would have read | Got back | Facts found |
 |---|---:|---:|---:|
-| Questions about a 919-line module | 9,666 tokens | 453 | 4 / 4 |
-| A 2,323-line CI log with two failures | 32,771 | 659 | 3 / 3 |
-| Pytest file written from a reference test | 759 | 54 | 28 / 28 tests pass |
+| Questions about a 919-line module | 9,666 tokens | 402–412 | 4 / 4 |
+| A 2,323-line CI log with two failures | 32,771 | 651–665 | 3 / 3 |
+| Pytest file written from a reference test | 759 | 52 | 30 / 30 and 24 / 26 tests pass¹ |
 
-Measured with a real worker model — [docs/VALIDATION.md](docs/VALIDATION.md).
+Measured 2026-11-02 with Haiku as the worker, on both engines (a range = the two engines) —
+[docs/VALIDATION.md](docs/VALIDATION.md). ¹ The two failures were wrong expected values in the generated tests:
+review what `write` produces.
 
 ## How you use it
 
@@ -96,6 +98,7 @@ Everything fails open: if no worker is available, your agent's tools work as bef
 | [Commands](docs/commands.md) | every command, exit codes, troubleshooting |
 | [Configuration](docs/configuration.md) | thresholds, guard modes, per-project settings, privacy |
 | [How it works](docs/how-it-works.md) | design, caveats, why the numbers are estimates |
+| [Compared](docs/comparison.md) | how it differs from RTK, squeez, context-mode, shunt and model routers |
 | [Performance](docs/performance.md) | what the hooks cost per tool call, with and without offload (measured) |
 | [Security](SECURITY.md) | trust model, worker lockdown, known limits |
 | [Development](docs/development.md) | tests, layout, releases |

@@ -20,11 +20,14 @@ binaries, endpoints, the backend, the state directory or privacy relaxations —
 | `variants.<task>` | `""` | reasoning effort per task (`low`, `high`, …) |
 | `hooks.read_guard` | `block` | `block` · `ask` · `suggest` (allow + advice) · `off` |
 | `hooks.read_threshold_lines` / `_tokens` | `600` / `6000` | a full read above either is guarded |
+| `hooks.context_tight_tokens` | `0` (off) | Claude Code: when the agent's context holds at least this many tokens (read from the usage its transcript records), the full-read limits are halved — a big read then could force a compaction. E.g. `150000` for a 200K window |
 | `hooks.read_max_chunk_lines` | `600` | largest slice allowed (`Read` offset/limit, `head -n`, `sed -n`) |
 | `hooks.summarize_bash_output` | `true` | post-command digests |
 | `hooks.bash_output_threshold_lines` / `_bytes` | `250` / `20000` | when output gets digested |
 | `hooks.digest_timeout_seconds` | `20` | how long the agent may wait for the worker's summary of a long output (fallbacks included); after that, or with `0`, the digest is the instant deterministic one (key lines + tail) |
 | `hooks.bash_never_summarize` | viewers regex | commands whose output is never digested (`grep`, `cat`, `git diff`, …) |
+| `hooks.search_view` / `hooks.search_commands` | `true` / `grep`, `rg`, `ag`, `ack`, `git grep`, `find`, `fd` | a huge search result becomes counts per file + first matches + the full log (instead of passing through) |
+| `read.retry_unverified` | `true` | when most citations of a `read` answer fail (2 or more, more than verified), ask once more with the failures in view and keep the better answer (one extra worker call, only then) |
 | `hooks.autowrap` | `false` | rewrite noisy commands to `offload run -c '…'` (changes what permission rules see) |
 | `hooks.subagents` | `true` | also guard subagents' tool calls |
 | `hosts.<codex\|cursor>.call` | `mcp` | how the agent should call offload there (`mcp` or `shell`) |

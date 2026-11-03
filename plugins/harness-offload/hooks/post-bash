@@ -92,9 +92,19 @@ if [ -n "$seen" ] && [ -f "$seen" ]; then
     exit 0
   fi
 fi
+# the last run of this same command in the session: a re-run's digest shows what changed
+cmdseen=""
+if [ -n "$HK_SESSION" ]; then
+  cmdseen="$(co_state_dir)/seen/$(co_seen_session "$HK_SESSION")-cmd-$(printf '%s' "$cmd" | LC_ALL=C cksum | LC_ALL=C awk '{ print $1 "-" $2 }')"
+  if [ -f "$cmdseen" ]; then
+    read -r c_at c_hms c_log < "$cmdseen"
+    if [ $(( $(co_now) - ${c_at:-0} )) -le 3600 ] && [ -f "$c_log" ]; then export OFFLOAD_DIGEST_PREV="$c_log" OFFLOAD_DIGEST_PREV_AT="$c_hms"; fi
+  fi
+fi
 mark_seen() {
   [ -n "$seen" ] || return 0
   mkdir -p "${seen%/*}" 2>/dev/null && printf '%s %s %s\n' "$(co_now)" "$(date +%H:%M:%S)" "$1" > "$seen" 2>/dev/null
+  [ -n "$cmdseen" ] && printf '%s %s %s\n' "$(co_now)" "$(date +%H:%M:%S)" "$1" > "$cmdseen" 2>/dev/null
   return 0
 }
 

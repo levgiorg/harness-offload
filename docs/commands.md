@@ -23,7 +23,7 @@ offload install [--yes] [--agents a,b] [--scope user|project] [--dry-run]   (no 
 offload uninstall [--yes] [--agents a,b] [--all] [--dry-run]              offload install|uninstall <host...>
 offload read -q QUESTION PATH...        offload setup               offload doctor [--ping]
 offload run [-q FOCUS] -- CMD...        offload models [BACKEND]    offload stats [--days N]
-offload summarize [-q FOCUS] [FILE]     offload config show|set|trust offload mcp
+offload summarize [-q FOCUS] [FILE]     offload config show|set|trust|validate  offload mcp
 offload dashboard [--open] [--sample]   offload demo
 offload write --spec S --ref F [--out P] [--check CMD]
 offload ask [--stdin|-f FILE] QUESTION  offload outline FILE           offload statusline · offload sync
@@ -43,6 +43,8 @@ offload task review-sql src/db/          # files or dirs → like `offload read`
 git diff | offload task review-sql --stdin
 offload task review-sql -q "only the orders module" src/
 offload tasks                            # list them
+offload tasks templates                  # ready-made ones (review-diff, review-sql, find-todos, security-review, explain-failure)
+offload tasks add pr --from review-diff  # copy one into your config, under your name for it
 ```
 
 | Field | |
@@ -71,5 +73,21 @@ command's own code; `offload write --check` returns `1` when the check fails.
 
 ## Troubleshooting
 
-`offload doctor` (add `--ping` for one live call per model, `--reset` to clear cooldowns) ·
-`OFFLOAD_DEBUG=1` for hook errors · `OFFLOAD_DEBUG_DIR=/tmp/x` (bash hooks) keeps every hook input.
+Start with `offload doctor` (`--ping` makes one live call per model, `--reset` clears cooldowns) and
+`offload explain`, which lists what the hooks did lately, why, and how to change it.
+
+| You see | Why | Do |
+|---|---|---|
+| "Harness Offload is paused" | no model to hand work to (e.g. the `claude` CLI is not logged in) | `offload doctor` names what's missing; `offload model …` picks another; `/harness-offload:setup` in Claude Code |
+| Reads of a file keep being blocked | it is over `hooks.read_threshold_lines`/`_tokens` (600 / 6000) | read slices (offset/limit), or `offload read -q …`; raise the limit (`offload config set hooks.read_threshold_lines 2000`), or `hooks.read_guard` `ask` / `suggest` / `off`; prefix one shell command with `OFFLOAD_RAW=1` to let it through |
+| A long output was **not** digested | the command failed (Claude Code can't replace a failed command's output), it was a viewer (`cat`, `git diff`…), or under 250 lines / 20 KB | run it as `offload run -- CMD`; see `hooks.bash_never_summarize` |
+| "same output as at …" instead of a digest | the same output again in this session | the first run's digest is above; `offload summarize LOG` shows it again |
+| "every configured model is cooling down" | earlier quota, login or unknown-model errors | `offload doctor --reset`; add a fallback (`offload model fallback …`) |
+| `⚠unverified` after a citation | its quote is not near the cited lines | read those lines yourself before relying on it; most-unverified answers are retried once automatically (`read.retry_unverified`) |
+| exit 17 "input larger than the model can take" | the files exceed the worker's context window | fewer files, a range (`path:START-END`), or a model with a bigger window |
+| Settings in a repo's `.harness-offload.json` are ignored | a repo's file is untrusted for binaries, endpoints and privacy | `offload doctor` lists what was ignored; `offload config trust` in that repo |
+| Hooks feel slow | a digest waits for the worker (up to `hooks.digest_timeout_seconds`, 20 s) | set it to `0` for instant, script-only digests; `node bench/hooks.mjs` measures the rest |
+| You want to try commands without a bill | inside an agent, `@host` is a real call | the stub worker: [development.md](development.md#trying-a-command-by-hand-without-spending-anything) |
+
+`OFFLOAD_DEBUG=1` prints hook errors · `OFFLOAD_DEBUG_DIR=/tmp/x` (bash hooks) keeps every hook input ·
+`OFFLOAD_DISABLE=1` turns offload off for one session.

@@ -16,13 +16,13 @@ pass-through hooks ~15–20 ms bash / ~40 ms Node, real Haiku benchmark 95/56–
 - **A2 · P1 · (merged into R1, done)** Repeated-line folding in digests — key lines fold exact repeats, but near-identical lines
   (timestamps, ids, `case 1891 passes (37ms)`) still eat the excerpt. AC: lines that differ only in digits/hex
   fold into one "×N (pattern)" row in key lines and the model excerpt; fixture with 2,000 near-duplicate lines
-  shrinks ≥5× with every distinct error kept, both engines. `todo`
+  shrinks ≥5× with every distinct error kept, both engines. `done (95010df, merged into R1)`
 - **A3 · P1 · Stack-trace folding** — Java/Python/Node traces repeat frames. AC: frames from node_modules/
   site-packages/jdk collapse to "… N library frames"; first project frame kept verbatim; fixtures for 3 languages. `done (A3 commit)` — fixture (Node+Java, 8 failures, 86 library frames):
   2,549 → 1,673 B, every failure and project frame kept, frames counted; real CI-log digest unchanged; gawk/mawk/BSD awk/TS identical.
 - **A4 · P1 · Context-aware read threshold** — open item since M7. Use `transcript_path` size to estimate how
   full the agent's context is; raise the guard bar early in a session, lower it late. AC: documented formula,
-  tests with fake transcripts of 3 sizes, off by default or proven by benchmark. deps: research. `todo`
+  tests with fake transcripts of 3 sizes, off by default or proven by benchmark. deps: research. `done (1e31216) — opt-in hooks.context_tight_tokens; exact context size from the usage Claude Code records per turn in the transcript; at or above it the limit halves; transcript read only for files between half and the full limit. Raising the bar early rejected: an early big read is re-read on every later turn (costs more). Tests: off, full, room, no transcript, small file, TS hooks`
 - **A5 · P2 · Outline quality** — outline of a 919-line TS file is the agent's map. AC: outline lists exported
   symbols with line ranges for TS/JS/Py/Go/Rust/Java/Ruby/C#; fixture per language; size ≤ 2 KB per 1,000 lines. `todo`
 - **A6 · P2 · Read de-duplication** — the same big file read twice in one session gets two worker calls.
@@ -42,7 +42,9 @@ pass-through hooks ~15–20 ms bash / ~40 ms Node, real Haiku benchmark 95/56–
 - **B1 · P1 · Citation-format tolerance** — real Haiku wrote `orders.py:4` (no `L`) once; those claims go
   unchecked. AC: accept `path:N` only when `path` is a sent/known file (so `host:8080` never counts), both engines. `done (B1 commit)` — real bash task answer 0/0 → 3/0; other real answers unchanged.
 - **B2 · P1 · Quality retry** — when > 50 % of citations are unverified, re-ask once with the failures listed.
-  AC: stub test; real-model experiment logged; cost bounded (one retry, config `read.retry_on_unverified`). `todo`
+  AC: stub test; real-model experiment logged; cost bounded (one retry, config `read.retry_on_unverified`). `done (B2 commit)` — both engines, `read.retry_unverified`
+  (default on; ≥2 unverified and more than verified); the better answer is kept, footer says so; 5 stub checks. No real
+  run triggered it: none of the 8 recorded real answers meets the condition (best case ≤ 1 unverified) — recorded in E4.
 - **B3 · P2 · Per-task timeouts** — one `opencode.timeout_seconds`. AC: `timeouts.<task>`; ask defaults lower. `todo`
 - **B4 · P2 · Model capability table** — explore needs tool use; some CLIs/models have none. AC: registry marks
   capabilities; `offload model explore X` warns when X cannot use tools. `todo`
@@ -58,9 +60,11 @@ pass-through hooks ~15–20 ms bash / ~40 ms Node, real Haiku benchmark 95/56–
 
 ## C. Integrations
 - **C1 · P1 · Per-agent audit table** — docs/hosts.md claims; verify each install path writes what it says. AC: a
-  script that installs into a throwaway home for every host and diffs files; in CI. `todo`
-- **C2 · P2 · Codex hooks freshness** — Codex hook schema evolves. AC: research current schema; update + test. `todo`
-- **C3 · P2 · Gemini CLI hook output fields** — check AfterTool replacement support. AC: research + test. `todo`
+  script that installs into a throwaway home for every host and diffs files; in CI. `done (C1 commit)` — bun test (runs in CI): for every agent the
+  approved plan's command/file = what the dry run executes = what docs/hosts.md says (writes per host were already
+  tested). Found: the OpenCode v1 path was undocumented → fixed.
+- **C2 · P2 · Codex hooks freshness** — Codex hook schema evolves. AC: research current schema; update + test. `done (C23 commit) — checked against Codex docs + source (openai/codex @ac91c144): PreToolUse deny/additionalContext and PostToolUse continue:false+reason match ours; fixed: SessionStart matcher lacked 'fork'. Noted limit: unified exec sends only finished, already-truncated output to PostToolUse`
+- **C3 · P2 · Gemini CLI hook output fields** — check AfterTool replacement support. AC: research + test. `done (C23 commit) — checked against Gemini CLI docs + source (@0ac57c02): fixed 'ask' → {decision:ask, systemMessage} (BeforeTool supports it; additionalContext there is dropped, so 'note' now returns nothing instead of a silent no-op), and shell cwd from dir_path; AfterTool deny-with-digest kept (works; shows as 'blocked'). Note: Gemini CLI moved most users to Antigravity CLI on 2026-06-18 — compatibility unverified`
 - **C4 · P3 · Kilo native worker** — open idea. AC: research only first. `todo`
 - **C5 · P2 · Update detection** — installed version vs package version. AC: `doctor` says "Claude Code plugin 0.2.0,
   CLI 0.2.1 — run install to update". `todo`
@@ -68,7 +72,9 @@ pass-through hooks ~15–20 ms bash / ~40 ms Node, real Haiku benchmark 95/56–
 
 ## D. Installation and onboarding
 - **D1 · P1 · Install failure recovery** — one agent failing mid-install. AC: receipt shows per-agent result and
-  the exact retry command; failure injection test. `todo`
+  the exact retry command; failure injection test. `done (D1 commit)` — an agent's installer throwing no longer aborts
+  the rest; the receipt ends with `Retry: … install --yes --agents <failed> [--scope project]` and says the others are
+  installed; failure-injection test (codex stub exits 1).
 - **D2 · P2 · `--json` receipt** — scripts/CI need machine output. AC: `install --yes --json`. `todo`
 - **D3 · P2 · Update migration** — config keys renamed across versions. AC: a migration step with a test from a
   0.1 config fixture. `todo`
@@ -81,11 +87,11 @@ pass-through hooks ~15–20 ms bash / ~40 ms Node, real Haiku benchmark 95/56–
   last N hook decisions with rule, threshold and how to change it (from stats.jsonl); both engines. `done (E1 commit)` — identical text in both engines;
   hook rows now record the file, digest rows the log; tests read bash-hook rows with the TS command too.
 - **E2 · P2 · `offload config validate`** — typos in config keys are silently ignored. AC: unknown keys warned with
-  did-you-mean; doctor runs it. `todo`
-- **E3 · P2 · Task templates** — `offload task --new review-sql` scaffolds from a template list. `todo`
-- **E4 · P3 · `NO_COLOR`/`--plain` audit** — AC: every command honours NO_COLOR; test. `todo`
-- **E5 · P2 · Bash `doctor --json`** — TS only today. AC: parity. `todo`
-- **E6 · P2 · Man-page quality help** — `offload help read` shows examples. AC: per-command help in both engines. `todo`
+  did-you-mean; doctor runs it. `done (E2 commit) — offload config validate (exit 1 on unknown keys, closest real key by edit distance; own maps like tasks/endpoints open), config set warns, doctor lists them; identical text in both engines; 6 conformance checks`
+- **E3 · P2 · Task templates** — `offload task --new review-sql` scaffolds from a template list. `done (E3 commit) — offload tasks templates / tasks add NAME --from TEMPLATE [--project], 5 original templates in shared config/task-templates.json; identical text and identical config written by both engines; refuses to overwrite; added task runs end to end (stub)`
+- **E4 · P3 · `NO_COLOR`/`--plain` audit** — AC: every command honours NO_COLOR; test. `done (E4 commit) — audited in a real pseudo-terminal: 9 commands × 2 engines print no escape codes under NO_COLOR (TS doctor prints 134 with colour on); regression test: FORCE_COLOR on, NO_COLOR wins, 6 commands`
+- **E5 · P2 · Bash `doctor --json`** — TS only today. AC: parity. `done (E56 commit) — bash doctor --json forwards to the bundled TS doctor (same JSON); test`
+- **E6 · P2 · Man-page quality help** — `offload help read` shows examples. AC: per-command help in both engines. `done (E56 commit) — offload help CMD / CMD --help for 12 commands from one shared config/help.json (usage + examples), identical in both engines; found and fixed: TS 'read --help' errored, bash lacked 'config get'; install keeps its own richer help`
 
 ## F. Performance
 - **F1 · P1 · Search hook cost** — `done`: pass-through path unchanged (bench budget held); the view itself takes 116–167 ms (bash) / 64–68 ms (TS) on 164–529 KB outputs.
@@ -102,19 +108,19 @@ pass-through hooks ~15–20 ms bash / ~40 ms Node, real Haiku benchmark 95/56–
   baseline: state dir 755, logs 644 (world-readable). Now the state dir is 0700 (new and existing, one chmod per dir via `.private`);
   files inside are then private; hooks within budget.
 - **G3 · P2 · Fuzz the citation verifier** — property tests: never crashes, never verifies a quote absent from the
-  window, linear time on adversarial lines. AC: bun property test with 10k random cases. `todo`
-- **G4 · P2 · Hook input fuzz** — malformed JSON, huge fields, NUL bytes. AC: every hook fails open in < budget. `todo`
+  window, linear time on adversarial lines. AC: bun property test with 10k random cases. `done (G34 commit) — bun property tests: 10,000 random answers never throw; 2,000 absent quotes never verified; adversarial 4,000-char lines < 500 ms; awk = TS counts on 300 random answers (both outcomes exercised)`
+- **G4 · P2 · Hook input fuzz** — malformed JSON, huge fields, NUL bytes. AC: every hook fails open in < budget. `done (G34 commit) — conformance feeds 16 hostile inputs (malformed, wrong types, NUL, /dev/zero, 4 MB) to all 4 hooks × 2 engines: exit 0, nothing or valid JSON, < 3 s. FOUND: TS redaction was quadratic (200 KB 15 s; 4 MB post-bash > 30 s) — the URL-credential pattern; fixed with a lookbehind (200 KB 0 ms; 4 MB post-bash 163 ms), output identical to bash`
 - **G5 · P2 · Config cache poisoning** — re-review the eval'd cache (DECISIONS #50). AC: test with hostile values. `todo`
 - **G6 · P3 · Supply chain** — lockfile audit, `npm audit signatures` in release. AC: release job step. `todo`
 - **G7 · P2 · Stale lock / orphan workers** — kill the agent mid-call. AC: no worker left after 5 s; test. `todo`
 
 ## H. Dashboard and reporting
 - **H1 · P1 · Estimated vs measured** — savings are bytes/4 estimates but look like facts. AC: labels + a measured
-  column when the worker reports tokens; doc of the method. `todo`
-- **H2 · P2 · Hook decision breakdown** — blocked reads vs digests vs search views per day. AC: chart + table. `todo`
-- **H3 · P2 · Export** — `offload stats --csv`. `todo`
-- **H4 · P2 · Citation health trend** — verified/unverified ratio per model. AC: dashboard row per model. `todo`
-- **H5 · P3 · Latency percentiles** — p50/p95 worker latency per model. `todo`
+  column when the worker reports tokens; doc of the method. `done (H1 commit) — report: kept-out card names blocked reads as extra turns; worker-token card says it is measured and how many calls reported tokens; footer says what is estimated vs measured. Verified headless (cards text, no page errors, layout screenshot)`
+- **H2 · P2 · Hook decision breakdown** — blocked reads vs digests vs search views per day. AC: chart + table. `done (existing + A1/R4) — the report already lists hook decisions (blocked reads by kind, per period) on the latest-delegations panel, and digests, search views and repeats are separate rows in By kind; a per-decision daily chart was judged clutter next to the savings chart`
+- **H3 · P2 · Export** — `offload stats --csv`. `done (H345 commit) — offload stats --csv in both engines, byte-identical (jq @csv quoting), every record one row, fixed columns`
+- **H4 · P2 · Citation health trend** — verified/unverified ratio per model. AC: dashboard row per model. `done (H345 commit) — stats --json by_model cites_ok/bad (both engines); report: Quality column per model (verified %, counts on hover, failures if any)`
+- **H5 · P3 · Latency percentiles** — p50/p95 worker latency per model. `done (H345 commit) — p50/p95 seconds per model, nearest rank, in stats --json (both engines identical) and the report; tables checked for overflow at 1440/1200/900/390 px (none)`
 
 ## I. Build, package and release
 - **I1 · P1 · Reproducible dist** — local Bun builds produce different chunk names than the committed dist.
@@ -134,10 +140,12 @@ pass-through hooks ~15–20 ms bash / ~40 ms Node, real Haiku benchmark 95/56–
 - **J5 · P3 · Flaky-test watch** — run conformance 5× and record flakes. `todo`
 
 ## K. Documentation
-- **K1 · P1 · README accuracy pass** — claims vs current numbers. AC: every number links to VALIDATION.md. `todo`
-- **K2 · P2 · Troubleshooting guide** — top failures (no worker, quota, blocked read loop). `todo`
-- **K3 · P2 · Comparison table** — vs related tools, from RESEARCH.md, fair and sourced. deps research. `todo`
-- **K4 · P3 · Site copy** — align with README. `todo`
+- **K1 · P1 · README accuracy pass** — claims vs current numbers. AC: every number links to VALIDATION.md. `done (K1 commit)` — the results table was from an older run (453/659/54,
+  28/28); now the 2026-11-02 numbers with the honest 24/26, raw figures added to VALIDATION.md; the other numeric claims
+  (600 lines, 18 providers = 18 presets in connectors.json) checked against the code.
+- **K2 · P2 · Troubleshooting guide** — top failures (no worker, quota, blocked read loop). `done (K2 commit) — docs/commands.md Troubleshooting: 10 symptom → why → do rows, every command/setting referenced checked to exist`
+- **K3 · P2 · Comparison table** — vs related tools, from RESEARCH.md, fair and sourced. deps research. `done (K2 commit) — docs/comparison.md: Harness Offload vs shunt, RTK, squeez, context-mode, claude-code-router (approach, reads, output, searches, checked answers, who pays, agents, licence), from RESEARCH.md, dated, with when-to-pick-something-else`
+- **K4 · P3 · Site copy** — align with README. `done (K2 commit) — site numbers (table + hero animation) updated to the latest recorded run, same as README; rendered headless, no errors`
 
 ## L. Novel features
 - **L1 · P2 · Search-to-question** — when a search is huge, offer `offload read -q` on the matched files. deps A1. `todo`
@@ -146,7 +154,7 @@ pass-through hooks ~15–20 ms bash / ~40 ms Node, real Haiku benchmark 95/56–
 - **L4 · P3 · Explain-my-repo cache** — one explore summary per repo reused across sessions, invalidated by git HEAD. `todo`
 - **L5 · P2 · Test-failure focus** — `offload run` on a failing test run extracts per-failure blocks. AC: fixtures
   for jest/vitest/pytest/go test/cargo; each failure's block shown verbatim. `todo`
-- **L6 · P3 · PR review task template** — built-in `review-diff` task. `todo`
+- **L6 · P3 · PR review task template** — built-in `review-diff` task. `done (E3 commit, merged into E3) — built-in review-diff template: git diff | offload task review-diff --stdin`
 
 ## From RESEARCH.md (2026-11-02, 34 sources) — new candidates
 - **R1 · P0 · Near-duplicate line collapse** (= A2, raised): mask digits/hex/ids/timestamps, one example + ×N.
@@ -158,10 +166,10 @@ pass-through hooks ~15–20 ms bash / ~40 ms Node, real Haiku benchmark 95/56–
   engines → fixed (`●`, `Expected:`/`Received:` are key lines). Also checks bash = TS digest text for every fixture.
 - **R3 · P1 · Context-aware threshold via status-line shim** (= A4): statusline input carries
   `context_window.used_percentage`; a shim wrapping the user's statusline writes it to a file hooks read.
-  AC: ≥ 70 % used halves the read threshold; ≤ 2 ms hook cost; uninstall restores the statusline byte for byte. `todo`
+  AC: ≥ 70 % used halves the read threshold; ≤ 2 ms hook cost; uninstall restores the statusline byte for byte. `done (1e31216, merged into A4) — no statusline shim: the transcript has the exact usage, and editing the user's statusline was avoidable risk`
 - **R4 · P1 · Seen-output dedup** — identical rerun output → "same as digest #N"; near-identical → changed lines only.
   AC: unchanged rerun prints ≤ 3 lines. `done (R4 commit)` for identical output (1 line, 377 B, 58–86 ms, no worker call);
-  near-identical → split out as **R4b · P2** (show only changed key lines vs the previous run). `todo`
+  near-identical → split out as **R4b · P2** (show only changed key lines vs the previous run). `done (f6b4e81 + R4b commit) — identical re-run: one line; changed re-run of the same command in the session: key lines show only what is new since the last run, with unchanged/gone counts and the gone (fixed) lines; identical text in both engines; 5 conformance checks`
 - **R5 · P1 · Honest ledger** (= H1): metered vs estimated, blocked reads counted as extra turns, worker calls. `done (9f7a686, R5b commit)` — model failures only when a model was tried;
   blocked reads shown as extra agent turns (`blocked_reads` in `--json`); worker tokens labelled as reported by workers.
   Dashboard side is H1/H2.

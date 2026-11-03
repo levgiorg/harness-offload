@@ -69,6 +69,20 @@ describe("gemini adapter", () => {
     const o = hook("gemini", "before-tool", { tool_name: "read_file", tool_input: { file_path: join(s.dir, "big.ts") } }, s);
     expect(o.decision).toBe("deny");
   });
+  test("read_guard ask → Gemini asks (its BeforeTool supports it); suggest → nothing (no way to reach the model)", () => {
+    const { writeFileSync } = require("node:fs");
+    writeFileSync(s.env.OFFLOAD_CONFIG!, JSON.stringify({ hooks: { read_guard: "ask" } }));
+    const o = hook("gemini", "before-tool", { tool_name: "read_file", tool_input: { file_path: join(s.dir, "big.ts") } }, s);
+    expect(o.decision).toBe("ask");
+    expect(o.systemMessage).toContain("big.ts");
+    writeFileSync(s.env.OFFLOAD_CONFIG!, JSON.stringify({ hooks: { read_guard: "suggest" } }));
+    expect(hook("gemini", "before-tool", { tool_name: "read_file", tool_input: { file_path: join(s.dir, "big.ts") } }, s)).toBeUndefined();
+    writeFileSync(s.env.OFFLOAD_CONFIG!, "{}");
+  });
+  test("a shell command runs in Gemini's dir_path, not the session folder", () => {
+    const o = hook("gemini", "before-tool", { cwd: "/", tool_name: "run_shell_command", tool_input: { command: "cat big.ts", dir_path: s.dir } }, s);
+    expect(o.decision).toBe("deny");
+  });
   test("after-tool digest", () => {
     const out = Array.from({ length: 400 }, (_, i) => `line ${i}`).join("\n");
     const o = hook("gemini", "after-tool", { tool_name: "run_shell_command", tool_input: { command: "npm test" }, tool_response: { llmContent: out } }, s);
