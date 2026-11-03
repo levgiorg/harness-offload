@@ -61,24 +61,32 @@ Nothing runs at `npm install` time (no `preinstall`/`postinstall`): npm 12, pnpm
 they are how the 2025 npm worms spread. `scripts/pack-check.mjs` fails the build if one appears, if a needed file
 is missing from the tarball, or if sources/tests would ship.
 
-**First publish (once, from your machine — the package doesn't exist on npm yet; 0.2.0 was withdrawn and its number can't be reused, so the first release is 0.2.1):**
+**Where it stands.** `harness-offload@0.2.1` was published by hand (the first release; `0.2.0` was withdrawn
+before anyone installed it and npm never lets a number be reused). The package has a *Trusted Publisher* on
+npmjs.com (GitHub Actions, owner `levgiorg`, repository `harness-offload`, workflow `release.yml`, "Allow npm
+publish" ticked, no environment), and publishing access is set to *Require two-factor authentication and
+disallow tokens*. No npm token is stored anywhere.
+
+**Every release from now on:** bump the version in every manifest (CI checks they agree), move the CHANGELOG
+entry under the new version, tag and push (`git tag v0.2.2 && git push --tags`; never tag a version that was
+published by hand, npm refuses a second publish of it). `release.yml` checks the tag matches, builds, runs the
+pack checks and the smoke install, publishes with provenance (npm adds it by itself with trusted publishing),
+and attaches the standalone binaries and the plugin zip to the GitHub release. Users update by running
+`npx harness-offload@latest install` again.
+
+**Before tagging**, check what would ship, from `packages/cli` with the Bun in `.bun-version` first on `PATH`:
 
 ```bash
-cd packages/cli && bun install && bun run build
+bun install --frozen-lockfile && bun run build
 npm run release:check          # copies README/LICENSEs in, checks the tarball
 node scripts/pack-smoke.mjs    # installs the real tarball in a throwaway home and runs the installer
-npm publish --access public    # asks for your 2FA code
+npm publish --dry-run --access public
 ```
 
-**Then, on npmjs.com → harness-offload → Settings:** add a *Trusted Publisher* (GitHub Actions, owner
-`levgiorg`, repository `harness-offload`, workflow `release.yml`), and set publishing access to *Require two-factor
-authentication and disallow tokens*. No npm token is stored anywhere.
-
-**Every release after that:** bump the version in every manifest (CI checks they agree), move the CHANGELOG
-entry under the new version, tag and push (`git tag v0.2.2 && git push --tags`; never tag the version you published by hand, npm refuses a second publish of it). `release.yml` checks the tag
-matches, builds, runs the pack checks and the smoke install, publishes with provenance (npm adds it by itself
-with trusted publishing), and attaches the standalone binaries and the plugin zip to the GitHub release. Users
-update by running `npx harness-offload@latest install` again.
+If trusted publishing ever has to be redone (a new package name, say), the first publish of a name must be
+done by hand with `npm publish --access public` (asks for your 2FA code); the Trusted Publisher can only be
+added once the package exists. A tombstone left by `npm unpublish` can answer the first try with a 409 for a
+few minutes; trying again works.
 
 ## Performance
 
