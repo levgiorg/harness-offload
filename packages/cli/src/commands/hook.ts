@@ -1,7 +1,7 @@
 // `offload hook <host> <event>` — reads the host's hook JSON on stdin and
 // answers in that host's dialect. Every failure path prints nothing and exits
 // 0, which every host treats as "no opinion" (fail open).
-import { autowrap, bashGuard, available, firstSession, Host, PAUSED_MESSAGE, postBash, readGuard, sessionGuide, Verdict, welcomeMessage } from "../hooks/logic.ts";
+import { autowrap, bashGuard, available, firstSession, Host, PAUSED_MESSAGE, postBash, readGuard, sessionGuide, subagentGuide, Verdict, welcomeMessage } from "../hooks/logic.ts";
 import { readFileSync } from "node:fs";
 import { compactIndex, seenForget } from "../state.ts";
 import { setProjectDir } from "../paths.ts";
@@ -69,6 +69,10 @@ async function handle(host: Host, event: string, input: J): Promise<J | undefine
   const index = event === "session-start" && input.source === "compact" ? compactIndex(input.session_id) : "";
   if (event === "session-start" && (input.source === "compact" || input.source === "clear")) seenForget(input.session_id);
   if (event === "session-start" && host === "crush") return undefined;
+  if (event === "subagent-start") {
+    if (host !== "claude" || !cfgBool("hooks.subagents", true) || !(await available())) return undefined;
+    return { hookSpecificOutput: { hookEventName: "SubagentStart", additionalContext: subagentGuide() } };
+  }
   if (event === "session-start") {
     const guide = sessionGuide(host) + (index ? `\n${index}` : "");
     // Claude Code shows systemMessage to the user: one line when offload is

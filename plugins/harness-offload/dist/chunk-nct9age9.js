@@ -4,10 +4,10 @@ import {
   color,
   sym
 } from "./chunk-yrbt2j5y.js";
-import"./chunk-fprvy154.js";
+import"./chunk-gh6zr0fa.js";
 import {
   stateDir2
-} from "./chunk-t783jg2c.js";
+} from "./chunk-xtyp4a5g.js";
 import {
   HOSTS,
   isHost,
@@ -19,7 +19,7 @@ import {
   uninstall,
   installedHosts,
   describe
-} from "./chunk-v6kjqwnv.js";
+} from "./chunk-ythy2x5g.js";
 
 // src/commands/install.ts
 import { readFileSync } from "node:fs";
@@ -104,7 +104,7 @@ async function me() {
   return await which("offload") ? "offload" : "npx harness-offload";
 }
 async function readerFor(h) {
-  const { workerWords } = await import("./chunk-fx4k8dw3.js");
+  const { workerWords } = await import("./chunk-6gh8gxw6.js");
   const prev = process.env.OFFLOAD_HOST;
   process.env.OFFLOAD_HOST = h;
   try {
@@ -185,7 +185,7 @@ async function explicit(cmd, hosts, f) {
   return failed ? 1 : 0;
 }
 async function planLines(items, readers) {
-  const { checkoutRoot, ownCopyDir } = await import("./chunk-8kkpgpxz.js");
+  const { checkoutRoot, ownCopyDir } = await import("./chunk-e8kxw2n5.js");
   const w = Math.max(...items.map((i) => HOST_LABELS[i.host].length), "Offload".length) + 3;
   const lines = [];
   for (const i of items) {
@@ -401,8 +401,8 @@ Harness Offload ${VERSION} · ${f.dry ? "dry run, nothing will be written" : "in
   return failed || pingFailed ? 1 : 0;
 }
 async function pingReader(h) {
-  const { invoke, modelChain } = await import("./chunk-5k9ekxab.js");
-  const { workDir } = await import("./chunk-esh7fxww.js");
+  const { invoke, modelChain } = await import("./chunk-j52r04s1.js");
+  const { workDir } = await import("./chunk-6jz61519.js");
   const prev = process.env.OFFLOAD_HOST;
   process.env.OFFLOAD_HOST = h;
   const ref = modelChain("read")[0] ?? "@host";
@@ -457,10 +457,10 @@ Say what to remove, for example:
   }
   if (f.agents)
     installed = installed.filter((h) => f.agents.includes(h));
-  const { userConfigPath } = await import("./chunk-5fzas80d.js");
-  const { credentialsPath } = await import("./chunk-h4awqej7.js");
-  const { stateDir } = await import("./chunk-esh7fxww.js");
-  const { ownCopyDir } = await import("./chunk-8kkpgpxz.js");
+  const { userConfigPath } = await import("./chunk-a0xcbv5b.js");
+  const { credentialsPath } = await import("./chunk-bf2pq5wt.js");
+  const { stateDir } = await import("./chunk-6jz61519.js");
+  const { ownCopyDir } = await import("./chunk-e8kxw2n5.js");
   const cacheDir = join(process.env.OFFLOAD_STATE_DIR || join(process.env.XDG_CACHE_HOME || join(process.env.HOME || "", ".cache"), "harness-offload"), "cache");
   const personal = [dirname(userConfigPath()), dirname(credentialsPath()), stateDir(), cacheDir].filter((d, i, a) => existsSync(d) && a.indexOf(d) === i);
   let all = f.all;

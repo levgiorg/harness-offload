@@ -6,20 +6,20 @@ import {
 import {
   cfg2,
   cfgStr2
-} from "./chunk-fprvy154.js";
+} from "./chunk-gh6zr0fa.js";
 import {
   endpoint2,
   endpointNames2,
   apiKey2,
   HttpBackend2
-} from "./chunk-rh4zgg1b.js";
+} from "./chunk-gwdfekfb.js";
 import {
   E,
   WorkerError,
   classify,
   workDir2,
   OpencodeBackend
-} from "./chunk-t783jg2c.js";
+} from "./chunk-xtyp4a5g.js";
 
 // src/backends/agents.ts
 import { readFileSync, writeFileSync } from "node:fs";

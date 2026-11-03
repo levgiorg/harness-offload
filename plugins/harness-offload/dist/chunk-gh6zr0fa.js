@@ -9,23 +9,24 @@ import { dirname } from "node:path";
 
 // src/paths.ts
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { join, posix, win32 } from "node:path";
 import { existsSync, statSync } from "node:fs";
-var isWin = process.platform === "win32";
-function configHome2() {
-  if (process.env.XDG_CONFIG_HOME)
-    return process.env.XDG_CONFIG_HOME;
-  if (isWin && process.env.APPDATA)
-    return process.env.APPDATA;
-  return join(homedir(), ".config");
+function configHomeFor(platform, env, h) {
+  if (env.XDG_CONFIG_HOME)
+    return env.XDG_CONFIG_HOME;
+  if (platform === "win32" && env.APPDATA)
+    return env.APPDATA;
+  return (platform === "win32" ? win32 : posix).join(h, ".config");
 }
-function stateHome2() {
-  if (process.env.XDG_STATE_HOME)
-    return process.env.XDG_STATE_HOME;
-  if (isWin && process.env.LOCALAPPDATA)
-    return process.env.LOCALAPPDATA;
-  return join(homedir(), ".local", "state");
+function stateHomeFor(platform, env, h) {
+  if (env.XDG_STATE_HOME)
+    return env.XDG_STATE_HOME;
+  if (platform === "win32" && env.LOCALAPPDATA)
+    return env.LOCALAPPDATA;
+  return (platform === "win32" ? win32 : posix).join(h, ".local", "state");
 }
+var configHome2 = () => configHomeFor(process.platform, process.env, homedir());
+var stateHome2 = () => stateHomeFor(process.platform, process.env, homedir());
 function userConfigPath2() {
   return process.env.OFFLOAD_CONFIG || join(configHome2(), "harness-offload", "config.json");
 }

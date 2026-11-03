@@ -253,21 +253,22 @@ var workerThreads = () => wt ??= req("node:worker_threads");
 
 // src/paths.ts
 var import_node_fs = require("node:fs");
-var isWin = process.platform === "win32";
-function configHome() {
-  if (process.env.XDG_CONFIG_HOME)
-    return process.env.XDG_CONFIG_HOME;
-  if (isWin && process.env.APPDATA)
-    return process.env.APPDATA;
-  return import_node_path.join(import_node_os.homedir(), ".config");
+function configHomeFor(platform, env, h) {
+  if (env.XDG_CONFIG_HOME)
+    return env.XDG_CONFIG_HOME;
+  if (platform === "win32" && env.APPDATA)
+    return env.APPDATA;
+  return (platform === "win32" ? import_node_path.win32 : import_node_path.posix).join(h, ".config");
 }
-function stateHome() {
-  if (process.env.XDG_STATE_HOME)
-    return process.env.XDG_STATE_HOME;
-  if (isWin && process.env.LOCALAPPDATA)
-    return process.env.LOCALAPPDATA;
-  return import_node_path.join(import_node_os.homedir(), ".local", "state");
+function stateHomeFor(platform, env, h) {
+  if (env.XDG_STATE_HOME)
+    return env.XDG_STATE_HOME;
+  if (platform === "win32" && env.LOCALAPPDATA)
+    return env.LOCALAPPDATA;
+  return (platform === "win32" ? import_node_path.win32 : import_node_path.posix).join(h, ".local", "state");
 }
+var configHome = () => configHomeFor(process.platform, process.env, import_node_os.homedir());
+var stateHome = () => stateHomeFor(process.platform, process.env, import_node_os.homedir());
 function userConfigPath() {
   return process.env.OFFLOAD_CONFIG || import_node_path.join(configHome(), "harness-offload", "config.json");
 }
@@ -1076,16 +1077,16 @@ var import_node_path7 = require("node:path");
 // src/proc.ts
 var import_node_fs7 = require("node:fs");
 var import_node_path5 = require("node:path");
-var isWin2 = process.platform === "win32";
+var isWin = process.platform === "win32";
 var live = new Set;
 var exitHooked = false;
 function killTree(child, sig = "SIGTERM") {
   if (!child.pid)
     return;
-  if (isWin2 && child.exitCode !== null)
+  if (isWin && child.exitCode !== null)
     return;
   try {
-    if (isWin2)
+    if (isWin)
       childProcess().spawnSync("taskkill", ["/T", "/F", "/PID", String(child.pid)], { stdio: "ignore", windowsHide: true });
     else
       process.kill(-child.pid, sig);
@@ -1127,7 +1128,7 @@ function shimTarget(cmdFile) {
   }
 }
 function plan(cmd, args) {
-  if (!isWin2)
+  if (!isWin)
     return { file: cmd, args, opts: {} };
   const found = whichSync(cmd) ?? cmd;
   const ext = import_node_path5.extname(found).toLowerCase();
@@ -1156,7 +1157,7 @@ function runProcess(cmd, args, opts) {
     let killedBy;
     let child;
     try {
-      child = spawnSafe(cmd, args, { cwd: opts.cwd, env: opts.env, stdio: ["pipe", "pipe", "pipe"], detached: !isWin2 });
+      child = spawnSafe(cmd, args, { cwd: opts.cwd, env: opts.env, stdio: ["pipe", "pipe", "pipe"], detached: !isWin });
     } catch (e) {
       resolve({ code: 127, stdout: "", stderr: String(e), timedOut: false });
       return;
@@ -1229,7 +1230,7 @@ function spawnDetached(cmd, args, cwd) {
 function whichSync(cmd) {
   if (import_node_path5.isAbsolute(cmd) || cmd.includes("/") || cmd.includes("\\"))
     return import_node_fs7.existsSync(cmd) ? cmd : undefined;
-  const exts = isWin2 ? (process.env.PATHEXT || ".COM;.EXE;.BAT;.CMD").split(";").filter(Boolean) : [""];
+  const exts = isWin ? (process.env.PATHEXT || ".COM;.EXE;.BAT;.CMD").split(";").filter(Boolean) : [""];
   for (const dir of (process.env.PATH || process.env.Path || "").split(import_node_path5.delimiter)) {
     if (!dir)
       continue;
@@ -3503,6 +3504,10 @@ async function postBash(opts) {
     markSeen(log);
   return d;
 }
+function subagentGuide(cli = cliCommand()) {
+  const lines = cfgStr("hooks.read_threshold_lines", "600");
+  return `offload is here: for a big file ask \`${cli} read -q "QUESTION" FILE\` (FILE:START-END or FILE#Symbol work too) — a cheap model answers with checked path:Lx-Ly quotes; then Read only those lines. \`${cli} explore "Q"\` searches the repo; \`${cli} run -- CMD\` digests long output. Full reads of files over ~${lines} lines are blocked with an outline.`;
+}
 function sessionGuide(host, cliPath = cliCommand()) {
   const lines = cfgStr("hooks.read_threshold_lines", "600");
   const tasks = taskSummary();
@@ -3570,6 +3575,11 @@ async function handle(host, event, input) {
     seenForget(input.session_id);
   if (event === "session-start" && host === "crush")
     return;
+  if (event === "subagent-start") {
+    if (host !== "claude" || !cfgBool("hooks.subagents", true) || !await available())
+      return;
+    return { hookSpecificOutput: { hookEventName: "SubagentStart", additionalContext: subagentGuide() } };
+  }
   if (event === "session-start") {
     const guide = sessionGuide(host) + (index ? `
 ${index}` : "");

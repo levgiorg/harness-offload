@@ -243,7 +243,7 @@ init_assets2();
 
 // src/paths.ts
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { join, posix, win32 } from "node:path";
 
 // src/lazy.ts
 import { createRequire } from "node:module";
@@ -255,21 +255,22 @@ var workerThreads = () => wt ??= req("node:worker_threads");
 
 // src/paths.ts
 import { existsSync, statSync } from "node:fs";
-var isWin = process.platform === "win32";
-function configHome() {
-  if (process.env.XDG_CONFIG_HOME)
-    return process.env.XDG_CONFIG_HOME;
-  if (isWin && process.env.APPDATA)
-    return process.env.APPDATA;
-  return join(homedir(), ".config");
+function configHomeFor(platform, env, h) {
+  if (env.XDG_CONFIG_HOME)
+    return env.XDG_CONFIG_HOME;
+  if (platform === "win32" && env.APPDATA)
+    return env.APPDATA;
+  return (platform === "win32" ? win32 : posix).join(h, ".config");
 }
-function stateHome() {
-  if (process.env.XDG_STATE_HOME)
-    return process.env.XDG_STATE_HOME;
-  if (isWin && process.env.LOCALAPPDATA)
-    return process.env.LOCALAPPDATA;
-  return join(homedir(), ".local", "state");
+function stateHomeFor(platform, env, h) {
+  if (env.XDG_STATE_HOME)
+    return env.XDG_STATE_HOME;
+  if (platform === "win32" && env.LOCALAPPDATA)
+    return env.LOCALAPPDATA;
+  return (platform === "win32" ? win32 : posix).join(h, ".local", "state");
 }
+var configHome = () => configHomeFor(process.platform, process.env, homedir());
+var stateHome = () => stateHomeFor(process.platform, process.env, homedir());
 function userConfigPath() {
   return process.env.OFFLOAD_CONFIG || join(configHome(), "harness-offload", "config.json");
 }
@@ -1075,16 +1076,16 @@ import { join as join6 } from "node:path";
 // src/proc.ts
 import { existsSync as existsSync4, readFileSync as readFileSync4 } from "node:fs";
 import { delimiter, dirname, extname, isAbsolute as isAbsolute2, join as join4, resolve as resolvePath } from "node:path";
-var isWin2 = process.platform === "win32";
+var isWin = process.platform === "win32";
 var live = new Set;
 var exitHooked = false;
 function killTree(child, sig = "SIGTERM") {
   if (!child.pid)
     return;
-  if (isWin2 && child.exitCode !== null)
+  if (isWin && child.exitCode !== null)
     return;
   try {
-    if (isWin2)
+    if (isWin)
       childProcess().spawnSync("taskkill", ["/T", "/F", "/PID", String(child.pid)], { stdio: "ignore", windowsHide: true });
     else
       process.kill(-child.pid, sig);
@@ -1126,7 +1127,7 @@ function shimTarget(cmdFile) {
   }
 }
 function plan(cmd, args) {
-  if (!isWin2)
+  if (!isWin)
     return { file: cmd, args, opts: {} };
   const found = whichSync(cmd) ?? cmd;
   const ext = extname(found).toLowerCase();
@@ -1155,7 +1156,7 @@ function runProcess(cmd, args, opts) {
     let killedBy;
     let child;
     try {
-      child = spawnSafe(cmd, args, { cwd: opts.cwd, env: opts.env, stdio: ["pipe", "pipe", "pipe"], detached: !isWin2 });
+      child = spawnSafe(cmd, args, { cwd: opts.cwd, env: opts.env, stdio: ["pipe", "pipe", "pipe"], detached: !isWin });
     } catch (e) {
       resolve({ code: 127, stdout: "", stderr: String(e), timedOut: false });
       return;
@@ -1228,7 +1229,7 @@ function spawnDetached(cmd, args, cwd) {
 function whichSync(cmd) {
   if (isAbsolute2(cmd) || cmd.includes("/") || cmd.includes("\\"))
     return existsSync4(cmd) ? cmd : undefined;
-  const exts = isWin2 ? (process.env.PATHEXT || ".COM;.EXE;.BAT;.CMD").split(";").filter(Boolean) : [""];
+  const exts = isWin ? (process.env.PATHEXT || ".COM;.EXE;.BAT;.CMD").split(";").filter(Boolean) : [""];
   for (const dir of (process.env.PATH || process.env.Path || "").split(delimiter)) {
     if (!dir)
       continue;

@@ -8,8 +8,8 @@ import {
 } from "./chunk-yrbt2j5y.js";
 
 // src/cli.ts
-var core = () => import("./chunk-jde8bg46.js");
-var admin = () => import("./chunk-d0esc7r3.js");
+var core = () => import("./chunk-hdkctrc9.js");
+var admin = () => import("./chunk-ga27jvth.js");
 var SELF = () => process.env.npm_command === "exec" ? "npx harness-offload" : "offload";
 var HELP = () => `${banner()}
   ${color.bold("Get started")}
@@ -105,14 +105,14 @@ async function main(argv) {
       await (await core()).cmdTasks(rest);
       return 0;
     case "model":
-      return (await import("./chunk-g65vnv8b.js")).cmdModel(rest);
+      return (await import("./chunk-xhgdv6x9.js")).cmdModel(rest);
     case "key":
-      return (await import("./chunk-yy7hkfwg.js")).cmdKey(rest);
+      return (await import("./chunk-rdzfgdya.js")).cmdKey(rest);
     case "outline":
       (await core()).cmdOutline(rest);
       return 0;
     case "dashboard":
-      return (await import("./chunk-gvbnxg4e.js")).cmdDashboard(rest);
+      return (await import("./chunk-86r3qq5n.js")).cmdDashboard(rest);
     case "doctor":
       return (await admin()).cmdDoctor(rest);
     case "stats":
@@ -122,7 +122,7 @@ async function main(argv) {
       (await admin()).cmdExplain(rest);
       return 0;
     case "demo":
-      return (await import("./chunk-aggy1qme.js")).cmdDemo();
+      return (await import("./chunk-t8sa6htf.js")).cmdDemo();
     case "statusline":
       await (await admin()).cmdStatusline();
       return 0;
@@ -133,18 +133,18 @@ async function main(argv) {
       await (await admin()).cmdModels(rest);
       return 0;
     case "setup":
-      return (await import("./chunk-zy9kev3j.js")).cmdSetup(rest);
+      return (await import("./chunk-gt6zfsr0.js")).cmdSetup(rest);
     case "install":
     case "uninstall":
-      return (await import("./chunk-r9xx069j.js")).cmdInstall(cmd, rest);
+      return (await import("./chunk-nct9age9.js")).cmdInstall(cmd, rest);
     case "sync":
-      return (await import("./chunk-r9xx069j.js")).cmdSync(rest);
+      return (await import("./chunk-nct9age9.js")).cmdSync(rest);
     case "mcp":
-      return (await import("./chunk-8s2xkq19.js")).cmdMcp(rest);
+      return (await import("./chunk-fza94j42.js")).cmdMcp(rest);
     case "hook":
-      return (await import("./chunk-a75bmh8h.js")).cmdHook(rest);
+      return (await import("./chunk-txgqpe10.js")).cmdHook(rest);
     case "worker":
-      return (await import("./chunk-4qgfrkv0.js")).cmdWorker(rest);
+      return (await import("./chunk-jc2h1rq2.js")).cmdWorker(rest);
   }
   process.stderr.write(`offload: unknown command: ${cmd}
 `);

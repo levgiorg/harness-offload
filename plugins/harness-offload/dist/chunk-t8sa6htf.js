@@ -3,23 +3,23 @@ import {
   sym,
   banner
 } from "./chunk-yrbt2j5y.js";
-import"./chunk-fprvy154.js";
+import"./chunk-gh6zr0fa.js";
 import {
   fileBytes,
   fileLines,
   estTokens,
   fmtInt
-} from "./chunk-rh4zgg1b.js";
-import"./chunk-t783jg2c.js";
-import"./chunk-hc19sd6m.js";
-import"./chunk-20nw982y.js";
+} from "./chunk-gwdfekfb.js";
+import"./chunk-xtyp4a5g.js";
+import"./chunk-spdrtbj8.js";
+import"./chunk-efswghxn.js";
 import {
   digest
-} from "./chunk-7pg52q8v.js";
+} from "./chunk-2pq08g1m.js";
 import {
   bigFileMessage2
-} from "./chunk-kz1z3vxj.js";
-import"./chunk-x3bqkf9c.js";
+} from "./chunk-c9ghtbsj.js";
+import"./chunk-27r145em.js";
 
 // src/commands/demo.ts
 import { mkdtempSync, writeFileSync } from "node:fs";

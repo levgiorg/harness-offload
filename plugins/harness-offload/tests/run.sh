@@ -1292,6 +1292,16 @@ expect_has "summarize --intent: … holds the line no other section keeps" "$out
 expect_not "summarize without a question: no such section" "$("$OFFLOAD" summarize --no-model "$T/intent.log" 2>&1)" "lines about the question"
 out=$("$OFFLOAD" run -q "lodash cache" --no-model -- cat "$T/intent.log" 2>&1)
 expect_has "run -q: the same section" "$out" "info: cache restored for lodash"
+# R13: Claude Code's code-reading subagents get a short offload guide (SubagentStart)
+sub_in='{"session_id":"s","agent_id":"a1","agent_type":"Explore","cwd":"/tmp","hook_event_name":"SubagentStart"}'
+ctx=$(hook subagent-start "$sub_in" | jq -r '.hookSpecificOutput.additionalContext // ""')
+expect_has "subagent-start: the guide names offload read with symbol and range forms" "$ctx" "read -q \"QUESTION\" FILE\` (FILE:START-END or FILE#Symbol work too)"
+expect_eq "subagent-start: … in at most 400 bytes" "$(( $(printf '%s' "$ctx" | LC_ALL=C wc -c) <= 400 ))" 1
+expect_eq "subagent-start: … for Explore, general-purpose and Plan only" "$(jq -r '.hooks.SubagentStart[0].matcher' "$PLUGIN/hooks/hooks.json")" "^(Explore|general-purpose|Plan)$"
+printf '{"hooks":{"subagents":false}}' > "$OFFLOAD_CONFIG"
+expect_eq "subagent-start: hooks.subagents false → nothing" "$(hook subagent-start "$sub_in")" ""
+rm -f "$OFFLOAD_CONFIG"
+expect_eq "subagent-start: switched off → nothing" "$(OFFLOAD_DISABLE=1 hook subagent-start "$sub_in")" ""
 # R7: after a compaction the agent is told where the session's full logs are
 ctx=$(hook session-start "$(jq -nc --arg c "$P" '{session_id: "sess-A", cwd: $c, source: "compact"}')" | jq -r '.hookSpecificOutput.additionalContext // ""')
 expect_has "session-start compact: lists the session's digested outputs" "$ctx" "Before the compaction, offload digested these outputs (full logs kept; offload summarize LOG digests one again):"

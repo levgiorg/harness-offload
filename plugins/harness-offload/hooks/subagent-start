@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+# SubagentStart (Claude Code): a short offload guide for the subagents that read code
+# (Explore, general-purpose, Plan; the matcher in hooks.json picks them). Twin: subagentGuide.
+case "$0" in */*) . "${0%/*}/../lib/hook.sh" ;; *) . ../lib/hook.sh ;; esac
+
+co_cfg_bool '.enabled' true || exit 0
+co_cfg_bool '.hooks.subagents' true || exit 0
+co_backend_present || exit 0
+lines=$(co_cfg '.hooks.read_threshold_lines' 600)
+guide="offload is here: for a big file ask \`$HK_CLI read -q \"QUESTION\" FILE\` (FILE:START-END or FILE#Symbol work too) — a cheap model answers with checked path:Lx-Ly quotes; then Read only those lines. \`$HK_CLI explore \"Q\"\` searches the repo; \`$HK_CLI run -- CMD\` digests long output. Full reads of files over ~$lines lines are blocked with an outline."
+jq -nc --arg c "$guide" '{hookSpecificOutput: {hookEventName: "SubagentStart", additionalContext: $c}}'

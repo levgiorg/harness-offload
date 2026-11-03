@@ -6,7 +6,7 @@ import {
   projectDir2,
   cfg2,
   isSecretTarget
-} from "./chunk-fprvy154.js";
+} from "./chunk-gh6zr0fa.js";
 
 // src/tasks.ts
 import { existsSync, readFileSync, realpathSync, statSync } from "node:fs";

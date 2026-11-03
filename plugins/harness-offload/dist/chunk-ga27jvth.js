@@ -24,10 +24,10 @@ import {
   writeConfigFile2,
   readConfigFile2,
   unknownConfigKeys2
-} from "./chunk-fprvy154.js";
+} from "./chunk-gh6zr0fa.js";
 import {
   fmtInt
-} from "./chunk-rh4zgg1b.js";
+} from "./chunk-gwdfekfb.js";
 import {
   stateDir2,
   readStats2,
@@ -35,24 +35,24 @@ import {
   clearCooldowns2,
   opencodeMajor,
   opencodeConfig
-} from "./chunk-t783jg2c.js";
+} from "./chunk-xtyp4a5g.js";
 import {
   detectHost,
   hostModel,
   parseRef,
   backendFor,
   allBackendNames
-} from "./chunk-hc19sd6m.js";
+} from "./chunk-spdrtbj8.js";
 import {
   modelChain2
-} from "./chunk-20nw982y.js";
-import"./chunk-7pg52q8v.js";
-import"./chunk-6npywwhf.js";
+} from "./chunk-efswghxn.js";
+import"./chunk-2pq08g1m.js";
+import"./chunk-h96w7b73.js";
 import {
   taskNames,
   taskDef,
   taskSystem
-} from "./chunk-x3bqkf9c.js";
+} from "./chunk-27r145em.js";
 
 // src/commands/admin.ts
 import { existsSync, readFileSync } from "node:fs";
@@ -135,7 +135,7 @@ async function cmdDoctor(argv) {
   const names = taskNames();
   if (names.length) {
     out.push(section("Your tasks"));
-    const { refCheck } = await import("./chunk-g65vnv8b.js");
+    const { refCheck } = await import("./chunk-xhgdv6x9.js");
     for (const n of names) {
       const d = taskDef(n);
       if (!d)
@@ -162,7 +162,7 @@ async function cmdDoctor(argv) {
   }
   out.push(section("Backends in use"));
   {
-    const { refCheck } = await import("./chunk-g65vnv8b.js");
+    const { refCheck } = await import("./chunk-xhgdv6x9.js");
     for (const r of [...refs]) {
       const c = await refCheck(r);
       if (c.err) {
@@ -229,12 +229,12 @@ async function cmdDoctor(argv) {
   }
   if (opts.ping) {
     out.push(section("Live ping"));
-    const { invoke } = await import("./chunk-5k9ekxab.js");
+    const { invoke } = await import("./chunk-j52r04s1.js");
     for (const r of refs) {
       const t0 = Date.now();
       try {
         const res = await invoke("ask", `Reply with exactly the word: pong
-`, (await import("./chunk-esh7fxww.js")).workDir(), r);
+`, (await import("./chunk-6jz61519.js")).workDir(), r);
         check(true, r, `${res.text.trim().slice(0, 40)} (${Math.round((Date.now() - t0) / 1000)}s)`);
       } catch (e) {
         check(false, r, String(e.message).split(`

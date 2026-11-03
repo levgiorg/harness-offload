@@ -2,15 +2,15 @@ import"./chunk-yrbt2j5y.js";
 import {
   setProjectDir2,
   cfgBool2
-} from "./chunk-fprvy154.js";
-import"./chunk-rh4zgg1b.js";
+} from "./chunk-gh6zr0fa.js";
+import"./chunk-gwdfekfb.js";
 import {
   compactIndex2,
   seenForget2
-} from "./chunk-t783jg2c.js";
-import"./chunk-hc19sd6m.js";
-import"./chunk-20nw982y.js";
-import"./chunk-7pg52q8v.js";
+} from "./chunk-xtyp4a5g.js";
+import"./chunk-spdrtbj8.js";
+import"./chunk-efswghxn.js";
+import"./chunk-2pq08g1m.js";
 import {
   PAUSED_MESSAGE2,
   welcomeMessage2,
@@ -20,9 +20,10 @@ import {
   autowrap2,
   bashGuard2,
   postBash2,
+  subagentGuide2,
   sessionGuide2
-} from "./chunk-kz1z3vxj.js";
-import"./chunk-x3bqkf9c.js";
+} from "./chunk-c9ghtbsj.js";
+import"./chunk-27r145em.js";
 
 // src/commands/hook.ts
 import { readFileSync } from "node:fs";
@@ -70,6 +71,11 @@ async function handle(host, event, input) {
     seenForget2(input.session_id);
   if (event === "session-start" && host === "crush")
     return;
+  if (event === "subagent-start") {
+    if (host !== "claude" || !cfgBool2("hooks.subagents", true) || !await available2())
+      return;
+    return { hookSpecificOutput: { hookEventName: "SubagentStart", additionalContext: subagentGuide2() } };
+  }
   if (event === "session-start") {
     const guide = sessionGuide2(host) + (index ? `
 ${index}` : "");

@@ -56,6 +56,20 @@ describe("offload install", () => {
     expect(cli(["install", "kilo"], { env: s.env }).code).toBe(0);
     expect(readFileSync(join(s.dir, "home", ".config", "kilo", "plugin", "harness-offload.js"), "utf8")).toContain("dist/opencode.js");
   });
+  test("kilo and opencode v1 get a read-only offload-reader subagent, removed on uninstall (R13)", () => {
+    const agent = join(s.dir, "home", ".config", "kilo", "agent", "offload-reader.md");
+    expect(cli(["install", "kilo"], { env: s.env }).code).toBe(0);
+    const md = readFileSync(agent, "utf8");
+    const front = md.split("---\n")[1];
+    expect(front).toContain("mode: subagent");
+    // OpenCode's AgentConfig schema (opencode.ai/config.json): PermissionConfig keys allow/ask/deny
+    const perms = Object.fromEntries(front.split("permission:\n")[1].trim().split("\n").map((l) => l.trim().split(/:\s+/)).map(([k, v]) => [k.replace(/"/g, ""), v]));
+    expect(perms).toEqual({ "*": "deny", read: "allow", grep: "allow", glob: "allow", list: "allow" });
+    const known = ["*", "read", "edit", "glob", "grep", "list", "bash", "task", "external_directory", "todowrite", "question", "webfetch", "websearch", "lsp", "doom_loop", "skill"];
+    expect(Object.keys(perms).every((k) => known.includes(k))).toBe(true);
+    expect(cli(["uninstall", "kilo"], { env: s.env }).code).toBe(0);
+    expect(existsSync(agent)).toBe(false);
+  });
   test("pi and devin call their CLIs", () => {
     cli(["install", "pi", "devin"], { env: s.env });
     expect(calls()).toMatch(/pi install .*packages\/cli/);

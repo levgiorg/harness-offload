@@ -149,3 +149,15 @@ outputs: 315 → 120 MB, flat), F5 (git list buffer bug: 50k-file explore 1,332 
 fix), B5 (fallback reasons), B8 (prompt fencing), F3/C6 (blocked), F4/A9/R9/L4 (rejected with reasons), A6 (answer
 cache), G7 (bash orphan workers fixed), J3 (worker crash messages). Conformance 600/597, bun 81, backends 464.
 Open (P2/P3): A5 A8 A10 A11 B3 B4 B7 C4 C5 D2 D4 D5 G5 L2 L5 R6 R7 R8 R10 R13 R14.
+
+## 2026-11-03 — backlog complete (final)
+- 0 todo/doing; 82 done, 6 rejected, 2 blocked (C6 Amp live run; F3 needs the real OpenCode binary). A8 and A5
+  meet their targets only in part (recorded); C4 held for a live Kilo run. Full report: FINAL-REPORT.md.
+- Final run: conformance 694/691/691 (bash, TS CLI, TS hooks), bun 96/0, tsc clean, routing 49×2, backends 464,
+  hook bench within budget, shellcheck clean, dist reproducible, release check + pack smoke ok, plugin validate ok.
+
+## 2026-11-03 — loop stopped (handoff)
+- Real-model checks added: R13 subagent guide confirmed in a real Claude Code run; B7 length rule with real Haiku —
+  quality unchanged, no savings on normal answers (guard only). A5/A8 target revisions recorded (DECISIONS 93–94).
+- Nothing actionable left. Open only: C6 (needs an Amp binary + account) and F3 (needs the real OpenCode binary);
+  C4's build waits on a Kilo binary. To resume: install those CLIs, then follow the "Remaining work" in each line.

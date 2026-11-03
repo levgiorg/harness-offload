@@ -2,7 +2,7 @@
 // the instructions to finish by hand), and records what to undo.
 import { cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { dirname, join, posix, win32 } from "node:path";
 import { pathToFileURL } from "node:url";
 import { runProcess, which } from "../proc.ts";
 import { stateDir } from "../state.ts";
@@ -60,10 +60,51 @@ export async function mcpRecipes(): Promise<Record<string, { file: string; snipp
   };
 }
 
-/** Crush's global config directory (CRUSH_GLOBAL_CONFIG overrides it). */
-function crushDir(): string {
-  return process.env.CRUSH_GLOBAL_CONFIG || join(process.env.XDG_CONFIG_HOME || join(home(), ".config"), "crush");
+/** A read-only subagent for OpenCode (v1 config) and Kilo: reads and searches to answer one question,
+ *  so the bulk reading happens in its own context. Permissions as in OpenCode's AgentConfig schema:
+ *  read/grep/glob/list allowed, everything else denied. */
+export const READER_AGENT = `---
+description: Reads big files and searches this repository to answer one question, then replies briefly with path:line citations. Use it instead of reading large files or long logs yourself.
+mode: subagent
+temperature: 0.1
+permission:
+  "*": deny
+  read: allow
+  grep: allow
+  glob: allow
+  list: allow
+---
+You answer one question about this codebase by reading and searching it (read, grep, glob, list); you never edit files or run commands.
+Reply in at most 15 lines: the answer first, then each supporting fact with its path:line and a short verbatim quote. Say NOT FOUND instead of guessing.
+`;
+
+/** Where each agent keeps what offload installs, for a platform, environment and home folder —
+ *  a pure function so the Windows paths are tested on any machine (path.win32). OpenCode, Kilo and
+ *  Crush use ~/.config on Windows too (XDG-style); Crush releases before November 2025 kept their
+ *  config in %LOCALAPPDATA%\\crush, used when only that one exists. */
+export function locations(platform: string = process.platform, env: NodeJS.ProcessEnv = process.env, h: string = home(), exists: (p: string) => boolean = existsSync) {
+  const P = platform === "win32" ? win32 : posix;
+  const xdg = env.XDG_CONFIG_HOME || P.join(h, ".config");
+  let crush = env.CRUSH_GLOBAL_CONFIG || P.join(xdg, "crush");
+  if (!env.CRUSH_GLOBAL_CONFIG && platform === "win32") {
+    const legacy = P.join(env.LOCALAPPDATA || P.join(h, "AppData", "Local"), "crush");
+    if (!exists(P.join(crush, "crush.json")) && exists(P.join(legacy, "crush.json"))) crush = legacy;
+  }
+  return {
+    cursorDir: P.join(h, ".cursor"),
+    cursorPlugin: P.join(h, ".cursor", "plugins", "local", "harness-offload"),
+    geminiExtension: P.join(h, ".gemini", "extensions", "harness-offload"),
+    opencodePlugin: (major: number) => P.join(h, ".config", "opencode", major >= 2 ? "plugins" : "plugin", "harness-offload.js"),
+    kiloPlugin: P.join(h, ".config", "kilo", "plugin", "harness-offload.js"),
+    // a read-only subagent for the agent itself to call (OpenCode v1's and Kilo's agent folders)
+    opencodeAgent: P.join(h, ".config", "opencode", "agent", "offload-reader.md"),
+    kiloAgent: P.join(h, ".config", "kilo", "agent", "offload-reader.md"),
+    ampPlugin: P.join(xdg, "amp", "plugins", "harness-offload.ts"),
+    crushDir: crush,
+    crushConfig: P.join(crush, "crush.json"),
+  };
 }
+const crushDir = () => locations().crushDir;
 const CRUSH_DEFAULT_CONTEXT = ["~/.config/crush/CRUSH.md", "~/.config/AGENTS.md"];
 
 export interface Step {
@@ -101,7 +142,7 @@ export async function detectHosts(): Promise<Record<HostName, boolean>> {
   const out = {} as Record<HostName, boolean>;
   for (const h of HOSTS) {
     if (h === "mcp") out[h] = true;
-    else if (h === "cursor") out[h] = existsSync(join(home(), ".cursor")) || Boolean(await which("cursor-agent")) || Boolean(await which("cursor"));
+    else if (h === "cursor") out[h] = existsSync(locations().cursorDir) || Boolean(await which("cursor-agent")) || Boolean(await which("cursor"));
     else out[h] = Boolean(await which(h === "opencode" ? cfgStr("opencode.bin", "opencode") : HOST_BIN[h]!));
   }
   return out;
@@ -193,7 +234,7 @@ export async function install(host: HostName, opts: { dryRun?: boolean; scope?: 
       break;
     }
     case "cursor": {
-      const dest = join(home(), ".cursor", "plugins", "local", "harness-offload");
+      const dest = locations().cursorPlugin;
       if (opts.dryRun) return [{ ok: true, text: `copy ${pluginDir()} → ${dest}` }];
       rmSync(dest, { recursive: true, force: true });
       mkdirSync(join(dest, ".."), { recursive: true });
@@ -206,7 +247,7 @@ export async function install(host: HostName, opts: { dryRun?: boolean; scope?: 
       break;
     }
     case "gemini": {
-      const dest = join(home(), ".gemini", "extensions", "harness-offload");
+      const dest = locations().geminiExtension;
       if (opts.dryRun) return [{ ok: true, text: `write Gemini extension → ${dest}` }];
       rmSync(dest, { recursive: true, force: true });
       geminiExtension(dest, launcher);
@@ -267,28 +308,40 @@ export async function install(host: HostName, opts: { dryRun?: boolean; scope?: 
     }
     case "opencode": {
       const major = await opencodeMajor();
-      const dir = join(home(), ".config", "opencode", major >= 2 ? "plugins" : "plugin");
+      const dir = dirname(locations().opencodePlugin(major));
       const file = join(dir, "harness-offload.js");
       if (opts.dryRun) return [{ ok: true, text: `write ${file} (OpenCode v${major})` }];
       mkdirSync(dir, { recursive: true });
       writeFileSync(file, `// Harness Offload for OpenCode (generated by \`offload install opencode\`)\nexport { default } from ${JSON.stringify(pathToFileURL(distFile("opencode.js")).href)};\n`);
       steps.push({ ok: true, text: `wrote ${file} (OpenCode v${major})` });
-      record(host, { file });
+      // the read-only offload-reader subagent (OpenCode v1's agent format; v2's differs and is not written)
+      let agent: string | undefined;
+      if (major < 2) {
+        agent = locations().opencodeAgent;
+        mkdirSync(dirname(agent), { recursive: true });
+        writeFileSync(agent, READER_AGENT);
+        steps.push({ ok: true, text: `wrote ${agent} (a read-only offload-reader subagent)` });
+      }
+      record(host, { file, ...(agent ? { agent } : {}) });
       break;
     }
     case "kilo": {
       // Kilo Code is an OpenCode v1 fork with the same plugin API.
-      const dir = join(home(), ".config", "kilo", "plugin");
+      const dir = dirname(locations().kiloPlugin);
       const file = join(dir, "harness-offload.js");
       if (opts.dryRun) return [{ ok: true, text: `write ${file}` }];
       mkdirSync(dir, { recursive: true });
       writeFileSync(file, `// Harness Offload for Kilo Code (generated by \`offload install kilo\`)\nexport { default } from ${JSON.stringify(pathToFileURL(distFile("opencode.js")).href)};\n`);
       steps.push({ ok: true, text: `wrote ${file}` });
-      record(host, { file });
+      const agent = locations().kiloAgent;
+      mkdirSync(dirname(agent), { recursive: true });
+      writeFileSync(agent, READER_AGENT);
+      steps.push({ ok: true, text: `wrote ${agent} (a read-only offload-reader subagent)` });
+      record(host, { file, agent });
       break;
     }
     case "amp": {
-      const dir = join(process.env.XDG_CONFIG_HOME || join(home(), ".config"), "amp", "plugins");
+      const dir = dirname(locations().ampPlugin);
       const file = join(dir, "harness-offload.ts");
       if (opts.dryRun) return [{ ok: true, text: `write ${file}` }];
       mkdirSync(dir, { recursive: true });
@@ -344,7 +397,7 @@ export async function uninstall(host: HostName): Promise<Step[]> {
       break;
     case "cursor":
     case "gemini": {
-      const dir = host === "cursor" ? join(home(), ".cursor", "plugins", "local", "harness-offload") : join(home(), ".gemini", "extensions", "harness-offload");
+      const dir = host === "cursor" ? locations().cursorPlugin : locations().geminiExtension;
       rmSync(dir, { recursive: true, force: true });
       steps.push({ ok: true, text: `removed ${dir}` });
       break;
@@ -379,8 +432,12 @@ export async function uninstall(host: HostName): Promise<Step[]> {
       steps.push(await exec("pi", ["remove", recorded(host).source || packageRoot()]));
       break;
     case "opencode":
+      if (existsSync(locations().opencodeAgent)) {
+        rmSync(locations().opencodeAgent, { force: true });
+        steps.push({ ok: true, text: `removed ${locations().opencodeAgent}` });
+      }
       for (const d of ["plugins", "plugin"]) {
-        const f = join(home(), ".config", "opencode", d, "harness-offload.js");
+        const f = join(dirname(dirname(locations().opencodePlugin(1))), d, "harness-offload.js");
         if (existsSync(f)) {
           rmSync(f, { force: true });
           steps.push({ ok: true, text: `removed ${f}` });
@@ -388,13 +445,14 @@ export async function uninstall(host: HostName): Promise<Step[]> {
       }
       break;
     case "kilo": {
-      const f = join(home(), ".config", "kilo", "plugin", "harness-offload.js");
+      const f = locations().kiloPlugin;
       rmSync(f, { force: true });
-      steps.push({ ok: true, text: `removed ${f}` });
+      rmSync(locations().kiloAgent, { force: true });
+      steps.push({ ok: true, text: `removed ${f} and the offload-reader subagent` });
       break;
     }
     case "amp": {
-      const f = join(process.env.XDG_CONFIG_HOME || join(home(), ".config"), "amp", "plugins", "harness-offload.ts");
+      const f = locations().ampPlugin;
       rmSync(f, { force: true });
       steps.push({ ok: true, text: `removed ${f}` });
       break;
@@ -498,9 +556,9 @@ export async function describe(host: HostName, scope: Scope = "user"): Promise<P
     case "codex":
       return { host, what: "runs codex plugin add harness-offload", where: "Codex keeps it in ~/.codex", note: "then trust the hooks once: open /hooks in Codex" };
     case "cursor":
-      return { host, what: `+ ${tilde(join(home(), ".cursor", "plugins", "local", "harness-offload"))}/`, where: "new folder: a copy of the plugin", note: "then in Cursor: Developer: Reload Window" };
+      return { host, what: `+ ${tilde(locations().cursorPlugin)}/`, where: "new folder: a copy of the plugin", note: "then in Cursor: Developer: Reload Window" };
     case "gemini":
-      return { host, what: `+ ${tilde(join(home(), ".gemini", "extensions", "harness-offload"))}/`, where: "new folder: a Gemini CLI extension (hooks, tools, GEMINI.md)" };
+      return { host, what: `+ ${tilde(locations().geminiExtension)}/`, where: "new folder: a Gemini CLI extension (hooks, tools, GEMINI.md)" };
     case "copilot":
       return { host, what: "runs copilot plugin install harness-offload", where: "Copilot CLI keeps it in ~/.copilot" };
     case "qwen":
@@ -527,10 +585,10 @@ export async function describe(host: HostName, scope: Scope = "user"): Promise<P
       return { host, what: "runs pi install harness-offload", where: "Pi keeps it in its package list" };
     case "opencode": {
       const dir = (await opencodeMajor()) >= 2 ? "plugins" : "plugin";
-      return { host, what: `+ ${tilde(join(home(), ".config", "opencode", dir, "harness-offload.js"))}`, where: "new file: one line that loads the plugin" };
+      return { host, what: `+ ${tilde(locations().opencodePlugin(dir === "plugins" ? 2 : 1))}`, where: "new file: one line that loads the plugin" };
     }
     case "kilo":
-      return { host, what: `+ ${tilde(join(home(), ".config", "kilo", "plugin", "harness-offload.js"))}`, where: "new file: one line that loads the plugin" };
+      return { host, what: `+ ${tilde(locations().kiloPlugin)}`, where: "new file: one line that loads the plugin" };
     case "devin":
       return { host, what: "runs devin plugins install harness-offload", where: "Devin keeps it with its plugins" };
     default:

@@ -559,6 +559,13 @@ export async function postBash(opts: { command?: string; output: string; persist
   return d;
 }
 
+/** A short offload guide for Claude Code's code-reading subagents (Explore, general-purpose,
+ *  Plan), at most ~400 bytes. Twin: hooks/subagent-start. */
+export function subagentGuide(cli = cliCommand()): string {
+  const lines = cfgStr("hooks.read_threshold_lines", "600");
+  return `offload is here: for a big file ask \`${cli} read -q "QUESTION" FILE\` (FILE:START-END or FILE#Symbol work too) — a cheap model answers with checked path:Lx-Ly quotes; then Read only those lines. \`${cli} explore "Q"\` searches the repo; \`${cli} run -- CMD\` digests long output. Full reads of files over ~${lines} lines are blocked with an outline.`;
+}
+
 /** Usage guidance injected at session start. */
 export function sessionGuide(host: Host, cliPath = cliCommand()): string {
   const lines = cfgStr("hooks.read_threshold_lines", "600");

@@ -1,21 +1,23 @@
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { join, posix, win32 } from "node:path";
 import { childProcess } from "./lazy.ts";
 import { existsSync, statSync } from "node:fs";
 
-const isWin = process.platform === "win32";
 
-export function configHome(): string {
-  if (process.env.XDG_CONFIG_HOME) return process.env.XDG_CONFIG_HOME;
-  if (isWin && process.env.APPDATA) return process.env.APPDATA;
-  return join(homedir(), ".config");
+/** offload's own config and state folders for a platform, environment and home folder (pure, so the
+ *  Windows answers are tested anywhere): XDG variables first, then %APPDATA% / %LOCALAPPDATA%. */
+export function configHomeFor(platform: string, env: NodeJS.ProcessEnv, h: string): string {
+  if (env.XDG_CONFIG_HOME) return env.XDG_CONFIG_HOME;
+  if (platform === "win32" && env.APPDATA) return env.APPDATA;
+  return (platform === "win32" ? win32 : posix).join(h, ".config");
 }
-
-export function stateHome(): string {
-  if (process.env.XDG_STATE_HOME) return process.env.XDG_STATE_HOME;
-  if (isWin && process.env.LOCALAPPDATA) return process.env.LOCALAPPDATA;
-  return join(homedir(), ".local", "state");
+export function stateHomeFor(platform: string, env: NodeJS.ProcessEnv, h: string): string {
+  if (env.XDG_STATE_HOME) return env.XDG_STATE_HOME;
+  if (platform === "win32" && env.LOCALAPPDATA) return env.LOCALAPPDATA;
+  return (platform === "win32" ? win32 : posix).join(h, ".local", "state");
 }
+export const configHome = (): string => configHomeFor(process.platform, process.env, homedir());
+export const stateHome = (): string => stateHomeFor(process.platform, process.env, homedir());
 
 export function userConfigPath(): string {
   return process.env.OFFLOAD_CONFIG || join(configHome(), "harness-offload", "config.json");

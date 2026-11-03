@@ -5,16 +5,16 @@ import {
 } from "./chunk-yrbt2j5y.js";
 import {
   cfgStr2
-} from "./chunk-fprvy154.js";
+} from "./chunk-gh6zr0fa.js";
 import {
   stateDir2,
   opencodeMajor
-} from "./chunk-t783jg2c.js";
+} from "./chunk-xtyp4a5g.js";
 
 // src/hosts/install.ts
 import { cpSync as cpSync2, existsSync as existsSync2, mkdirSync as mkdirSync2, readFileSync, rmSync as rmSync2, writeFileSync } from "node:fs";
 import { homedir as homedir2 } from "node:os";
-import { join as join2 } from "node:path";
+import { dirname as dirname2, join as join2, posix, win32 } from "node:path";
 import { pathToFileURL } from "node:url";
 
 // src/hosts/assets.ts
@@ -120,9 +120,43 @@ async function mcpRecipes() {
     timeout: 300` }
   };
 }
-function crushDir() {
-  return process.env.CRUSH_GLOBAL_CONFIG || join2(process.env.XDG_CONFIG_HOME || join2(home(), ".config"), "crush");
+var READER_AGENT = `---
+description: Reads big files and searches this repository to answer one question, then replies briefly with path:line citations. Use it instead of reading large files or long logs yourself.
+mode: subagent
+temperature: 0.1
+permission:
+  "*": deny
+  read: allow
+  grep: allow
+  glob: allow
+  list: allow
+---
+You answer one question about this codebase by reading and searching it (read, grep, glob, list); you never edit files or run commands.
+Reply in at most 15 lines: the answer first, then each supporting fact with its path:line and a short verbatim quote. Say NOT FOUND instead of guessing.
+`;
+function locations(platform = process.platform, env = process.env, h = home(), exists = existsSync2) {
+  const P = platform === "win32" ? win32 : posix;
+  const xdg = env.XDG_CONFIG_HOME || P.join(h, ".config");
+  let crush = env.CRUSH_GLOBAL_CONFIG || P.join(xdg, "crush");
+  if (!env.CRUSH_GLOBAL_CONFIG && platform === "win32") {
+    const legacy = P.join(env.LOCALAPPDATA || P.join(h, "AppData", "Local"), "crush");
+    if (!exists(P.join(crush, "crush.json")) && exists(P.join(legacy, "crush.json")))
+      crush = legacy;
+  }
+  return {
+    cursorDir: P.join(h, ".cursor"),
+    cursorPlugin: P.join(h, ".cursor", "plugins", "local", "harness-offload"),
+    geminiExtension: P.join(h, ".gemini", "extensions", "harness-offload"),
+    opencodePlugin: (major) => P.join(h, ".config", "opencode", major >= 2 ? "plugins" : "plugin", "harness-offload.js"),
+    kiloPlugin: P.join(h, ".config", "kilo", "plugin", "harness-offload.js"),
+    opencodeAgent: P.join(h, ".config", "opencode", "agent", "offload-reader.md"),
+    kiloAgent: P.join(h, ".config", "kilo", "agent", "offload-reader.md"),
+    ampPlugin: P.join(xdg, "amp", "plugins", "harness-offload.ts"),
+    crushDir: crush,
+    crushConfig: P.join(crush, "crush.json")
+  };
 }
+var crushDir = () => locations().crushDir;
 var CRUSH_DEFAULT_CONTEXT = ["~/.config/crush/CRUSH.md", "~/.config/AGENTS.md"];
 var GITHUB_REPO = "levgiorg/harness-offload";
 function pluginSource() {
@@ -149,7 +183,7 @@ async function detectHosts() {
     if (h === "mcp")
       out[h] = true;
     else if (h === "cursor")
-      out[h] = existsSync2(join2(home(), ".cursor")) || Boolean(await which2("cursor-agent")) || Boolean(await which2("cursor"));
+      out[h] = existsSync2(locations().cursorDir) || Boolean(await which2("cursor-agent")) || Boolean(await which2("cursor"));
     else
       out[h] = Boolean(await which2(h === "opencode" ? cfgStr2("opencode.bin", "opencode") : HOST_BIN[h]));
   }
@@ -239,7 +273,7 @@ async function install(host, opts = {}) {
       break;
     }
     case "cursor": {
-      const dest = join2(home(), ".cursor", "plugins", "local", "harness-offload");
+      const dest = locations().cursorPlugin;
       if (opts.dryRun)
         return [{ ok: true, text: `copy ${pluginDir2()} → ${dest}` }];
       rmSync2(dest, { recursive: true, force: true });
@@ -253,7 +287,7 @@ async function install(host, opts = {}) {
       break;
     }
     case "gemini": {
-      const dest = join2(home(), ".gemini", "extensions", "harness-offload");
+      const dest = locations().geminiExtension;
       if (opts.dryRun)
         return [{ ok: true, text: `write Gemini extension → ${dest}` }];
       rmSync2(dest, { recursive: true, force: true });
@@ -296,7 +330,7 @@ async function install(host, opts = {}) {
         if (!existsSync2(`${file}.bak-harness-offload`))
           writeFileSync(`${file}.bak-harness-offload`, readFileSync(file));
       }
-      const { sessionGuide } = await import("./chunk-fx4k8dw3.js");
+      const { sessionGuide } = await import("./chunk-6gh8gxw6.js");
       writeFileSync(guide, sessionGuide("crush", isWin ? winCommand() : JSON.stringify(join2(pluginDir2(), "bin", "offload"))) + `
 `);
       cfg = crushMerged(cfg, guide);
@@ -317,7 +351,7 @@ async function install(host, opts = {}) {
     }
     case "opencode": {
       const major = await opencodeMajor();
-      const dir = join2(home(), ".config", "opencode", major >= 2 ? "plugins" : "plugin");
+      const dir = dirname2(locations().opencodePlugin(major));
       const file = join2(dir, "harness-offload.js");
       if (opts.dryRun)
         return [{ ok: true, text: `write ${file} (OpenCode v${major})` }];
@@ -326,11 +360,18 @@ async function install(host, opts = {}) {
 export { default } from ${JSON.stringify(pathToFileURL(distFile2("opencode.js")).href)};
 `);
       steps.push({ ok: true, text: `wrote ${file} (OpenCode v${major})` });
-      record(host, { file });
+      let agent;
+      if (major < 2) {
+        agent = locations().opencodeAgent;
+        mkdirSync2(dirname2(agent), { recursive: true });
+        writeFileSync(agent, READER_AGENT);
+        steps.push({ ok: true, text: `wrote ${agent} (a read-only offload-reader subagent)` });
+      }
+      record(host, { file, ...agent ? { agent } : {} });
       break;
     }
     case "kilo": {
-      const dir = join2(home(), ".config", "kilo", "plugin");
+      const dir = dirname2(locations().kiloPlugin);
       const file = join2(dir, "harness-offload.js");
       if (opts.dryRun)
         return [{ ok: true, text: `write ${file}` }];
@@ -339,11 +380,15 @@ export { default } from ${JSON.stringify(pathToFileURL(distFile2("opencode.js"))
 export { default } from ${JSON.stringify(pathToFileURL(distFile2("opencode.js")).href)};
 `);
       steps.push({ ok: true, text: `wrote ${file}` });
-      record(host, { file });
+      const agent = locations().kiloAgent;
+      mkdirSync2(dirname2(agent), { recursive: true });
+      writeFileSync(agent, READER_AGENT);
+      steps.push({ ok: true, text: `wrote ${agent} (a read-only offload-reader subagent)` });
+      record(host, { file, agent });
       break;
     }
     case "amp": {
-      const dir = join2(process.env.XDG_CONFIG_HOME || join2(home(), ".config"), "amp", "plugins");
+      const dir = dirname2(locations().ampPlugin);
       const file = join2(dir, "harness-offload.ts");
       if (opts.dryRun)
         return [{ ok: true, text: `write ${file}` }];
@@ -366,7 +411,7 @@ export { default } from ${JSON.stringify(pathToFileURL(distFile2("amp.js")).href
       const file = join2(stateDir2(), "aider-conventions.md");
       if (opts.dryRun)
         return [{ ok: true, text: `write ${file}` }];
-      const { sessionGuide } = await import("./chunk-fx4k8dw3.js");
+      const { sessionGuide } = await import("./chunk-6gh8gxw6.js");
       const cli = isWin ? winCommand() : JSON.stringify(join2(pluginDir2(), "bin", "offload"));
       writeFileSync(file, `# Harness Offload
 
@@ -407,7 +452,7 @@ async function uninstall(host) {
       break;
     case "cursor":
     case "gemini": {
-      const dir = host === "cursor" ? join2(home(), ".cursor", "plugins", "local", "harness-offload") : join2(home(), ".gemini", "extensions", "harness-offload");
+      const dir = host === "cursor" ? locations().cursorPlugin : locations().geminiExtension;
       rmSync2(dir, { recursive: true, force: true });
       steps.push({ ok: true, text: `removed ${dir}` });
       break;
@@ -444,8 +489,12 @@ async function uninstall(host) {
       steps.push(await exec("pi", ["remove", recorded(host).source || packageRoot2()]));
       break;
     case "opencode":
+      if (existsSync2(locations().opencodeAgent)) {
+        rmSync2(locations().opencodeAgent, { force: true });
+        steps.push({ ok: true, text: `removed ${locations().opencodeAgent}` });
+      }
       for (const d of ["plugins", "plugin"]) {
-        const f = join2(home(), ".config", "opencode", d, "harness-offload.js");
+        const f = join2(dirname2(dirname2(locations().opencodePlugin(1))), d, "harness-offload.js");
         if (existsSync2(f)) {
           rmSync2(f, { force: true });
           steps.push({ ok: true, text: `removed ${f}` });
@@ -453,13 +502,14 @@ async function uninstall(host) {
       }
       break;
     case "kilo": {
-      const f = join2(home(), ".config", "kilo", "plugin", "harness-offload.js");
+      const f = locations().kiloPlugin;
       rmSync2(f, { force: true });
-      steps.push({ ok: true, text: `removed ${f}` });
+      rmSync2(locations().kiloAgent, { force: true });
+      steps.push({ ok: true, text: `removed ${f} and the offload-reader subagent` });
       break;
     }
     case "amp": {
-      const f = join2(process.env.XDG_CONFIG_HOME || join2(home(), ".config"), "amp", "plugins", "harness-offload.ts");
+      const f = locations().ampPlugin;
       rmSync2(f, { force: true });
       steps.push({ ok: true, text: `removed ${f}` });
       break;
@@ -552,9 +602,9 @@ async function describe(host, scope = "user") {
     case "codex":
       return { host, what: "runs codex plugin add harness-offload", where: "Codex keeps it in ~/.codex", note: "then trust the hooks once: open /hooks in Codex" };
     case "cursor":
-      return { host, what: `+ ${tilde(join2(home(), ".cursor", "plugins", "local", "harness-offload"))}/`, where: "new folder: a copy of the plugin", note: "then in Cursor: Developer: Reload Window" };
+      return { host, what: `+ ${tilde(locations().cursorPlugin)}/`, where: "new folder: a copy of the plugin", note: "then in Cursor: Developer: Reload Window" };
     case "gemini":
-      return { host, what: `+ ${tilde(join2(home(), ".gemini", "extensions", "harness-offload"))}/`, where: "new folder: a Gemini CLI extension (hooks, tools, GEMINI.md)" };
+      return { host, what: `+ ${tilde(locations().geminiExtension)}/`, where: "new folder: a Gemini CLI extension (hooks, tools, GEMINI.md)" };
     case "copilot":
       return { host, what: "runs copilot plugin install harness-offload", where: "Copilot CLI keeps it in ~/.copilot" };
     case "qwen":
@@ -582,10 +632,10 @@ async function describe(host, scope = "user") {
       return { host, what: "runs pi install harness-offload", where: "Pi keeps it in its package list" };
     case "opencode": {
       const dir = await opencodeMajor() >= 2 ? "plugins" : "plugin";
-      return { host, what: `+ ${tilde(join2(home(), ".config", "opencode", dir, "harness-offload.js"))}`, where: "new file: one line that loads the plugin" };
+      return { host, what: `+ ${tilde(locations().opencodePlugin(dir === "plugins" ? 2 : 1))}`, where: "new file: one line that loads the plugin" };
     }
     case "kilo":
-      return { host, what: `+ ${tilde(join2(home(), ".config", "kilo", "plugin", "harness-offload.js"))}`, where: "new file: one line that loads the plugin" };
+      return { host, what: `+ ${tilde(locations().kiloPlugin)}`, where: "new file: one line that loads the plugin" };
     case "devin":
       return { host, what: "runs devin plugins install harness-offload", where: "Devin keeps it with its plugins" };
     default:

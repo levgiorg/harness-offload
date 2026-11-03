@@ -10,7 +10,7 @@ import {
   matchesAny,
   isSecretTarget,
   redact
-} from "./chunk-fprvy154.js";
+} from "./chunk-gh6zr0fa.js";
 import {
   fileBytes,
   fileLines,
@@ -23,7 +23,7 @@ import {
   isText,
   fmtInt,
   shquote
-} from "./chunk-rh4zgg1b.js";
+} from "./chunk-gwdfekfb.js";
 import {
   stateDir2,
   appendStats2,
@@ -32,15 +32,15 @@ import {
   seenFile2,
   seenCmdFile2,
   cooling2
-} from "./chunk-t783jg2c.js";
+} from "./chunk-xtyp4a5g.js";
 import {
   CLI_AGENTS,
   parseRef,
   backendFor
-} from "./chunk-hc19sd6m.js";
+} from "./chunk-spdrtbj8.js";
 import {
   modelChain2
-} from "./chunk-20nw982y.js";
+} from "./chunk-efswghxn.js";
 import {
   BIG,
   textSrc,
@@ -50,10 +50,10 @@ import {
   diffView,
   posixToJs2,
   outline2
-} from "./chunk-7pg52q8v.js";
+} from "./chunk-2pq08g1m.js";
 import {
   taskSummary
-} from "./chunk-x3bqkf9c.js";
+} from "./chunk-27r145em.js";
 
 // src/hooks/logic.ts
 import { closeSync, copyFileSync, existsSync, mkdirSync, openSync, readFileSync, readSync, statSync } from "node:fs";
@@ -502,7 +502,7 @@ async function postBash2(opts) {
   const sre = cfgBool2("hooks.search_view", true) ? cfgStr2("hooks.search_commands") : "";
   if (sre) {
     try {
-      const { posixToJs } = await import("./chunk-pvms9vpq.js");
+      const { posixToJs } = await import("./chunk-f8t4601d.js");
       search = new RegExp(posixToJs(sre)).test(last);
     } catch {
       search = false;
@@ -512,7 +512,7 @@ async function postBash2(opts) {
   const never = cfgStr2("hooks.bash_never_summarize");
   if (never && !search && !diffv) {
     try {
-      const { posixToJs } = await import("./chunk-pvms9vpq.js");
+      const { posixToJs } = await import("./chunk-f8t4601d.js");
       if (new RegExp(posixToJs(never)).test(last))
         return;
     } catch {
@@ -629,6 +629,10 @@ async function postBash2(opts) {
     markSeen(log);
   return d;
 }
+function subagentGuide2(cli = cliCommand()) {
+  const lines = cfgStr2("hooks.read_threshold_lines", "600");
+  return `offload is here: for a big file ask \`${cli} read -q "QUESTION" FILE\` (FILE:START-END or FILE#Symbol work too) — a cheap model answers with checked path:Lx-Ly quotes; then Read only those lines. \`${cli} explore "Q"\` searches the repo; \`${cli} run -- CMD\` digests long output. Full reads of files over ~${lines} lines are blocked with an outline.`;
+}
 function sessionGuide2(host, cliPath = cliCommand()) {
   const lines = cfgStr2("hooks.read_threshold_lines", "600");
   const tasks = taskSummary();
@@ -650,4 +654,4 @@ ${tasks ? `- ${cliPath} task NAME [PATH...] — the user's own tasks: ${tasks}.
 ` : ""}Keep for yourself: debugging reasoning, design decisions, edits (read slices for exact text), small files. Full reads of files over ~${lines} lines may be blocked with an outline and these options; large successful command output may come back as a digest with a log path.`;
 }
 
-export { workerWords2, PAUSED_MESSAGE2, welcomeMessage2, firstSession2, available2, bigFileMessage2, readGuard2, autowrap2, bashGuard2, postBash2, sessionGuide2 };
+export { workerWords2, PAUSED_MESSAGE2, welcomeMessage2, firstSession2, available2, bigFileMessage2, readGuard2, autowrap2, bashGuard2, postBash2, subagentGuide2, sessionGuide2 };

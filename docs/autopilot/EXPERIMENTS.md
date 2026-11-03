@@ -71,3 +71,21 @@ Hypothesis → method → result → decision. Numbers only from runs that happe
   default 6,000-token limit; +4 ms per Read there), its messages, read footers, and every saved_tokens in stats;
   bash (awk) and TS give the same number (60 random texts). A 12.9 KB numeric CSV (÷4: 3,229 tokens) is now held
   back as ~8,900 tokens; 19.6 KB of prose still passes.
+
+## R13 — real Claude Code run (Haiku main model, plugin from this checkout)
+- `claude -p --plugin-dir plugins/harness-offload --model haiku` asked to use the Explore subagent on the warehouse
+  fixture: answered `inventory.ts`; the subagent's transcript holds the guide once, as `hook_additional_context`
+  from `SubagentStart`; the main transcript has none. The hook contract (matcher on agent type, additionalContext)
+  works as documented.
+
+## B7 — real Haiku, with and without the length rule (evals/benchmark.sh, 4 scenarios × 2 engines × 2 settings)
+| scenario | rule on (bash / TS) | rule off (bash / TS) | facts |
+|---|---|---|---|
+| large-module-facts | 550 / 514 B | 471 / 423 B | 4/4 in all 4 runs |
+| cross-file | 863 / 676 B | 527 / 649 B | 3/3 in all 4 runs |
+| ci-log-digest | 802 / 775 B | 770 / 779 B | 3/3 in all 4 runs |
+| tests-from-reference | 52 / 52 B | 52 / 52 B | 2/2 in all 4 runs |
+- Quality unchanged (every required fact, every run). On normal questions the rule saves nothing measurable —
+  Haiku's answers are already far under 2,000 tokens, and the differences are single-run noise in both
+  directions. Its value is the hard cut for runaway answers, which did not occur here. Kept as a guard;
+  no claim of savings.

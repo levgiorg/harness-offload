@@ -12,7 +12,7 @@ import {
   isSecretTarget,
   redact,
   fence
-} from "./chunk-fprvy154.js";
+} from "./chunk-gh6zr0fa.js";
 import {
   fileLines,
   estTokens,
@@ -22,7 +22,7 @@ import {
   shquote,
   numberLines,
   stripWrappingFence
-} from "./chunk-rh4zgg1b.js";
+} from "./chunk-gwdfekfb.js";
 import {
   E,
   WorkerError,
@@ -31,15 +31,15 @@ import {
   appendStats2,
   newLogPath2,
   cksum2
-} from "./chunk-t783jg2c.js";
+} from "./chunk-xtyp4a5g.js";
 import {
   invoke2
-} from "./chunk-20nw982y.js";
+} from "./chunk-efswghxn.js";
 import {
   digest,
   isSmall,
   outline2
-} from "./chunk-7pg52q8v.js";
+} from "./chunk-2pq08g1m.js";
 import {
   TASK_NAME,
   taskNames,
@@ -47,7 +47,7 @@ import {
   taskSystem,
   setTaskContext,
   taskContext
-} from "./chunk-x3bqkf9c.js";
+} from "./chunk-27r145em.js";
 
 // src/commands/core.ts
 import { spawn } from "node:child_process";
@@ -377,7 +377,7 @@ async function cmdRead2(argv) {
     } else if (!existsSync(item) && hash > 0 && existsSync(item.slice(0, hash)) && statSync2(item.slice(0, hash)).isFile()) {
       path = item.slice(0, hash);
       const sym = item.slice(hash + 1);
-      const r = (await import("./chunk-pvms9vpq.js")).symbolRange(path, sym);
+      const r = (await import("./chunk-f8t4601d.js")).symbolRange(path, sym);
       if (!r)
         die(`read: no symbol "${sym}" in ${path} (offload outline ${shquote(path)} lists them)`);
       [from, to] = r;
@@ -788,8 +788,8 @@ async function tasksTemplates(argv) {
     return die("tasks add: a task name is lowercase letters, digits, - and _ (up to 40)");
   if (!names.includes(from))
     return die(`tasks add: no template "${from}" (offload tasks templates lists them)`);
-  const { readConfigFile, writeConfigFile } = await import("./chunk-2m1sdmyv.js");
-  const { projectConfigPath, userConfigPath } = await import("./chunk-5fzas80d.js");
+  const { readConfigFile, writeConfigFile } = await import("./chunk-z57em06b.js");
+  const { projectConfigPath, userConfigPath } = await import("./chunk-a0xcbv5b.js");
   const target = project ? projectConfigPath() : userConfigPath();
   const cur = readConfigFile(target);
   if (cur.tasks?.[name] != null)

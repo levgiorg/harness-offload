@@ -61,6 +61,8 @@ Copilot CLI, Crush and Qwen Code were verified end to end with their real binari
 
 ## Kilo Code CLI
 - Kilo is an OpenCode v1 fork with the same plugin API; `offload install kilo` writes `~/.config/kilo/plugin/harness-offload.js` (the same bundle as OpenCode).
+- `offload install opencode` (v1) and `offload install kilo` also write a read-only `offload-reader` subagent (`agent/offload-reader.md`: read/grep/glob/list allowed, everything else denied) that the agent can hand a reading question to, so the bulk reading happens in its own context. OpenCode v2 uses another agent format and gets none yet.
+- In Claude Code, the Explore, general-purpose and Plan subagents get a short offload guide when they start (`SubagentStart`; `hooks.subagents false` turns it off with the rest).
 
 ## Devin Desktop / Windsurf
 - Cascade was replaced by Devin Local, which reads Claude Code plugins and hooks. `offload install devin` runs `devin plugins install --local <plugin>`.

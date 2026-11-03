@@ -7,6 +7,14 @@
         ]
       }
     ],
+    "SubagentStart": [
+      {
+        "matcher": "^(Explore|general-purpose|Plan)$",
+        "hooks": [
+          { "type": "command", "command": "\"${CLAUDE_PLUGIN_ROOT}/hooks/subagent-start\"", "timeout": 15 }
+        ]
+      }
+    ],
     "PreToolUse": [
       {
         "matcher": "Read",

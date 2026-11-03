@@ -492,3 +492,18 @@ MCP server; installer for ~20 hosts; fallback chains with cooldowns; `offload st
 Not recommended: LLMLingua-style token dropping (breaks identifiers/citations), embedding indexes
 (infrastructure + code leaves the machine), API-wire proxies (incompatible with subscription `@host`
 routes), opaque auto-routers as defaults, rewriting the agent's commands by default.
+
+### C4. Kilo as a native worker (November 2026)
+- Kilo's CLI (`@kilocode/cli`, binary `kilo`) is an OpenCode fork with the same configuration options; headless runs are
+  `kilo run` with the prompt as argument or on stdin and `--format json` for a machine-readable event stream
+  (third-party integration guides; Kilo's own CLI page confirms the fork and the shared config).
+- Config: `~/.config/kilo/kilo.jsonc` (also `config.json`/`opencode.json(c)` there), project `kilo.jsonc`, `.kilo/`
+  agent files; `KILO_CONFIG_CONTENT` is the highest-priority layer (Kilo's agent-permissions page). Agents live under
+  `agent` with `permission` rules evaluated in order, last match wins.
+- Design if built: the OpenCode v1 transport with `bin = kilo` and `KILO_CONFIG_CONTENT` instead of
+  `OPENCODE_CONFIG_CONTENT`; `host_models.kilo` = `kilo:` so `@host` under Kilo uses Kilo's own providers instead of
+  needing `opencode` installed.
+- Not verified: the full `--format json` event schema and whether `KILO_CONFIG_CONTENT` overrides an agent's
+  `permission` block — both decide whether the worker stays read-only, so they need one live run.
+- Sources: https://kilo.ai/docs/cli · https://kilo.ai/docs/customize/agent-permissions ·
+  https://kilo.ai/docs/getting-started/settings · https://evolink.ai/docs/en/integration-guide/kilo-code-cli
