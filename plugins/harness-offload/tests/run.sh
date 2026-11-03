@@ -1462,6 +1462,8 @@ EOF_FZ
 # a 4 MB input (2 MB command, 2 MB output)
 head -c 2000000 /dev/zero | LC_ALL=C tr '\0' 'a' > "$T/fz-a"
 jq -nc --rawfile a "$T/fz-a" '{tool_name: "Bash", tool_input: {command: $a}, tool_response: {stdout: $a}}' > "$T/fz/big.json"
+# "never hang": 3 s on Linux; the 4 MB case takes ~7 s with macOS's BSD tools on a CI runner
+fz_limit=3; [ "$(uname -s)" = Darwin ] && fz_limit=20
 for h in pre-read pre-bash post-bash session-start; do
   for eng in bash ts; do
     for f in "$T"/fz/*.json; do
@@ -1469,7 +1471,7 @@ for h in pre-read pre-bash post-bash session-start; do
       if [ "$eng" = ts ]; then o=$("$PLUGIN/bin/offload-ts" hook claude "$h" < "$f" 2>/dev/null); rc=$?
       else o=$("$PLUGIN/hooks/$h" < "$f" 2>/dev/null); rc=$?; fi
       el=$(( $(date +%s) - s0 ))
-      if [ "$rc" != 0 ] || [ "$el" -gt 3 ] || { [ -n "$o" ] && ! printf '%s' "$o" | jq -e . >/dev/null 2>&1; }; then
+      if [ "$rc" != 0 ] || [ "$el" -gt "$fz_limit" ] || { [ -n "$o" ] && ! printf '%s' "$o" | jq -e . >/dev/null 2>&1; }; then
         echo "$eng $h rc=$rc ${el}s input=$(head -c 60 "$f")"
       fi
     done
