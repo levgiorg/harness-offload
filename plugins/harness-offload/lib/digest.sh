@@ -343,7 +343,8 @@ co_digest() {
     else _sc_summary_section; _sc_intent_section; _sc_fail_section; _sc_key_section; fi
     [ -z "$summary" ] && [ "${OFFLOAD_DIGEST_COMPACT:-}" != 1 ] && tail_n=$(( tail_n + 10 ))
     printf -- '── last %s lines ──\n' "$tail_n"
-    tail -n "$tail_n" "$log" | LC_ALL=C sed -e "s/$(printf '\033')\[[0-9;]*[A-Za-z]//g" | LC_ALL=C cut -c1-"$width"
+    # awk 1: a log whose last line has no newline must not swallow the line after it (BSD vs GNU sed/cut differ)
+    tail -n "$tail_n" "$log" | LC_ALL=C sed -e "s/$(printf '\033')\[[0-9;]*[A-Za-z]//g" | LC_ALL=C cut -c1-"$width" | awk 1
     printf -- '── more: grep -n -iE "error|fail" %s | head -50   ·   sed -n "START,ENDp" %s\n' "$(co_shquote "$log")" "$(co_shquote "$log")"
   } > "$keyf.out"
 

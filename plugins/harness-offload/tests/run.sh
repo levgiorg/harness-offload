@@ -18,7 +18,10 @@ for a in "$@"; do
   esac
 done
 
-T=$(mktemp -d "${TMPDIR:-/tmp}/offload-tests.XXXXXX")
+_tmp=${TMPDIR:-/tmp}; _tmp=${_tmp%/}   # macOS TMPDIR ends in "/": a "//" would not match the paths the TS engine prints
+T=$(mktemp -d "$_tmp/offload-tests.XXXXXX")
+# the TS hooks name the CLI "offload" when it is on PATH; under test it is not, so say so (no effect on the bash engine)
+export OFFLOAD_CLI_COMMAND=offload
 trap 'rm -rf "$T" 2>/dev/null' EXIT
 REAL_OPENCODE="${OFFLOAD_OPENCODE_BIN:-$(command -v opencode 2>/dev/null)}"
 
@@ -566,7 +569,7 @@ N="zzw$$x$RANDOM"; cp "$HERE/stub-opencode" "$T/$N"
 OFFLOAD_OPENCODE_BIN="$T/$N" "$OFFLOAD" ask -m stub/hang "x" >/dev/null 2>&1 & kp=$!
 i=0; while [ $i -lt 40 ] && ! pgrep -f "$N" >/dev/null 2>&1; do sleep 0.1; i=$((i + 1)); done
 kill -TERM $kp 2>/dev/null; i=0; while [ $i -lt 50 ] && pgrep -f "$N" >/dev/null 2>&1; do sleep 0.1; i=$((i + 1)); done
-expect_eq "kill: no worker left 5 s after offload is terminated" "$(pgrep -fc "$N" 2>/dev/null || true)" 0
+expect_eq "kill: no worker left 5 s after offload is terminated" "$(pgrep -f "$N" 2>/dev/null | wc -l | tr -d ' ')" 0
 pkill -f "$N" 2>/dev/null; wait $kp 2>/dev/null
 # an input too large for a model: its own exit code, a hint, and no cooldown (the model is fine)
 out=$("$OFFLOAD" ask -m stub/toolong "x" 2>&1); rc=$?
